@@ -4,918 +4,865 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pigment copy - High-Fidelity Static Site</title>
+    <title>Pigment copy - Strategic Analysis by Proplace</title>
     <style>
         :root { --bg-app: #f8fafc; --text-main: #1e293b; --yellow-menu: #FEF9C3; --green-menu: #DCFCE7; --grey-menu: #F1F5F9; }
-        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-app); color: var(--text-main); margin: 0; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-app); color: var(--text-main); margin: 0; display: flex; }
         html { scroll-behavior: smooth; }
         a { color: #2563eb; text-decoration: none; }
         a:hover { text-decoration: underline; }
 
         /* TYPOGRAPHY */
-        h1, h2, h3, h4 { margin-top: 1.5em; margin-bottom: 0.5em; line-height: 1.2; color: #0f172a; }
+        h1, h2, h3, h4 { margin-top: 2.5em; margin-bottom: 0.8em; line-height: 1.2; color: #0f172a; }
+        section:first-child h3 { margin-top: 0; }
         h3 { font-size: 1.5em; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 20px; }
-        h4 { font-size: 1.1em; color: #475569; margin-top: 1.5em; text-transform: uppercase; letter-spacing: 0.5px; }
-        p { margin-top: 0; margin-bottom: 1em; line-height: 1.6; color: #334155; }
-        ul { margin-top: 0; margin-bottom: 1em; padding-left: 20px; }
+        h4 { font-size: 1.1em; color: #475569; margin-top: 1.5em; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.5em; }
+        p, ul { margin-top: 0; margin-bottom: 1em; line-height: 1.6; color: #334155; }
+        ul { padding-left: 20px; }
         li { margin-bottom: 0.5em; line-height: 1.6; }
-        strong { font-weight: 700; color: #1e293b; }
-
-        /* SEPARATOR */
-        .section-separator { height: 2px; background: #e2e8f0; margin: 50px 0; width: 100%; }
+        strong { color: #1e293b; }
 
         /* LAYOUT & SIDEBAR */
         .main-wrapper { display: flex; width: 100%; }
         .sidebar { width: 300px; height: 100vh; position: sticky; top: 0; overflow-y: auto; border-right: 1px solid #e2e8f0; background: #fff; padding: 25px 0; flex-shrink: 0; z-index: 1000; display: flex; flex-direction: column; }
-        .content-area { flex: 1; padding: 40px; width: calc(100% - 300px); min-width: 0; }
+        .content-area { flex: 1; padding: 40px; width: 100%; min-width: 0; }
 
         /* MOBILE NAV & RESPONSIVE GRID */
         @media (max-width: 1000px) {
             body { flex-direction: column; }
             .main-wrapper { flex-direction: column; }
-            .sidebar { width: 100%; height: auto; position: static; border-right: none; border-bottom: 1px solid #e2e8f0; padding: 0; }
+            .sidebar { width: 100%; height: auto; position: static; border-right: none; border-bottom: 1px solid #e2e8f0; padding: 0; display: block; overflow-x: hidden; z-index: 1001; }
+            .nav-list { max-height: 250px; overflow-y: auto; }
+            .meta-block { display: none; }
+            .nav-item { display: block; padding: 10px 15px; border-left: 4px solid transparent; border-bottom: 1px solid #f1f5f9; margin: 0; }
             .content-area { padding: 20px; width: 100%; box-sizing: border-box; }
-            .split-container { flex-direction: column; }
-            .img-col { position: static; width: 100%; margin-top: 20px; }
-            .battlefield-grid, .stage-desc-grid, .swot-grid { grid-template-columns: 1fr !important; }
-            .swot-quadrant { margin-bottom: 20px; }
-            .table-responsive { display: block; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+            
+            /* FORCE SINGLE COLUMN STACK FOR MOBILE */
+            .battlefield-grid { display: flex; flex-direction: column; width: 100%; gap: 15px; }
+            .stage-desc-grid, .swot-grid, .split-container { display: flex; flex-direction: column; width: 100%; gap: 0; }
+            
+            .img-col { position: static; width: 100%; padding-top: 20px; box-sizing: border-box; }
+            .img-col img { position: static !important; }
+
+            /* Actor card full width override */
+            .actor-card { width: 100% !important; margin-bottom: 15px; border-left-width: 4px; box-sizing: border-box; }
+            /* Responsive Table Wrapper */
+            .table-container { display: block; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+            .synergies-table, .vc-desc-table { min-width: 800px; } /* Force scroll on small screens */
         }
 
         /* SIDEBAR META BLOCK */
         .meta-block { padding: 0 25px 25px; border-bottom: 1px solid #e2e8f0; margin-bottom: 15px; }
         .tag-row { margin-bottom: 10px; display: flex; flex-wrap: wrap; gap: 5px; }
         .tag { display: inline-block; padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; color: #475569; background: #fff; }
-        .score-green { background-color: #16a34a; color: #fff; border: none; font-size: 14px !important; padding: 6px 10px !important; }
+        .score-green { background-color: #16a34a; color: #fff; border: none; }
+        .score-yellow { background-color: #ca8a04; color: #fff; border: none; }
+        .score-red { background-color: #dc2626; color: #fff; border: none; }
         .meta-h3 { margin: 0 0 5px 0; font-size: 1.4em; font-weight: 800; color: #1e293b; }
         .meta-tagline { font-style: italic; color: #64748b; font-size: 0.9em; margin: 0 0 15px 0; }
         .contact-row { font-size: 0.85em; color: #64748b; margin-bottom: 15px; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; }
         .contact-item { display: block; margin-bottom: 5px; }
-        .keywords { font-size: 0.8em; color: #64748b; }
+        .keywords { font-size: 0.8em; color: #64748b; line-height: 1.5; }
 
         /* MENU ITEMS */
-        .nav-items-container { flex-grow: 1; }
         .nav-item { display: block; padding: 10px 25px; text-decoration: none; color: #475569; font-weight: 600; font-size: 0.9em; border-left: 4px solid transparent; transition: all 0.2s; margin-bottom: 2px; }
         .nav-item:hover { background: rgba(0,0,0,0.05); color: #0f172a; border-left-color: #94a3b8; }
         .bg-yellow { background: var(--yellow-menu); }
         .bg-green { background: var(--green-menu); }
         .bg-grey { background: var(--grey-menu); }
-        .nav-item:hover.bg-yellow { background: #fef08a; }
-        .nav-item:hover.bg-green { background: #bbf7d0; }
-        .nav-item:hover.bg-grey { background: #e2e8f0; }
 
         /* CTA BUTTON (Sidebar) */
         .cta-btn { display: block; margin: 20px 25px; padding: 12px; background-color: #1e293b; color: #fff; text-align: center; border-radius: 6px; font-weight: 700; font-size: 0.9em; text-decoration: none; transition: background 0.2s; }
         .cta-btn:hover { background-color: #334155; text-decoration: none; }
+        .sidebar { justify-content: space-between; }
+        @media (max-width: 1000px) { .cta-btn { margin: 15px; } }
 
         /* SPLIT LAYOUT & STICKY IMAGES */
-        .split-container { display: flex; gap: 40px; align-items: flex-start; position: relative; }
-        .text-col { flex: 2; min-width: 0; }
-        .img-col { flex: 1; position: sticky; top: 40px; align-self: flex-start; }
-        .sticky-img { width: 100%; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }
+        .split-container { display: flex; gap: 40px; align-items: flex-start; margin-bottom: 50px; position: relative; }
+        .text-col { flex: 1; font-size: 1em; line-height: 1.7; color: #334155; min-width: 0; }
+        .img-col { width: 450px; flex-shrink: 0; position: sticky; top: 40px; align-self: flex-start; }
+        .sticky-img { width: 100%; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; margin-bottom: 20px; }
 
-        /* BATTLEFIELD & VALUE CHAIN */
-        .bf-legend-container { display: flex; gap: 20px; margin-bottom: 15px; flex-wrap: wrap; font-size: 0.85em; color: #475569; background: #f8fafc; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0; }
-        .legend-item { display: flex; align-items: center; gap: 6px; }
-        .battlefield-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 15px; width: 100%; margin-bottom: 40px; }
-        .stage-col { background: #f1f5f9; border-radius: 8px; padding: 10px; border: 1px solid #e2e8f0; min-width: 0; }
-        .stage-desc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px; }
-        .sd-box { background: #fff; padding: 15px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.9em; color: #475569; }
-        .actor-card { background: #fff; border: 1px solid #cbd5e0; border-radius: 6px; margin-bottom: 10px; overflow: hidden; font-size: 0.9em; border-left-width: 4px; }
-        .border-Hunter { border-left-color: #dc2626 !important; }
-        .border-Hunted { border-left-color: #ca8a04 !important; }
-        .border-Fortress { border-left-color: #2563eb !important; }
-        .actor-card summary { padding: 10px; cursor: pointer; font-weight: 700; list-style: none; display: block;}
+        /* LEGENDS */
+        .legend-container { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 30px; display: flex; flex-wrap: wrap; gap: 20px; font-size: 0.85em; }
+        .legend-item { color: #475569; }
+        .legend-item strong { color: #1e293b; }
+        .label-cap { background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; border: 1px solid #bbf7d0; }
+        
+        /* BATTLEFIELD & ACTOR CARDS */
+        .battlefield-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; width: 100%; margin-bottom: 40px; }
+        .stage-column { border: 1px solid #e2e8f0; background: #fff; border-radius: 8px; padding: 15px; }
+        .stage-column h4 { margin-top: 0; border-bottom: 1px solid #f1f5f9; padding-bottom: 10px; }
+        .actor-card { background: #fff; border: 1px solid #cbd5e0; border-radius: 6px; margin-bottom: 10px; overflow: hidden; font-size: 0.9em; border-left-width: 4px; box-sizing: border-box; }
+        /* POSTURE BORDER COLORS */
+        .border-Hunter { border-left-color: #dc2626 !important; } 
+        .border-Hunted { border-left-color: #ca8a04 !important; } 
+        .border-Fortress { border-left-color: #2563eb !important; } 
+        .border-Opportunistic { border-left-color: #16a34a !important; } 
+
+        .actor-card summary { padding: 10px; cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; align-items: center; }
         .actor-card summary::-webkit-details-marker { display: none; }
-        .actor-header-flex { display: flex; justify-content: space-between; align-items: center; }
-        .actor-right-labels { display: flex; gap: 8px; align-items: center; }
+        .actor-card summary .actor-name { flex-grow: 1; }
+        .actor-right-labels { display: flex; gap: 8px; align-items: center; white-space: nowrap; }
         .label-tier { background: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; }
-        .label-cap { background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; border: 1px solid #bbf7d0; }
-        .actor-body { padding: 15px; border-top: 1px solid #f1f5f9; }
-        .meta-row { margin-bottom: 8px; color: #475569; font-size: 0.9em; line-height: 1.5; }
-        .ws-box { background: #fffbeb; border: 1px solid #fef3c7; padding: 10px; border-radius: 6px; margin-bottom: 10px; font-size: 0.9em; }
-        .swot-grid-small { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-        .sg-box { padding: 10px; border-radius: 4px; font-size: 0.9em; }
-        .s-green { background: #f0fdf4; border: 1px solid #dcfce7; color: #15803d; }
-        .s-red { background: #fef2f2; border: 1px solid #fee2e2; color: #b91c1c; }
-        .s-blue { background: #eff6ff; border: 1px solid #dbeafe; color: #1d4ed8; }
-        .s-yellow { background: #fefce8; border: 1px solid #fef9c3; color: #a16207; }
-        .strat-inv-box { background: #fbf_lfe9; border: 1px solid #e9d5ff; padding: 10px; margin-top: 10px; border-radius: 6px; font-size: 0.9em; color: #7e22ce; }
 
-        /* SCENARIOS */
-        .scenario-card { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 15px; background: #fff; }
-        .scenario-card summary { padding: 15px; font-weight: 700; cursor: pointer; list-style: none; }
-        .scenario-card summary::-webkit-details-marker { display: none; }
-        .scenario-summary-text { display: block; font-weight: normal; color: #64748b; margin-top: 5px; font-size: 0.9em; }
-        .scenario-details { padding: 0 15px 15px; border-top: 1px solid #f1f5f9; }
+        .actor-body { padding: 15px; border-top: 1px solid #f1f5f9; background: #fdfdfd; }
+        .actor-body h5 { margin-top:10px; margin-bottom:5px; font-size: 0.9em; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #e2e8f0; padding-bottom: 3px; }
+        .actor-body .meta-row { display: block; margin-bottom: 8px; color: #475569; font-size: 0.9em; }
+        .ws-box { background: #fffbeb; border: 1px solid #fef3c7; padding: 10px; border-radius: 6px; margin: 15px 0; }
+        .swot-grid-small { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+        .sg-box { padding: 8px; border-radius: 4px; font-size: 0.95em; } 
+        .s-green { background: #f0fdf4; color: #14532d; border: 1px solid #bbf7d0;} 
+        .s-red { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca;} 
+        .s-blue { background: #eff6ff; color: #1e3a8a; border: 1px solid #bfdbfe;} 
+        .s-yellow { background: #fefce8; color: #854d0e; border: 1px solid #fde047;}
+        .strat-inv-box { background: #f3e8ff; border: 1px solid #e9d5ff; padding: 10px; border-radius: 6px; margin-top: 15px; font-size: 0.9em; color: #6b21a8; }
+        .actor-body ul { padding-left: 18px; margin-bottom: 0; }
+        .actor-body li { margin-bottom: 2px; }
 
-        /* SYNERGIES TABLE */
-        .table-responsive { display: block; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid #e2e8f0; border-radius: 8px; }
-        .synergies-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
-        .synergies-table th, .synergies-table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
-        .synergies-table th { background: #f8fafc; font-weight: 700; color: #475569; }
-        .synergies-table tr:last-child td { border-bottom: 0; }
-        .synergies-table tr:nth-child(even) { background: #fcfcfd; }
-        .col-summary { width: 35%; }
+        /* Scenarios */
+        details.scenario-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 15px; }
+        details.scenario-card summary { padding: 15px; font-weight: 700; cursor: pointer; list-style: none; }
+        details.scenario-card summary::-webkit-details-marker { display: none; }
+        .scenario-summary-text { display:block; font-weight: normal; color: #475569; margin-top: 5px; font-size: 0.9em; }
+        .scenario-details { padding: 0 15px 15px 15px; border-top: 1px solid #e2e8f0; }
 
-        /* SWOT & ACTION PLAN */
-        .swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        .swot-quadrant { background-color: #fff; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; }
-        .swot-quadrant h4 { margin-top: 0; }
+        /* SYNERGIES & VC DESC TABLE */
+        .table-container { margin-bottom: 30px; }
+        .synergies-table, .vc-desc-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+        .synergies-table th, .vc-desc-table th { background: #f1f5f9; padding: 10px 12px; text-align: left; border-bottom: 2px solid #cbd5e1; font-weight: 600; }
+        .synergies-table td, .vc-desc-table td { padding: 10px 12px; border: 1px solid #e2e8f0; vertical-align: top; background: #fff; }
+        .synergies-table .col-summary { width: 35%; }
+        .synergies-table .col-currency { text-align: right; font-family: monospace; white-space: nowrap; }
 
-        /* MISC */
-        .dotted-line { border: none; border-top: 2px dashed #cbd5e0; margin: 30px 0; }
+        /* Value Chain Description Grid */
+        .stage-desc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+        .stage-desc-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; }
+        .stage-desc-card h4 { margin-top: 0; font-size: 1.2em; }
+
+        /* SWOT */
+        .swot-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+        .swot-quadrant { padding: 20px; border-radius: 8px; }
+        .swot-quadrant h4 { margin-top: 0; color: #fff; border-bottom: 1px solid rgba(255,255,255,0.3); padding-bottom: 10px; margin-bottom: 10px; }
+        .swot-quadrant ul { color: #fff; padding-left: 20px; list-style-type: '✓ '; }
+        .swot-s { background: #15803d; } .swot-w { background: #b91c1c; } .swot-o { background: #1d4ed8; } .swot-t { background: #b45309; }
+
+        /* SOURCES & FOOTER */
+        .source-list { list-style: none; padding: 0; column-count: 2; column-gap: 30px; }
+        @media (max-width: 768px) { .source-list { column-count: 1; } }
+        .source-list li { margin-bottom: 8px; font-size: 0.85em; overflow-wrap: break-word; }
         .final-footer { margin-top: 60px; padding: 20px; text-align: center; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 0.9em; }
+
     </style>
 </head>
 <body>
-    <div class="main-wrapper">
-        <aside class="sidebar">
+
+<div class="main-wrapper">
+    <aside class="sidebar">
+        <div>
             <div class="meta-block">
-                <div class="tag-row">
+                <h3 class="meta-h3">Pigment copy</h3>
+                <p class="meta-tagline">Pigment provides an integrated planning platform, powered by agentic AI, designed to improve how businesses plan, make decisions, and drive growth.</p>
+                 <div class="tag-row">
                     <span class="tag score-green">Score: 95</span>
                     <span class="tag">France</span>
                     <span class="tag">Series D</span>
                     <span class="tag">B2B</span>
                 </div>
-                <h3 class="meta-h3">Pigment copy</h3>
-                <p class="meta-tagline">Pigment provides an integrated planning platform, powered by agentic AI, designed to improve how businesses plan, make decisions, and drive growth.</p>
                 <div class="contact-row">
-                    <span class="contact-item"><strong>Romain Niccoli</strong></span>
-                    <span class="contact-item"><a href="mailto:romain.niccoli@pigment.com">romain.niccoli@pigment.com</a></span>
-                    <span class="contact-item"><a href="https://www.linkedin.com/in/romainniccoli/" target="_blank">LinkedIn Profile</a></span>
+                     <span class="contact-item"><strong>Website:</strong> <a href="https://www.pigment.com/" target="_blank">pigment.com</a></span>
+                    <span class="contact-item"><strong>CEO:</strong> Romain Niccoli</span>
+                    <span class="contact-item"><strong>LinkedIn:</strong> <a href="https://www.linkedin.com/in/romainniccoli/" target="_blank">/in/romainniccoli</a></span>
                 </div>
-                <p class="keywords"><strong>Keywords:</strong> Data & Analytics, Enterprise, B2B, Enterprise Sales, Subscription (SaaS/Recurring), AI / ML, Platform, SaaS</p>
+                <p class="keywords">
+                    <strong>Keywords:</strong> Data & Analytics, Enterprise, B2B, Enterprise Sales, Subscription (SaaS/Recurring), AI / ML, Platform, SaaS
+                </p>
             </div>
-            <div class="nav-items-container">
+            <nav class="nav-list">
                 <a href="#market" class="nav-item bg-yellow">Market</a>
-                <a href="#value-chain" class="nav-item bg-yellow">Value chain</a>
+                <a href="#value_chain" class="nav-item bg-yellow">Value chain</a>
                 <a href="#competition" class="nav-item bg-yellow">Competition</a>
-                <a href="#market-study" class="nav-item bg-yellow">Market study</a>
-                <a href="#strategic-scenarios" class="nav-item bg-yellow">Strategic scenarios</a>
+                <a href="#market_study" class="nav-item bg-yellow">Market study</a>
+                <a href="#strategic_scenarios" class="nav-item bg-yellow">Strategic scenarios</a>
                 <a href="#synergies" class="nav-item bg-yellow">Synergies</a>
-                <a href="#value-proposition" class="nav-item bg-green">Value proposition</a>
+                <a href="#value_proposition" class="nav-item bg-green">Value proposition</a>
                 <a href="#product" class="nav-item bg-green">Product</a>
-                <a href="#business-model" class="nav-item bg-green">Business model</a>
+                <a href="#business_model" class="nav-item bg-green">Business model</a>
                 <a href="#team" class="nav-item bg-green">Team</a>
                 <a href="#ceo" class="nav-item bg-green">CEO</a>
-                <a href="#company-summary" class="nav-item bg-green">Company summary</a>
-                <a href="#swot-analysis" class="nav-item bg-green">SWOT analysis</a>
-                <a href="#action-plan" class="nav-item bg-green">Action plan</a>
+                <a href="#company_summary" class="nav-item bg-green">Company summary</a>
+                <a href="#swot_analysis" class="nav-item bg-green">SWOT analysis</a>
+                <a href="#action_plan" class="nav-item bg-green">Action plan</a>
                 <a href="#conviction" class="nav-item bg-grey">Conviction</a>
                 <a href="#sources" class="nav-item bg-grey">Sources</a>
-            </div>
-            <a href="https://www.proplace.co" target="_blank" class="cta-btn">Schedule a strategy call</a>
-        </aside>
-
-        <main class="content-area">
-
-            <!-- STEP 2: MARKET -->
-            <section id="market">
-                <h3>Market</h3>
-                <div class="split-container">
-                    <div class="text-col">
-                        <h4>Market sizing</h4>
-                        <p><strong>Top-Down Market Analysis (Funnel Approach)</strong></p>
-                        <p><strong>Total Addressable Market (TAM): USD 8.7 billion</strong><br>
-                        • Perimeter: Global AI-driven IBP platforms market size, including software and services with AI integration for cross-functional planning (2024)<br>
-                        • Source Data: DataIntelo Integrated Business Planning Platforms Market Report (<a href="https://dataintelo.com/report/integrated-business-planning-platforms-market?utm_source=openai" target="_blank">source</a>)</p>
-                        <p><strong>Serviceable Available Market (SAM): USD 2.1-2.3 billion</strong><br>
-                        • Perimeter: AI-driven IBP platform market size in Europe, focusing on software and services for integrated planning (2024)<br>
-                        • Logic: Filtered for our specific sector and geography.<br>
-                        • Source Verification: Growth Market Reports and DataIntelo IBP Market Reports (<a href="https://growthmarketreports.com/report/integrated-business-planning-market?utm_source=openai" target="_blank">source</a>)</p>
-                        <p><strong>Serviceable Obtainable Market (SOM): USD 69 million</strong><br>
-                        • Perimeter: Realistic near-term target: 3% market share of SAM for early-stage AI-specific niche player<br>
-                        • Logic: Realistic near-term target based on competitive landscape.<br>
-                        • Source: Derived from Growth Market Reports (<a href="https://growthmarketreports.com/report/integrated-business-planning-market?utm_source=openai" target="_blank">source</a>)</p>
-
-                        <p><strong>Bottom-Up Market Analysis (Calculated Approach)</strong><br>This approach calculates the total market size by multiplying the validated number of potential customers by a verified average price point.</p>
-                        <p><strong>1. Customer Segment (Volume): 2,000-5,000</strong><br>
-                        • Who they are: Large enterprises ($1B+ revenue) in manufacturing, retail, healthcare, BFSI, IT & Telecom, Energy & Utilities; Europe; complex supply chains, AI adopters in FP&A/S&OP<br>
-                        • Validated Source: Market Intelo IBP Market Report (<a href="https://marketintelo.com/report/integrated-business-planning-market" target="_blank">source</a>)</p>
-                        <p><strong>2. Unit Economics (Price): EUR 28,200</strong><br>
-                        • What this represents: Average annual ARPU for enterprise per-seat subscription tiered models<br>
-                        • Validated Source: SAP IBP Pricing Page (<a href="https://www.sap.com/belgique/products/scm/integrated-business-planning/pricing.html?utm_source=openai" target="_blank">source</a>)</p>
-                        <p><strong>3. Calculated Result: EUR 56-141 million</strong><br>
-                        • This figure represents the mathematically derived Serviceable Available Market based on the specific inputs above.</p>
-                        
-                        <h4>Market Trends</h4>
-                        <p><strong>AI Accelerates IBP Market Growth</strong></p>
-                        <p><strong>1. Market Catalyst & Trajectory</strong></p>
-                        <ul>
-                            <li>The Structural Shift: AI/ML integration into integrated business planning platforms enables cross-functional FP&A, revenue, workforce, and S&OP for $1B+ enterprises, shifting from siloed to real-time, predictive planning amid supply chain resilience and digital transformation demands. [<a href="https://dataintelo.com/report/integrated-business-planning-platforms-market?utm_source=openai" target="_blank">source</a>]</li>
-                            <li>Velocity & Validation: Global market at USD 8.7 billion in 2024 grows at 12% CAGR to USD 24-25 billion by 2033; Europe SAM USD 2.1-2.3 billion represents 24-26% of TAM. [<a href="https://dataintelo.com/report/integrated-business-planning-platforms-market?utm_source=openai" target="_blank">source</a>] [<a href="https://growthmarketreports.com/report/integrated-business-planning-market?utm_source=openai" target="_blank">source</a>]</li>
-                        </ul>
-                        <p><strong>2. Value Chain & Control Points</strong></p>
-                        <ul>
-                            <li>The Scarcity: Stage 3 (AI/Analytics Engine and Planning Intelligence) emerges as primary control point, processing unified data into forecasts and insights for predictive planning, with highest strategic score of 8.7 from defensibility, margins, and growth. [<a href="https://dataintelo.com/report/integrated-business-planning-platforms-market/amp?utm_source=openai" target="_blank">source</a>]</li>
-                            <li>Leverage Dynamics: Stage 3 commands pricing power via premium AI features and 70-85% gross margins from fixed R&D costs, strong IP/patents, data network effects, and early-adopter demand in expanding AI TAM; outperforms Stages 1-2 (infra-heavy) and 5-6 (services-mixed). [<a href="https://dataintelo.com/report/integrated-business-planning-platforms-market?utm_source=openai" target="_blank">source</a>]</li>
-                        </ul>
-                        <p><strong>3. Competitive Dislocation</strong></p>
-                        <ul>
-                            <li>Incumbent Vulnerability: Established leaders like SAP IBP, Oracle Planning Cloud, and Anaplan suffer consolidation pressure in mature quadrant, with maturity scores of 9-10 but lower differentiation (7-8) versus AI-specialized challengers. [<a href="https://6sense.com/tech/budgeting-and-forecasting/pigment-market-share" target="_blank">source</a>]</li>
-                            <li>Mechanism of Displacement: ERP-embedded incumbents face displacement by agentic AI platforms offering autonomous re-planning, real-time forecasting, and explainability, eroding moats reliant on legacy integrations amid cloud/AI adoption. [<a href="https://6sense.com/tech/budgeting-and-forecasting/pigment-market-share" target="_blank">source</a>]</li>
-                        </ul>
-                        <p><strong>4. Unit Economics & Value Capture</strong></p>
-                        <ul>
-                            <li>Margin Profile: Profit pool shifts to Stages 3-4 where margins expand to 70-85% via premium pricing power, fixed cost structures, and scale, contrasting moderate 40-70% in upstream Stages 1-2 and execution Stages 5-6. [<a href="https://dataintelo.com/report/integrated-business-planning-platforms-market?utm_source=openai" target="_blank">source</a>]</li>
-                            <li>The Winning Configuration: Per-user/per-seat SaaS subscription with tiered modular bundles (EUR 2,350/month base scaling to EUR 28,200 annual ARPU for enterprises) positions Stage 3 specialists to capture value through AI differentiation and rapid deployment. [<a href="https://www.sap.com/belgique/products/scm/integrated-business-planning/pricing.html?utm_source=openai" target="_blank">source</a>]</li>
-                        </ul>
-                    </div>
-                    <div class="img-col">
-                        <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-3e1b19171d5d02289d72d323e13ce975-2vvdnjpk.jpg" alt="Top Down Market Analysis" style="width: 100%; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; margin-bottom: 20px;">
-                        <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-1cd3b6e14460a5e54549ced21d4634bc-bopdqiwl.jpg" alt="Bottom Up Market Analysis" class="sticky-img">
-                    </div>
-                </div>
-            </section>
-            <div class="section-separator"></div>
-
-            <!-- STEP 3: VALUE CHAIN -->
-            <section id="value-chain">
-                <h3>Value chain</h3>
-                <div class="split-container">
-                    <div class="text-col">
-                        <h4>Top 3 Value chain stage</h4>
-                        <p>Based on the comprehensive value chain analysis using the Strategic Position Score methodology (weighted combination of Defensibility 40%, Margin Potential 35%, and Growth 25%), the following three stages represent the most attractive investment opportunities in the AI-integrated business planning SaaS for enterprises managing cross-functional FP&A, revenue, workforce, and S&OP with $1B+ revenue. value chain:</p>
-                        <p><strong>🥇 Rank 1: Stage [3] - AI/Analytics Engine and Planning Intelligence</strong></p>
-                        <p>🔢 Strategic Score: 8.7<br>💬 STRATEGIC RATIONALE: Highest defensibility (data/IP moats), perfect margins (SaaS economics), and top growth (AI drivers) make it the value-creating core for specific sector.<br>🔎 KEY SUPPORTING EVIDENCE:</p>
-                        <ul>
-                            <li>70-85% gross margins. (Source: margins query - [<a href="https://dataintelo.com/report/integrated-business-planning-platforms-market?utm_source=openai" target="_blank">link</a>])</li>
-                            <li>11.6% CAGR + AI expansion; IP/"data moat". (Source: vendor landscape - [<a href="https://dataintelo.com/report/integrated-business-planning-market/amp?utm_source=openai" target="_blank">link</a>])</li>
-                        </ul>
-                        <p><strong>🥈 Rank 2: Stage [4] - Scenario Planning, Optimization, and Decision Support</strong></p>
-                        <p>🔢 Strategic Score: 8.1<br>💬 STRATEGIC RATIONALE: Strong tech/IP defensibility and high margins pair with solid AI growth, key for S&OP differentiation.<br>🔎 KEY SUPPORTING EVIDENCE:</p>
-                        <ul>
-                            <li>Patents on optimization. (Source: o9 IBP - [<a href="https://o9solutions.com/solutions/integrated-business-planning/digital-ibp/?utm_source=openai" target="_blank">link</a>])</li>
-                            <li>Premium tiered pricing. (Source: pricing - [<a href="https://www.sap.com/belgique/products/scm/integrated-business-planning/pricing.html?utm_source=openai" target="_blank">link</a>])</li>
-                        </ul>
-                        <p><strong>🥉 Rank 3: Stage [2] - Data Integration and Data Fabric</strong></p>
-                        <p>🔢 Strategic Score: 6.3<br>💬 STRATEGIC RATIONALE: High defensibility (complexity/regulation) and growth offset moderate margins; foundational for upstream value.<br>🔎 KEY SUPPORTING EVIDENCE:</p>
-                        <ul>
-                            <li>GDPR barriers. (Source: value chain - [<a href="https://dataintelo.com/report/integrated-business-planning-platforms-market?utm_source=openai" target="_blank">link</a>])</li>
-                            <li>12% CAGR cloud growth. (Source: market size - [<a href="https://dataintelo.com/report/integrated-business-planning-platforms-market?utm_source=openai" target="_blank">link</a>])</li>
-                        </ul>
-                    </div>
-                    <div class="img-col" style="position: static;">
-                        <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-602f675f2dc42e7c7b7ba5073f4aec79-i9rpetpg.jpg" alt="Top 3 Value Chain Stages" style="width: 100%; border-radius: 8px;">
-                    </div>
-                </div>
-
-                <h4>Companies sorted by value chain stage specialization</h4>
-                <div class="bf-legend-container">
-                    <div class="legend-item"><strong>Tiers:</strong> T1: Large Corp, T2: Scaleup, T3: Startup</div>
-                    <div class="legend-item"><span class='label-cap'>$100M</span> = Acquisition Capacity</div>
-                    <div class="legend-item"><span style='border-left:4px solid #dc2626; padding-left:5px; height:18px;'></span> = Hunter Posture</div>
-                </div>
-                <div class="battlefield-grid">
-                    <div class="stage-col">
-    <h4>Stage 1: Data Sources and Collection</h4>
-    <details class="actor-card border-Hunter">
-        <summary>
-            <div class="actor-header-flex">
-                <span>SAP S/4HANA</span>
-                <div class="actor-right-labels">
-                    <span class="label-tier">T1</span>
-                    <span class="label-cap">10000M</span>
-                </div>
-            </div>
-        </summary>
-        <div class="actor-body">
-            <p class="meta-row"><strong>Description:</strong> System of record for finance, sales, and operations data feeding Integrated Business Planning.</p>
-            <p class="meta-row"><strong>DE</strong> | Founded: 1972</p>
-            <p class="meta-row"><strong>Website:</strong> <a href="https://www.sap.com/s4hana" target="_blank">sap.com/s4hana</a> | <a href="https://www.sap.com/investors/en/why-invest/acquisitions.html?utm_source=openai" target="_blank">Source</a></p>
-            <div class="ws-box">
-                <p><strong>Weak Signals:</strong></p>
-                <ul>
-                    <li>SAP announced its intent to acquire WalkMe for approximately $1.5 billion in cash in June 2024, aiming to bolster digital adoption and AI-driven value realization, with the transaction closing targeted for 2024 pending regulatory approvals (<a href="https://www.sap.com/investors/en/why-invest/acquisitions.html?utm_source=openai" target="_blank">link</a>)</li>
-                    <li>SAP further announced the acquisition of SmartRecruiters in August 2025 to enhance its SAP SuccessFactors HR suite and AI-enabled talent workflows, with the deal expected to close in Q4 2025 (<a href="https://news.sap.com/2025/08/sap-to-acquire-smartrecruiters/?utm_source=openai" target="_blank">link</a>)</li>
-                </ul>
-            </div>
-            <div class="swot-grid-small">
-                <div class="sg-box s-green"><strong>S:</strong><ul><li>T1 Global Giant in Stage 1 data sources. High differentiation (8). Recent acquisitions like WalkMe ($1.5B) and SmartRecruiters show aggressive expansion.</li></ul></div>
-                <div class="sg-box s-red"><strong>W:</strong><ul><li>Legacy ERP focus vulnerable to AI disruption in downstream stages. Heavy reliance on integrations.</li></ul></div>
-                <div class="sg-box s-blue"><strong>O:</strong><ul><li>Acquisition River Logic: Acquire Stage 4 optimization to bolster AI planning stack amid 12% IBP market CAGR.</li><li>Acquisition Delfi: Snap up low-cap Stage 3 AI planner to accelerate agentic AI capabilities.</li></ul></div>
-                <div class="sg-box s-yellow"><strong>T:</strong><ul><li>Rivals Oracle Cloud ERP and Microsoft Dynamics 365 in Stage 1 data collection. Displacement risk from Stage 3 AI natives like Pigment.</li></ul></div>
-            </div>
-            
+            </nav>
         </div>
-    </details>
-    <details class="actor-card border-Hunter">
-        <summary>
-            <div class="actor-header-flex">
-                <span>Oracle Cloud ERP</span>
-                <div class="actor-right-labels">
-                    <span class="label-tier">T1</span>
-                    <span class="label-cap">10000M</span>
-                </div>
-            </div>
-        </summary>
-        <div class="actor-body">
-            <p class="meta-row"><strong>Description:</strong> ERP data for demand, inventory, and finance for large enterprises.</p>
-            <p class="meta-row"><strong>USA</strong> | Founded: 1977</p>
-            <p class="meta-row"><strong>Website:</strong> <a href="https://www.oracle.com/erp" target="_blank">oracle.com/erp</a> | <a href="https://investor.oracle.com/investor-news/news-details/2024/Oracle-Announces-Fiscal-2024-Fourth-Quarter-and-Fiscal-Full-Year-Financial-Results/default.aspx?utm_source=openai" target="_blank">Source</a></p>
-            <div class="ws-box">
-                <p><strong>Weak Signals:</strong></p>
-                <ul>
-                    <li>Oracle (ORCL) reported cash and cash equivalents of approximately $10.454 billion as of May 31, 2024 (fiscal 2024 year-end) and $10.786 billion as of May 31, 2025 (fiscal 2025 year-end) (<a href="https://investor.oracle.com/investor-news/news-details/2024/Oracle-Announces-Fiscal-2024-Fourth-Quarter-and-Fiscal-Full-Year-Financial-Results/default.aspx?utm_source=openai" target="_blank">link</a>)</li>
-                    <li>Oracle's market capitalization fluctuated between $470 billion and $525 billion in late 2024 to early 2025, reaching approximately $600 billion to $700 billion by mid-to-late 2025 (<a href="https://www.statmuse.com/money/ask/oracle-market-cap?utm_source=openai" target="_blank">link</a>)</li>
-                </ul>
-            </div>
-            <div class="swot-grid-small">
-                <div class="sg-box s-green"><strong>S:</strong><ul><li>T1 Global Giant with $10B+ cash reserves. Strong Stage 1 ERP data for demand/inventory. Market cap $600-700B.</li></ul></div>
-                <div class="sg-box s-red"><strong>W:</strong><ul><li>Moderate differentiation (7). Incumbent vulnerability to AI-native challengers per macro trends.</li></ul></div>
-                <div class="sg-box s-blue"><strong>O:</strong><ul><li>Acquisition Pigment: Acquire Stage 3 AI platform to defend against displacement in high-margin 8.7 score stage.</li><li>Acquisition Vena Solutions: Bolster FP&A planning with Hunted Stage 3 asset for cross-functional expansion.</li></ul></div>
-                <div class="sg-box s-yellow"><strong>T:</strong><ul><li>Direct rivalry from SAP S/4HANA and Microsoft Dynamics 365. ERP moats eroding to agentic AI platforms.</li></ul></div>
-            </div>
-            <div class="strat-inv-box"><strong>Strategic Involvement:</strong><ul><li>M&A_Race: Stage 3 AI Bidding Frenzy: Oracle, Microsoft, SAP Vie for Pigment's Agentic Moat (Confidence: 40, Priority: High Priority)</li><li>Strategic_Gap: FP&A Fortification: Oracle Targets Vena to Plug Stage 3 Excel Moat (Confidence: 50, Priority: Medium Priority)</li><li>Dependency_Squeeze: Stage 1 Squeeze: Kinaxis Caught Between SAP and Oracle Data Feeds (Confidence: 65, Priority: Medium Priority)</li></ul></div>
-        </div>
-    </details>
-    <details class="actor-card border-Hunter">
-        <summary>
-            <div class="actor-header-flex">
-                <span>Microsoft Dynamics 365</span>
-                <div class="actor-right-labels">
-                    <span class="label-tier">T1</span>
-                    <span class="label-cap">20000M</span>
-                </div>
-            </div>
-        </summary>
-        <div class="actor-body">
-            <p class="meta-row"><strong>Description:</strong> Integrated CRM/ERP data for revenue and workforce planning, growing in enterprise FP&A/S&OP.</p>
-            <p class="meta-row"><strong>USA</strong> | Founded: Unknown</p>
-            <p class="meta-row"><strong>Website:</strong> <a href="https://dynamics.microsoft.com" target="_blank">dynamics.microsoft.com</a> | <a href="https://www.kinaxis.com/en/solutions/platform?utm_source=openai" target="_blank">Source</a></p>
-            
-            <div class="swot-grid-small">
-                <div class="sg-box s-green"><strong>S:</strong><ul><li>T1 Global Giant, highest capacity $20B. Growing CRM/ERP adoption in FP&A/S&OP.</li></ul></div>
-                <div class="sg-box s-red"><strong>W:</strong><ul><li>Stage 1 focus limits control of high-value Stage 3 AI engine.</li></ul></div>
-                <div class="sg-box s-blue"><strong>O:</strong><ul><li>Acquisition Rollstack: Acquire micro Stage 3 BI planner to integrate into Dynamics ecosystem.</li><li>Acquisition Lative: Low-cap Hunted for data viz enhancements in planning intelligence.</li></ul></div>
-                <div class="sg-box s-yellow"><strong>T:</strong><ul><li>Competition from SAP S/4HANA and Oracle Cloud ERP. Threat from hyperscaler AI shift.</li></ul></div>
-            </div>
-            <div class="strat-inv-box"><strong>Strategic Involvement:</strong><ul><li>Strategic_Gap: BI Infusion: Microsoft Snaps Rollstack to Elevate Dynamics Stage 3 (Confidence: 65, Priority: Medium Priority)</li></ul></div>
-        </div>
-    </details>
-</div>
-<div class="stage-col">
-    <h4>Stage 2: Data Integration and Data Fabric</h4>
-    <details class="actor-card border-Fortress">
-        <summary>
-            <div class="actor-header-flex">
-                <span>Kinaxis Data Fabric</span>
-                <div class="actor-right-labels">
-                    <span class="label-tier">T2</span>
-                    <span class="label-cap">5000M</span>
-                </div>
-            </div>
-        </summary>
-        <div class="actor-body">
-            <p class="meta-row"><strong>Description:</strong> Built-in Maestro data harmonization core to Kinaxis's IBP platform.</p>
-            <p class="meta-row"><strong>Unknown</strong> | Founded: Unknown</p>
-            <p class="meta-row"><strong>Website:</strong> <a href="https://www.kinaxis.com/en/solutions/platform" target="_blank">kinaxis.com/en/solutions/platform</a> | <a href="https://www.kinaxis.com/en/solutions/platform?utm_source=openai" target="_blank">Source</a></p>
-            <div class="ws-box">
-                <p><strong>Weak Signals:</strong></p>
-                <ul>
-                    <li>Kinaxis' market capitalization in 2024–2025 fluctuated around C$3–4 billion, reaching approximately USD 3.27 billion as of January 2026 (<a href="https://companiesmarketcap.com/kinaxis/marketcap/?utm_source=openai" target="_blank">link</a>)</li>
-                    <li>Cash and cash equivalents ranged from approximately USD 0.32 billion (C$0.42–0.45 billion) in late 2024 to mid-2025 (<a href="https://companiesmarketcap.com/kinaxis/cash-on-hand/?utm_source=openai" target="_blank">link</a>)</li>
-                </ul>
-            </div>
-            <div class="swot-grid-small">
-                <div class="sg-box s-green"><strong>S:</strong><ul><li>T2 Large, Stage 2 leader. Maestro data harmonization core. Market cap ~$3B.</li></ul></div>
-                <div class="sg-box s-red"><strong>W:</strong><ul><li>Dependencies on Stage 1. Moderate capacity limits aggression.</li></ul></div>
-                <div class="sg-box s-blue"><strong>O:</strong><ul><li>Alliance SAP S/4HANA: Partner for seamless ERP data feeds to Kinaxis IBP platform.</li><li>Alliance Oracle Cloud ERP: Joint integration to capture growing Stage 2 demand.</li></ul></div>
-                <div class="sg-box s-yellow"><strong>T:</strong><ul><li>Rivals MuleSoft and Informatica in data integration. Upstream Stage 1 consolidation.</li></ul></div>
-            </div>
-            <div class="strat-inv-box"><strong>Strategic Involvement:</strong><ul><li>Alliance: Data Harmony Pact: Kinaxis-SAP Alliance to Secure Stage 2 Feeds (Confidence: 65, Priority: Medium Priority)</li><li>Dependency_Squeeze: Stage 1 Squeeze: Kinaxis Caught Between SAP and Oracle Data Feeds (Confidence: 65, Priority: Medium Priority)</li></ul></div>
-        </div>
-    </details>
-    <details class="actor-card border-Fortress">
-        <summary>
-            <div class="actor-header-flex">
-                <span>MuleSoft</span>
-                <div class="actor-right-labels">
-                    <span class="label-tier">T1</span>
-                    <span class="label-cap">20000M</span>
-                </div>
-            </div>
-        </summary>
-        <div class="actor-body">
-            <p class="meta-row"><strong>Description:</strong> API-led data integration for ERP feeds.</p>
-            <p class="meta-row"><strong>USA</strong> | Founded: 2006</p>
-			<p class="meta-row"><strong>Investors:</strong> N/A (owned by Salesforce)</p>
-            <p class="meta-row"><strong>Website:</strong> <a href="https://www.mulesoft.com" target="_blank">mulesoft.com</a> | <a href="https://www.kinaxis.com/en/solutions/platform?utm_source=openai" target="_blank">Source</a></p>
-            
-            <div class="swot-grid-small">
-                <div class="sg-box s-green"><strong>S:</strong><ul><li>T1 Giant via Salesforce ownership. API-led integration for ERP.</li></ul></div>
-                <div class="sg-box s-red"><strong>W:</strong><ul><li>Early undifferentiated quadrant. Acquired 2018, less agile.</li></ul></div>
-                <div class="sg-box s-blue"><strong>O:</strong><ul><li>Alliance Kinaxis Maestro: API connectivity to enhance Stage 3 AI planning flows.</li><li>Alliance Informatica: Combined data fabric for enterprise IBP resilience.</li></ul></div>
-                <div class="sg-box s-yellow"><strong>T:</strong><ul><li>Competition from Informatica and Talend. Salesforce priorities may dilute focus.</li></ul></div>
-            </div>
-            
-        </div>
-    </details>
-    <details class="actor-card border-Fortress">
-        <summary>
-            <div class="actor-header-flex">
-                <span>Informatica</span>
-                <div class="actor-right-labels">
-                    <span class="label-tier">T2</span>
-                    <span class="label-cap">5000M</span>
-                </div>
-            </div>
-        </summary>
-        <div class="actor-body">
-            <p class="meta-row"><strong>Description:</strong> Enterprise data integration and master data management.</p>
-            <p class="meta-row"><strong>USA</strong> | Founded: 1993</p>
-            <p class="meta-row"><strong>Website:</strong> <a href="https://www.informatica.com" target="_blank">informatica.com</a> | <a href="https://www.kinaxis.com/en/solutions/platform?utm_source=openai" target="_blank">Source</a></p>
-            
-            <div class="swot-grid-small">
-                <div class="sg-box s-green"><strong>S:</strong><ul><li>T2 Large leader in enterprise data integration/MDM.</li></ul></div>
-                <div class="sg-box s-red"><strong>W:</strong><ul><li>Stage 2 dependencies. Moderate differentiation (6).</li></ul></div>
-                <div class="sg-box s-blue"><strong>O:</strong><ul><li>Alliance Microsoft Dynamics 365: Data integration alliance for Dynamics FP&A growth.</li><li>Alliance SAP IBP: MDM partnership to feed AI planning engine.</li></ul></div>
-                <div class="sg-box s-yellow"><strong>T:</strong><ul><li>Rivals Kinaxis Data Fabric and MuleSoft. Cloud-native disruptors.</li></ul></div>
-            </div>
-            
-        </div>
-    </details>
-    <details class="actor-card border-Fortress">
-        <summary>
-            <div class="actor-header-flex">
-                <span>Talend</span>
-                <div class="actor-right-labels">
-                    <span class="label-tier">T3</span>
-                    <span class="label-cap">5000M</span>
-                </div>
-            </div>
-        </summary>
-        <div class="actor-body">
-            <p class="meta-row"><strong>Description:</strong> ETL for planning data.</p>
-            <p class="meta-row"><strong>USA</strong> | Founded: 2005</p>
-			<p class="meta-row"><strong>Investors:</strong> Thoma Bravo</p>
-            <p class="meta-row"><strong>Website:</strong> <a href="https://www.talend.com" target="_blank">talend.com</a> | <a href="https://www.kinaxis.com/en/solutions/platform?utm_source=openai" target="_blank">Source</a></p>
-            
-            <div class="swot-grid-small">
-                <div class="sg-box s-green"><strong>S:</strong><ul><li>ETL specialist, PE-backed T3 Medium.</li></ul></div>
-                <div class="sg-box s-red"><strong>W:</strong><ul><li>Challenger quadrant. Acquired 2021, limited scale.</li></ul></div>
-                <div class="sg-box s-blue"><strong>O:</strong><ul><li>Alliance Oracle Cloud ERP: ETL alliance for Oracle SCM execution.</li><li>Alliance Kinaxis Data Fabric: Data pipeline partnership for Stage 2 harmony.</li></ul></div>
-                <div class="sg-box s-yellow"><strong>T:</strong><ul><li>Stronger leaders like Informatica. Acquisition risk.</li></ul></div>
-            </div>
-            
-        </div>
-    </details>
-</div>
-<div class="stage-col">
-    <h4>Stage 3: AI/Analytics Engine</h4>
-    <details class="actor-card border-Hunted">
-        <summary>
-            <div class="actor-header-flex">
-                <span>Pigment</span>
-                <div class="actor-right-labels">
-                    <span class="label-tier">T4</span>
-                    <span class="label-cap">120M</span>
-                </div>
-            </div>
-        </summary>
-        <div class="actor-body">
-            <p class="meta-row"><strong>Description:</strong> AI-integrated SaaS for cross-functional FP&A/revenue/workforce/S&OP planning for $1B+ enterprises.</p>
-            <p class="meta-row"><strong>FR</strong> | Founded: 2016 | <strong>Funding:</strong> Series D</p>
-			<p class="meta-row"><strong>Investors:</strong> ICONIQ Growth, Sandberg Bernthal Venture Partners</p>
-            <p class="meta-row"><strong>Website:</strong> <a href="https://www.pigment.com" target="_blank">pigment.com</a> | <a href="https://www.pigment.com/newsroom/pigment-announces-145m-series-d?utm_source=openai" target="_blank">Source</a></p>
-            <div class="ws-box">
-                <p><strong>Weak Signals:</strong></p>
-                <ul>
-                    <li>Pigment finalized a $145 million Series D funding round on April 4, 2024, led by ICONIQ Growth with participation from Sandberg Bernthal Venture Partners and existing investors (<a href="https://www.pigment.com/newsroom/pigment-announces-145m-series-d?utm_source=openai" target="_blank">link</a>)</li>
-                    <li>Pigment's technological differentiation is centered on AI-enhanced planning, AI agents, and native 'Pigment AI' features, including new Agent capabilities announced in 2024–2025 (<a href="https://www.pigment.com/fr/ai-info-about-pigment?utm_source=openai" target="_blank">link</a>)</li>
-                </ul>
-            </div>
-            <div class="swot-grid-small">
-                <div class="sg-box s-green"><strong>S:</strong><ul><li>Elite AI agentic platform in Stage 3 (8.7 score). Founder Romain Niccoli (Criteo scale). $145M Series D, Gartner recognition, fast time-to-value, cross-functional moat with Supervisor/Analyst/Planner agents.</li></ul></div>
-                <div class="sg-box s-red"><strong>W:</strong><ul><li>Youthful (2016), lacks incumbent lock-in vs SAP/Anaplan. Opaque team/sales, Europe focus, AI hype risk.</li></ul></div>
-                <div class="sg-box s-blue"><strong>O:</strong><ul><li>Exit/Sale Microsoft Azure AI: Sell to hyperscaler for global scale and AI integration in $25B IBP market.</li><li>Exit/Sale SAP IBP: Strategic acquisition to modernize legacy IBP with agentic AI and UX superiority.</li></ul></div>
-                <div class="sg-box s-yellow"><strong>T:</strong><ul><li>Incumbents SAP IBP/Anaplan/Jedox with deeper pockets/ERP entrenchment. Macro downturns, AI commoditization by hyperscalers, regulatory GDPR/AI compliance.</li></ul></div>
-            </div>
-            <div class="strat-inv-box"><strong>Strategic Involvement:</strong><ul><li>M&A_Race: Stage 3 AI Bidding Frenzy: Oracle, Microsoft, SAP Vie for Pigment's Agentic Moat (Confidence: 40, Priority: High Priority)</li><li>Squeeze: Incumbent Squeeze: Pigment and o9 Chip Away at SAP IBP's Stage 3 Dominance (High Priority)</li></ul></div>
-        </div>
-    </details>
-	<!-- Other actors for stage 3 -->
-</div>
-<div class="stage-col">
-    <h4>Stage 4: Scenario Planning</h4>
-	<!-- Actors for stage 4 -->
-</div>
-<div class="stage-col">
-    <h4>Stage 5: Decision Execution</h4>
-	<!-- Actors for stage 5 -->
-</div>
-<div class="stage-col">
-    <h4>Stage 6: Performance Management</h4>
-	<!-- Actors for stage 6 -->
-</div>
-                </div>
-                
-                <h4>Value chain stages description</h4>
-                <div class="stage-desc-grid">
-                    <div class="sd-box"><p><strong>STAGE [1]: Data Sources and Collection</strong></p><p>This upstream stage involves sourcing raw data from enterprise systems (finance, sales, operations, HR) and external signals (market trends, weather) essential for accurate cross-functional planning in $1B+ enterprises. It adds value by providing the foundational data fuel for AI IBP without which downstream planning fails.</p><p>🔢 Strategic Score: 6.3 (Strong)</p></div>
-                    <div class="sd-box"><p><strong>STAGE [2]: Data Integration and Data Fabric</strong></p><p>This stage harmonizes disparate data via ETL pipelines, APIs, and data fabrics, creating a unified source for AI planning. Value lies in enabling real-time, compliant data flows for cross-functional IBP in complex $1B+ environments.</p><p>🔢 Strategic Score: 6.3 (Strong)</p></div>
-                    <div class="sd-box"><p><strong>STAGE [3]: AI/Analytics Engine and Planning Intelligence</strong></p><p>Core stage where AI/ML processes unified data into forecasts, diagnostics, and insights for FP&A/revenue/workforce/S&OP. High value from enabling predictive/prescriptive planning accuracy.</p><p>🔢 Strategic Score: 8.7 (Exceptional)</p></div>
-                    <div class="sd-box"><p><strong>STAGE [4]: Scenario Planning, Optimization, and Decision Support</strong></p><p>Builds on AI intelligence for what-if scenarios, constraint optimization, S&OP alignment. Critical for enterprise decision-making in revenue/FP&A.</p><p>🔢 Strategic Score: 8.1 (Exceptional)</p></div>
-                    <div class="sd-box"><p><strong>STAGE [5]: Decision Execution and Workflow Orchestration</strong></p><p>Translates plans into automated actions via ERP/MES/CRM pushes, workflows for S&OP execution.</p><p>🔢 Strategic Score: 5.9 (Moderate)</p></div>
-                    <div class="sd-box"><p><strong>STAGE [6]: Performance Management, Monitoring, and Governance</strong></p><p>Monitors KPIs, detects drift, ensures compliance/post-ROI tracking.</p><p>🔢 Strategic Score: 5.8 (Moderate)</p></div>
-                </div>
+        <a href="https://www.proplace.co" target="_blank" class="cta-btn">Schedule a strategy call</a>
+    </aside>
 
-            </section>
-            <div class="section-separator"></div>
+    <main class="content-area">
 
-            <!-- STEP 4: COMPETITION -->
-            <section id="competition">
-                <h3>Competition</h3>
-                <div class="split-container">
-                    <div class="text-col">
-                        <h4>Competition overview</h4>
-                        <p><strong>1. THE PREDATORS (total companies: 11)</strong></p><p>High Capacity • Active Posture. The 'Hunters' with overwhelming firepower and a mandate to deploy it. Actors in this quadrant include SAP S/4HANA, Oracle Cloud ERP, and Microsoft Dynamics 365.</p>
-                        <p><strong>2. THE GIANTS (total companies: 12)</strong></p><p>High Capacity • Passive Posture. The 'Sleeping Giants' with deep pockets but low Mergers and Acquisitions motive. Companies like Kinaxis Data Fabric and MuleSoft exemplify actors in this quadrant.</p>
-                        <p><strong>3. THE ASPIRANTS (total companies: 1)</strong></p><p>Low Capacity • Active Posture. The 'Climbers' who are aggressive and looking to make a move. An actor in this quadrant is Jedox.</p>
-                        <p><strong>4. THE POTENTIAL TARGETS (total companies: 9)</strong></p><p>Low Capacity • Passive Posture. The 'Targets' or 'Partners' who are prime candidates for acquisition. Examples include LLamasoft (Coupa) and River Logic.</p>
-                        
-                        <h4>Competitors list</h4>
-                        <h4>Predators</h4>
-						<p>SAP S/4HANA: System of record for finance, sales, and operations data. <a href="https://www.sap.com/s4hana" target="_blank">Website</a><br><br>Oracle Cloud ERP: ERP data for demand, inventory, and finance. <a href="https://www.oracle.com/erp" target="_blank">Website</a><br><br>Microsoft Dynamics 365: Integrated CRM/ERP data for revenue and workforce planning. <a href="https://dynamics.microsoft.com" target="_blank">Website</a><br><br>SAP IBP: AI/ML for demand and inventory planning, market leader. <a href="https://www.sap.com/products/scm/integrated-business-planning.html" target="_blank">Website</a><br><br>Anaplan: Connected AI planning platform. <a href="https://www.anaplan.com" target="_blank">Website</a><br><br>Microsoft Azure AI: AI services for forecasting and analytics. <a href="https://azure.microsoft.com/en-us/solutions/ai" target="_blank">Website</a><br><br>Oracle SCM: Supply Chain Management solutions. <a href="https://www.oracle.com/scm" target="_blank">Website</a></p>
-						
-						<h4>Giants</h4>
-						<p>Kinaxis Data Fabric: Built-in Maestro data harmonization core. <a href="https://www.kinaxis.com/en/solutions/platform" target="_blank">Website</a><br><br>MuleSoft: API-led data integration for ERP feeds. <a href="https://www.mulesoft.com" target="_blank">Website</a><br><br>Informatica: Enterprise data integration and master data management. <a href="https://www.informatica.com" target="_blank">Website</a><br><br>Talend: ETL for planning data. <a href="https://www.talend.com" target="_blank">Website</a><br><br>Kinaxis Maestro: AI-powered planning intelligence. <a href="https://www.kinaxis.com/en/solutions/platform" target="_blank">Website</a><br><br>o9 Solutions: Digital Brain AI for planning. <a href="https://o9solutions.com/solutions/integrated-business-planning/digital-ibp/" target="_blank">Website</a><br><br>IBM Watson: AI analytics services. <a href="https://www.ibm.com/watson" target="_blank">Website</a><br><br>Board International: Performance management solutions. <a href="https://www.board.com" target="_blank">Website</a><br><br>Planful: Cloud EPM/IBP platform. <a href="https://planful.com" target="_blank">Website</a></p>
-
-						<h4>Aspirants</h4>
-						<p>Jedox: Excel-based, cloud-enabled EPM/BI suite. <a href="https://www.jedox.com" target="_blank">Website</a></p>
-
-						<h4>Targets</h4>
-						<p>LLamasoft (Coupa): Optimization solvers for supply chain. <a href="https://www.coupa.com/products/supply-chain-design-and-planning" target="_blank">Website</a><br><br>River Logic: Prescriptive optimization solutions. <a href="https://riverlogic.com" target="_blank">Website</a><br><br>Delfi: Budgeting and forecasting platform.<br><br>Rollstack: Data visualization and planning/BI.<br><br>Lative: Data visualization focused BI.<br><br>Smart Retail Solutions: Planning/BI for retail.<br><br>Pigment: AI-integrated SaaS for cross-functional planning. <a href="https://www.pigment.com" target="_blank">Website</a><br><br>Vena Solutions: Cloud-based FP&A with Excel-centric tools. <a href="https://www.venasolutions.com" target="_blank">Website</a></p>
-                    </div>
-                    <div class="img-col">
-                        <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-915f8896f6398d88b9d2132abcb2b392-hh0rmi5m.jpg" alt="Competition Overview" class="sticky-img">
-                    </div>
-                </div>
-            </section>
-            <div class="section-separator"></div>
-
-             <!-- STEP 5: MARKET STUDY -->
-            <section id="market-study">
-                <h3>Market study</h3>
-                <div class="split-container">
-                    <div class="text-col">
-                        <h4>Market Opportunity Score</h4>
-                        <p>Data & Analytics > AI-Driven Integrated Business Planning Platform<br>B2B > SaaS</p>
-                        <hr class="dotted-line">
-                        <p><strong>TOTAL MARKET ATTRACTIVITY SCORE: 86.75/100</strong></p>
-                        <ul>
-                            <li>IS IT AN ATTRACTIVE MARKET ? (Dynamics): 90/100 × 25% = 22.5 points</li>
-                            <li>IS IT A WINNABLE MARKET ? (Competition): 85/100 × 25% = 21.25 points</li>
-                            <li>IS IT A PENETRABLE MARKET ? (GTM): 80/100 × 25% = 20 points</li>
-                            <li>IS IT A REWARDING MARKET ? (Exits): 92/100 × 25% = 23 points</li>
-                        </ul>
-                         <hr class="dotted-line">
-                        <p><strong>❓ Market Definition</strong></p>
-                        <p>Integrated Business Planning (IBP) software for $1B+ enterprises unifies FP&A, supply chain, and sales planning into a single source of truth. The market is worth approximately $8.7B globally, driven by a 12% CAGR as firms shift from siloed spreadsheets to AI-augmented predictive modeling.</p>
-                        <p><strong>💬 Our Market Thesis</strong></p>
-                        <p>Legacy players in the $8.7B Integrated Business Planning market, like Anaplan and SAP, are caught in an innovator's dilemma, unable to adopt agentic AI-natural language modeling without cannibalizing their existing business models based on high-priced implementation consultants. This paralysis, triggered by the maturation of Large Language Models (LLMs), creates a clear opening for a startup to solve the 'technical debt' of legacy systems and build a new market leader.</p>
-                        <p><strong>🧠 Our Conviction & Wager on this Market:</strong></p>
-                        <p>🟢 HIGH: Our conviction is high because this market presents a rare alignment of timing and structure. The AI-integrated engine shift has opened a temporary window for a decisive founder to build a dominant data moat and capture the market before the opportunity becomes consensus. We are betting that the superiority of a 'decision-intelligence' platform over a mere 'data-aggregation' tool will drive a massive platform transition in the next 36 months.</p>
-                         <hr class="dotted-line">
-                        <p><strong>🌊 ATTRACTIVE MARKET (Market Dynamics) | Score: 90/100</strong></p>
-                        <ul>
-                            <li>Market Size (23/25): TAM: $8.7B • SAM: $2.3B (Europe Focus) • SOM: $69M (Targeting 3% of SAM near-term) • CAGR: 12%.</li>
-                            <li>Growth Drivers (24/25): Urgent need for Supply Chain resilience • Shift to cloud-native stacks • General desire for AI-driven automation in FP&A.</li>
-                            <li>Timing Why Now (24/25): Legacy software is hitting a 'complexity wall' where it is too hard for non-technical users to query or adjust models in real-time.</li>
-                            <li>Market Risks (19/25): Lengthy enterprise sales cycles • Integration friction with legacy ERP 'centers of gravity'.</li>
-                        </ul>
-                    </div>
-                    <div class="img-col">
-                        <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-758e39e99f5e54de2f5baad8f8e4ab21-7jlkt7n3.jpg" alt="Market Study Analysis" class="sticky-img">
-                    </div>
-                </div>
-            </section>
-            <div class="section-separator"></div>
-
-            <!-- STEP 6: STRATEGIC SCENARIOS -->
-            <section id="strategic-scenarios">
-                <h3>Strategic scenarios</h3>
-                <div class="split-container">
-                    <div class="text-col">
-                        <h4>⚔️ ACQUISITION BATTLES (HIGH CONFLICT)</h4>
-                        <details class="scenario-card">
-                            <summary>Stage 3 AI Bidding Frenzy: Oracle, Microsoft, SAP Vie for Pigment's Agentic Moat<span class="scenario-summary-text">Multiple hunters explicitly target elite AI/Analytics Engine and Planning Intelligence providers like Pigment to counter incumbent vulnerability in macro dislocation; Oracle lists Pigment for defense, Microsoft for Integrated Business Planning leadership, SAP threats align with acquisition logic.</span></summary>
-                            <div class="scenario-details">
-                                <p><strong>Rationale:</strong> Multiple hunters explicitly target elite Stage 3 Pigment to counter incumbent vulnerability in macro dislocation. This is High Priority as it creates monopoly control of high-margin (70-85%) Stage 3 control point.</p>
-                                <p><strong>Deal Breaker:</strong> FTC/EU antitrust scrutiny on T1 convergence, tech stack mismatch, founder retention post-acquisition.</p>
-                                <p><strong>Synergy:</strong> [HARD COST] Acquires IP and agents bypassing 18-24 months R&D ($300-500M savings). [SOFT REVENUE] Enables premium tiered SaaS upsell, potentially $1B+ ARR uplift.</p>
-                                <p><strong>Confidence:</strong> 40% | <strong>Priority:</strong> High | <strong>Timeline:</strong> MID-TERM</p>
-                                <p><strong>Financials:</strong> Soft Revenue ($1000M) + Hard Cost ($300M) = Total $1300M</p>
-                            </div>
-                        </details>
-                        <details class="scenario-card">
-                            <summary>Prescriptive Optimization Sprint: SAP and Anaplan Race for River Logic's Stage 4 Edge<span class="scenario-summary-text">SAP IBP and Anaplan opportunities explicitly call out River Logic to complete Integrated Business Planning stacks with Scenario Planning, Optimization, and Decision Support solvers; aligns with SAP's aggressive acquisition history.</span></summary>
-                            <div class="scenario-details">
-                                <p><strong>Rationale:</strong> SAP IBP and Anaplan opportunities explicitly call out River Logic to complete IBP stacks. Timeline is Short-Term due to target's low capacity and bankruptcy risk.</p>
-                                <p><strong>Deal Breaker:</strong> Target's runway exhaustion, IP transfer friction, competing bids.</p>
-                                <p><strong>Synergy:</strong> [HARD COST] Consolidation unlocks fixed-cost optimization IP ($100M+ savings). [SOFT REVENUE] Enables autonomous re-planning upsell in agentic era.</p>
-                                <p><strong>Confidence:</strong> 40% | <strong>Priority:</strong> High | <strong>Timeline:</strong> SHORT-TERM</p>
-                                <p><strong>Financials:</strong> Soft Revenue ($0M) + Hard Cost ($100M) = Total $100M</p>
-                            </div>
-                        </details>
-
-                        <h4>🤝 INEVITABLE ALLIANCES (HIGH SYNERGY)</h4>
-                        <details class="scenario-card">
-                            <summary>Agentic AI Pact: Pigment-o9 Alliance to Challenge Incumbents<span class="scenario-summary-text">Pigment and Kinaxis opportunities suggest an AI/Analytics Engine and Planning Intelligence alliance versus SAP and Anaplan.</span></summary>
-                             <div class="scenario-details">
-                                <p><strong>Rationale:</strong> Pigment and Kinaxis/Pigment opps suggest Stage 3 alliance vs SAP/Anaplan. Medium Priority for growth in US/Europe.</p>
-                                <p><strong>Deal Breaker:</strong> Hyperscaler acqui preempts, IP sharing friction.</p>
-                                <p><strong>Synergy:</strong> [SOFT REVENUE] Co-sell governance + graph models for enterprise wins ($500M combined ARR).</p>
-                                <p><strong>Confidence:</strong> 65% | <strong>Priority:</strong> Medium | <strong>Timeline:</strong> MID-TERM</p>
-                                <p><strong>Financials:</strong> Soft Revenue ($500M) + Hard Cost ($0M) = Total $500M</p>
-                            </div>
-                        </details>
-                    </div>
-                    <div class="img-col">
-                        <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-6759e8d6c5d2edaf6d9bac9baf1b0df7-mr0gnlb2.jpg" alt="Strategic Scenarios Map" class="sticky-img">
-                    </div>
-                </div>
-            </section>
-            <div class="section-separator"></div>
-            
-            <!-- STEP 7: SYNERGIES -->
-            <section id="synergies">
-                <h3>Synergies</h3>
-                <div class="split-container">
-                    <div class="text-col">
-                        <h4>Synergy legend</h4>
-                        <p>The table systematically organizes strategic scenarios impacting key market players, highlighting potential M&A battles, inevitable alliances, squeeze threats, and more. Each scenario is financially quantified with pessimistic estimates for soft revenue and hard cost synergies, providing a clear economic impact. Scenarios are sorted by their total financial impact.</p>
-                         <p><strong>Scenarios involving Pigment copy</strong></p>
-                        <ul>
-                            <li>Stage 3 AI Bidding Frenzy: Oracle, Microsoft, SAP Vie for Pigment's Agentic Moat</li>
-                            <li>Incumbent Squeeze: Pigment and o9 Chip Away at SAP IBP's Stage 3 Dominance</li>
-                            <li>Agentic AI Pact: Pigment-o9 Alliance to Challenge Incumbents</li>
-                            <li>Stage 3 Siege: Jedox and Pigment Assault SAP's IBP Fortress</li>
-                        </ul>
-                    </div>
-                    <div class="img-col">
-                        <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-f3c52d7c6d696760bf671f5cbf889f03-bio0yzmv.jpg" alt="Synergies Visual Map" class="sticky-img">
-                    </div>
-                </div>
-
-                <h4>Synergy detailed table</h4>
-                <div class="table-responsive">
-                    <table class="synergies-table">
-                        <thead>
-                            <tr>
-                                <th>📅 Type</th>
-                                <th class="col-summary">Summary</th>
-                                <th>Actor</th>
-                                <th>Target</th>
-                                <th>Threatened</th>
-                                <th>Attackers</th>
-                                <th>Fin. Total ($M)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>⚔️</td>
-                                <td class="col-summary">Multiple hunters explicitly target elite AI providers like Pigment to counter incumbent vulnerability in macro dislocation.</td>
-                                <td>Oracle, MSFT, SAP</td>
-                                <td>Pigment</td>
-                                <td></td>
-                                <td></td>
-                                <td>1,300</td>
-                            </tr>
-                            <tr>
-                                <td>🤝</td>
-                                <td class="col-summary">Pigment and o9 Solutions opportunities suggest an AI/Analytics Engine alliance versus SAP and Anaplan.</td>
-                                <td>Pigment, o9</td>
-                                <td></td>
-                                <td></td>
-                                <td></td>
-                                <td>500</td>
-                            </tr>
-                            <tr>
-                                <td>🕳️</td>
-                                <td class="col-summary">Oracle's explicit opportunity to acquire Hunted Vena bolsters cross-functional FP&A amid moderate differentiation weakness.</td>
-                                <td>Oracle</td>
-                                <td>Vena Solutions</td>
-                                <td></td>
-                                <td></td>
-                                <td>500</td>
-                            </tr>
-                            <tr>
-                                <td>🧩</td>
-                                <td class="col-summary">Anaplan's post-private posture and explicit targets signal roll-up for FP&A and S&OP breadth.</td>
-                                <td>Anaplan</td>
-                                <td>Planful, Vena</td>
-                                <td></td>
-                                <td></td>
-                                <td>200</td>
-                            </tr>
-                             <tr>
-                                <td>⚔️</td>
-                                <td class="col-summary">SAP and Anaplan opportunities explicitly call out River Logic to complete IBP stacks with optimization solvers.</td>
-                                <td>SAP, Anaplan</td>
-                                <td>River Logic</td>
-                                <td></td>
-                                <td></td>
-                                <td>100</td>
-                            </tr>
-                            <tr>
-                                <td>🕳️</td>
-                                <td class="col-summary">Microsoft's opportunity targets micro Hunted Rollstack for BI in its FP&A gap.</td>
-                                <td>Microsoft</td>
-                                <td>Rollstack</td>
-                                <td></td>
-                                <td></td>
-                                <td>50</td>
-                            </tr>
-                            <tr>
-                                <td>🛡️</td>
-                                <td class="col-summary">Stage 3 Siege: Jedox and Pigment Assault SAP's IBP Fortress</td>
-                                <td>SAP IBP</td>
-                                <td></td>
-                                <td>SAP IBP</td>
-                                <td>Jedox, Pigment</td>
-                                <td>0</td>
-                            </tr>
-                            <tr>
-                                <td>🗜️</td>
-                                <td class="col-summary">Macro dislocation positions AI natives Pigment and o9 to erode SAP's maturity moat via superior agentic user experience.</td>
-                                <td></td>
-                                <td></td>
-                                <td>SAP IBP</td>
-                                <td>Pigment, o9</td>
-                                <td>0</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-            <div class="section-separator"></div>
-            
-            <!-- STEP 8: COMPANY ANALYSIS -->
+        <section id="market">
             <div class="split-container">
                 <div class="text-col">
-                    <section id="value-proposition">
-                        <h3>Value proposition</h3>
-                        <p>Pigment provides an integrated planning platform, powered by agentic AI, designed to improve how businesses plan, make decisions, and drive growth. The platform aims to be easy to use yet powerful and robust enough to handle the complexities of enterprise-level planning, offering the fastest time to value for any business user. It helps businesses quickly analyze, model, and plan for various scenarios, adapt to changes, and enable employees to focus on meaningful work by automating routine tasks, ultimately leading to more resilient teams and a more performant business.</p>
-                        <h4>Ideal Customer Profile (ICP)</h4>
-                        <p>Large businesses and enterprise-level companies. Target users and departments include Finance teams, Sales teams (for revenue planning, sales capacity planning), HR teams (for workforce planning), and Supply Chain teams (for S&OP).</p>
-                    </section>
-        
-                    <section id="product">
-                        <h3>Product</h3>
-                        <h4>Core Solution</h4>
-                        <p>Pigment offers an integrated planning platform with agentic AI capabilities designed for businesses to analyze, model, and plan. It provides a unified enterprise platform for various business users, particularly within finance, sales, and HR, enabling them to make decisions, adapt to change, and drive growth by consolidating data and automating routine tasks using AI.</p>
-                        <h4>Key Features</h4>
-                        <ul>
-                            <li>Agentic AI for proactive business planning (Supervisor, Analyst, Planner agents)</li>
-                            <li>Integrated financial, sales, workforce, and supply chain planning tools</li>
-                            <li>Scenario simulation and outcome analysis</li>
-                            <li>Natural language processing for reporting and data cleaning</li>
-                             <li>Enterprise-level security and scalability</li>
-                        </ul>
-                    </section>
-        
-                    <section id="business-model">
-                        <h3>Business model</h3>
-                        <p>SaaS (Software-as-a-Service) model based on Licenses sold through Order Forms. Supplemental Services (including integration, configuration, training) are also offered. Licenses are per Authorized User. All Fees are exclusive of taxes and invoices are due within thirty (30) days.</p>
-                     </section>
-        
-                    <section id="team">
-                        <h3>Team</h3>
-                        <p>The company vision is to build a unified enterprise platform with the fastest time to value for any business user, enabling employees to focus on meaningful work. The legal representative and Head of Publication is Romain Niccoli.</p>
-                    </section>
-        
-                    <section id="ceo">
-                        <h3>CEO</h3>
-                        <h4>EXECUTIVE ASSESSMENT</h4>
-                        <p><strong>Founder Archetype:</strong> Romain Niccoli is a quintessential Product-Led Founder with deep technical roots.</p>
-                        <p><strong>Pedigree Signal:</strong> His education at Mines Paris - PSL and 12+ years scaling Criteo to a Nasdaq-listed company represent a high-caliber pedigree in tech leadership.</p>
-                        <p><strong>Commercial Fit:</strong> His extensive experience founding and scaling Criteo de-risks Pigment’s venture, aligning tightly with the company's goals to disrupt business planning software with robust engineering.</p>
-                    </section>
+                    <h3>Market Sizing</h3>
+                    <h4>Top-Down Market Analysis (Funnel Approach)</h4>
+                    <p><strong>Total Addressable Market (TAM): USD 8.7 billion</strong><br>
+                    Perimeter: Global AI-driven IBP platforms market size, including software and services with AI integration for cross-functional planning (2024)<br>
+                    Source Data: <a href="https://dataintelo.com/report/integrated-business-planning-platforms-market?utm_source=openai" target="_blank">DataIntelo IBP Platforms Market Report</a>
+                    </p>
+                     <p><strong>Serviceable Available Market (SAM): USD 2.1-2.3 billion</strong><br>
+                    Perimeter: AI-driven IBP platform market size in Europe, focusing on software and services for integrated planning (2024)<br>
+                    Logic: Filtered for our specific sector and geography.<br>
+                    Source Verification: <a href="https://growthmarketreports.com/report/integrated-business-planning-market?utm_source=openai" target="_blank">Growth Market Reports</a> and DataIntelo
+                    </p>
+                    <p><strong>Serviceable Obtainable Market (SOM): USD 69 million</strong><br>
+                    Perimeter: Realistic near-term target: 3% market share of SAM for early-stage AI-specific niche player<br>
+                    Logic: Realistic near-term target based on competitive landscape.<br>
+                    Source: Derived from <a href="https://growthmarketreports.com/report/integrated-business-planning-market?utm_source=openai" target="_blank">Growth Market Reports</a>
+                    </p>
+                   
+                    <h4>Bottom-Up Market Analysis (Calculated Approach)</h4>
+                    <p>This approach calculates the total market size by multiplying the validated number of potential customers by a verified average price point.</p>
+                    <p><strong>1. Customer Segment (Volume): 2,000-5,000</strong><br>
+                    Who they are: Large enterprises ($1B+ revenue) in manufacturing, retail, healthcare, BFSI, IT & Telecom, Energy & Utilities; Europe; complex supply chains, AI adopters in FP&A/S&OP<br>
+                    Validated Source: <a href="https://marketintelo.com/report/integrated-business-planning-market" target="_blank">Market Intelo IBP Market Report</a>
+                    </p>
+                    <p><strong>2. Unit Economics (Price): EUR 28,200</strong><br>
+                    What this represents: Average annual ARPU for enterprise per-seat subscription tiered models<br>
+                    Validated Source: <a href="https://www.sap.com/belgique/products/scm/integrated-business-planning/pricing.html?utm_source=openai" target="_blank">SAP IBP Pricing Page</a>
+                    </p>
+                    <p><strong>3. Calculated Result: EUR 56-141 million</strong><br>
+                    This figure represents the mathematically derived Serviceable Available Market based on the specific inputs above.
+                    </p>
 
-                    <section id="company-summary">
-                        <h3>Company summary</h3>
-                        <p>AI-Driven Integrated Business Planning Platform for B2B SaaS. Raised $145,000,000 in April 2024.</p>
-                        <hr class="dotted-line">
-                        <p><strong>Base Score: 91.05/100</strong> (+5% Thesis Alignment Modifier)</p>
-                        <p><strong>FINAL ADJUSTED SCORE: 95.6/100 → 🟢INTERESTING</strong></p>
-                        <hr class="dotted-line">
-                        <p><strong>In a Nutshell:</strong> Pigment is an AI-Driven Integrated Business Planning Platform that enables large enterprises to unify cross-functional data to make faster, more accurate strategic decisions by replacing siloed, legacy spreadsheets with a real-time, multi-dimensional modeling engine.</p>
-                        <p><strong>The Problem:</strong> Enterprise strategic planning is currently broken, trapped in 'spreadsheet hell' or brittle legacy platforms that are too complex for business users.</p>
-                        <p><strong>The Solution:</strong> The platform provides a natively integrated, collaborative planning environment with Agentic AI capabilities that allow users to simulate scenarios using natural language.</p>
-                        <p><strong>Our Rationale:</strong> Pigment exhibits a structural unfair advantage through the pedigree of Romain Niccoli. The company's AI-native architecture perfectly aligns with our thesis of investing in AI agents that transcend simple automation to provide proactive strategic recommendations.</p>
-                   </section>
+                    <h3>Market Trends</h3>
+                    <h4>AI Accelerates IBP Market Growth</h4>
+                    <p><strong>1. Market Catalyst & Trajectory</strong></p>
+                    <ul>
+                        <li>The Structural Shift: AI/ML integration into integrated business planning platforms enables cross-functional FP&A, revenue, workforce, and S&OP for $1B+ enterprises, shifting from siloed to real-time, predictive planning amid supply chain resilience and digital transformation demands. [<a href="https://dataintelo.com/report/integrated-business-planning-platforms-market?utm_source=openai" target="_blank">source</a>]</li>
+                        <li>Velocity & Validation: Global market at USD 8.7 billion in 2024 grows at 12% CAGR to USD 24-25 billion by 2033; Europe SAM USD 2.1-2.3 billion represents 24-26% of TAM. [<a href="https://dataintelo.com/report/integrated-business-planning-platforms-market?utm_source=openai" target="_blank">source</a>] [<a href="https://growthmarketreports.com/report/integrated-business-planning-market?utm_source=openai" target="_blank">source</a>]</li>
+                    </ul>
+
+                    <p><strong>2. Value Chain & Control Points</strong></p>
+                    <ul>
+                        <li>The Scarcity: Stage 3 (AI/Analytics Engine and Planning Intelligence) emerges as primary control point, processing unified data into forecasts and insights for predictive planning, with highest strategic score of 8.7 from defensibility, margins, and growth. [<a href="https://dataintelo.com/report/integrated-business-planning-platforms-market/amp?utm_source=openai" target="_blank">source</a>]</li>
+                        <li>Leverage Dynamics: Stage 3 commands pricing power via premium AI features and 70-85% gross margins from fixed R&D costs, strong IP/patents, data network effects, and early-adopter demand in expanding AI TAM; outperforms Stages 1-2 (infra-heavy) and 5-6 (services-mixed). [<a href="https://dataintelo.com/report/integrated-business-planning-platforms-market?utm_source=openai" target="_blank">source</a>]</li>
+                    </ul>
+
+                    <p><strong>3. Competitive Dislocation</strong></p>
+                    <ul>
+                        <li>Incumbent Vulnerability: Established leaders like SAP IBP, Oracle Planning Cloud, and Anaplan suffer consolidation pressure in mature quadrant, with maturity scores of 9-10 but lower differentiation (7-8) versus AI-specialized challengers. [<a href="https://6sense.com/tech/budgeting-and-forecasting/pigment-market-share" target="_blank">source</a>]</li>
+                        <li>Mechanism of Displacement: ERP-embedded incumbents face displacement by agentic AI platforms offering autonomous re-planning, real-time forecasting, and explainability, eroding moats reliant on legacy integrations amid cloud/AI adoption. [<a href="https://6sense.com/tech/budgeting-and-forecasting/pigment-market-share" target="_blank">source</a>]</li>
+                    </ul>
+
+                    <p><strong>4. Unit Economics & Value Capture</strong></p>
+                    <ul>
+                        <li>Margin Profile: Profit pool shifts to Stages 3-4 where margins expand to 70-85% via premium pricing power, fixed cost structures, and scale, contrasting moderate 40-70% in upstream Stages 1-2 and execution Stages 5-6. [<a href="https://dataintelo.com/report/integrated-business-planning-platforms-market?utm_source=openai" target="_blank">source</a>]</li>
+                        <li>The Winning Configuration: Per-user/per-seat SaaS subscription with tiered modular bundles (EUR 2,350/month base scaling to EUR 28,200 annual ARPU for enterprises) positions Stage 3 specialists to capture value through AI differentiation and rapid deployment. [<a href="https://www.sap.com/belgique/products/scm/integrated-business-planning/pricing.html?utm_source=openai" target="_blank">source</a>]</li>
+                    </ul>
                 </div>
                 <div class="img-col">
-                    <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-d69256a3f99f178afb2c0c49bef0d512-it3sx2dk.jpg" alt="Company Analysis" class="sticky-img">
+                    <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-29dd65bd3c8a16be6d4e9fbb54029f95-t9yxdzzt.jpg" alt="Top-Down Market Analysis" class="sticky-img">
+                    <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-f4d869591424f7cb55ed21032e17d92b-eayjw68a.jpg" alt="Bottom-Up Market Analysis" class="sticky-img">
                 </div>
             </div>
-            <div class="section-separator"></div>
+        </section>
 
-            <!-- STEP 9: SWOT & ACTION PLAN -->
-            <section id="swot-analysis">
-                <h3>SWOT analysis</h3>
-                <div class="swot-grid">
-                    <div class="swot-quadrant">
-                        <h4>Strengths</h4>
-                        <ul>
-                            <li>Elite product-led founder (Romain Niccoli) with proven scaling experience (Criteo).</li>
-                            <li>Dominant position in high-value Stage 3 with a native agentic AI platform.</li>
-                            <li>Proven traction with $145M Series D, Gartner recognition, and large user deployments.</li>
-                            <li>Fast time-to-value USP, enabled by a unified platform and advanced features.</li>
-                            <li>Cross-functional moat built on evolving AI agents and deep integration.</li>
-                        </ul>
-                    </div>
-                    <div class="swot-quadrant">
-                        <h4>Weaknesses</h4>
-                        <ul>
-                            <li>Relatively young company (founded 2019) lacking incumbent brand lock-in.</li>
-                            <li>Team and sales process opacity, relying heavily on founder DNA.</li>
-                            <li>Enterprise sales model with custom contracts and long payment cycles.</li>
-                            <li>Unproven US expansion despite recent funding.</li>
-                            <li>Dependency on AI hype; risk if agents underdeliver on promised insights.</li>
-                        </ul>
-                    </div>
-                    <div class="swot-quadrant">
-                        <h4>Opportunities</h4>
-                        <ul>
-                            <li>Explosive market growth ($8.7B TAM, 12% CAGR) with strong AI tailwinds.</li>
-                            <li>Scale globally, especially into the US market, fueled by Series D funding.</li>
-                            <li>Expand multi-department penetration from finance to sales, HR, and S&OP.</li>
-                            <li>Leverage AI alliances and superior UX to exploit gaps in incumbent offerings.</li>
-                        </ul>
-                    </div>
-                    <div class="swot-quadrant">
-                        <h4>Threats</h4>
-                        <ul>
-                            <li>Dominant incumbents like SAP, Anaplan, and Jedox with deep pockets and entrenchment.</li>
-                            <li>Macroeconomic headwinds cutting enterprise FP&A budgets.</li>
-                            <li>Commoditization of AI agents by hyperscalers or open-source alternatives.</li>
-                            <li>Regulatory pressures from GDPR and AI-specific compliance.</li>
-                            <li>Execution risks related to complex enterprise integrations and customer churn.</li>
-                        </ul>
-                    </div>
+        <section id="value_chain">
+            <div class="split-container">
+                <div class="text-col">
+                    <h3>Top 3 Value chain stage</h3>
+                    <p>Based on the comprehensive value chain analysis using the Strategic Position Score methodology (weighted combination of Defensibility 40%, Margin Potential 35%, and Growth 25%), the following three stages represent the most attractive investment opportunities in the AI-integrated business planning SaaS for enterprises managing cross-functional FP&A, revenue, workforce, and S&OP with $1B+ revenue. value chain:</p>
+
+                    <h4>🥇 Rank 1: Stage [3] - AI/Analytics Engine and Planning Intelligence</h4>
+                    <p><strong>Strategic Score: 8.7</strong></p>
+                    <p><strong>STRATEGIC RATIONALE:</strong> Highest defensibility (data/IP moats), perfect margins (SaaS economics), and top growth (AI drivers) make it the value-creating core for specific sector.</p>
+                    <p><strong>KEY SUPPORTING EVIDENCE:</strong></p>
+                    <ul>
+                        <li>70-85% gross margins. (Source: <a href="https://dataintelo.com/report/integrated-business-planning-platforms-market?utm_source=openai" target="_blank">margins query</a>)</li>
+                        <li>11.6% CAGR + AI expansion; IP/"data moat". (Source: <a href="https://dataintelo.com/report/integrated-business-planning-market/amp?utm_source=openai" target="_blank">vendor landscape</a>)</li>
+                    </ul>
+
+                    <h4>🥈 Rank 2: Stage [4] - Scenario Planning, Optimization, and Decision Support</h4>
+                     <p><strong>Strategic Score: 8.1</strong></p>
+                    <p><strong>STRATEGIC RATIONALE:</strong> Strong tech/IP defensibility and high margins pair with solid AI growth, key for S&OP differentiation.</p>
+                    <p><strong>KEY SUPPORTING EVIDENCE:</strong></p>
+                    <ul>
+                        <li>Patents on optimization. (Source: <a href="https://o9solutions.com/solutions/integrated-business-planning/digital-ibp/?utm_source=openai" target="_blank">o9 IBP</a>)</li>
+                        <li>Premium tiered pricing. (Source: <a href="https://www.sap.com/belgique/products/scm/integrated-business-planning/pricing.html?utm_source=openai" target="_blank">pricing</a>)</li>
+                    </ul>
+                    
+                    <h4>🥉 Rank 3: Stage [2] - Data Integration and Data Fabric</h4>
+                     <p><strong>Strategic Score: 6.3</strong></p>
+                    <p><strong>STRATEGIC RATIONALE:</strong> High defensibility (complexity/regulation) and growth offset moderate margins; foundational for upstream value.</p>
+                    <p><strong>KEY SUPPORTING EVIDENCE:</strong></p>
+                    <ul>
+                        <li>GDPR barriers. (Source: <a href="https://dataintelo.com/report/integrated-business-planning-platforms-market?utm_source=openai" target="_blank">value chain</a>)</li>
+                        <li>12% CAGR cloud growth. (Source: <a href="https://dataintelo.com/report/integrated-business-planning-platforms-market?utm_source=openai" target="_blank">market size</a>)</li>
+                    </ul>
                 </div>
-            </section>
-            <div class="section-separator"></div>
-            <section id="action-plan">
-                <h3>Action plan</h3>
-                <h4>How to defend?</h4>
-                <p>Fortify Stage 3/4 value chain supremacy with proprietary AI IP/data flywheels, high switch costs, and Criteo-honed loyalty; out-execute incumbents on UX speed.</p>
-                <h4>How to win?</h4>
-                <p>Weaponize founder scaling DNA + agentic AI moat to blitz enterprise beachheads (finance → cross-functional); capture 3% SAM ($69M SOM) via US expansion, Current AI alliances, and 70%+ margins on ARPU ~€28K.</p>
-                <h4>What would be fatal?</h4>
-                <p>AI delivery flops (no 'so what?' insights) + SAP/Anaplan retaliation in $1B+ deals amid downturn.</p>
-                <h4>What to fix?</h4>
-                <p>Opaque team scaling + sales opacity blocking US/global ramp; hire sales heavies, publish benchmarks to shorten cycles.</p>
-            </section>
-            <div class="section-separator"></div>
+                <div class="img-col">
+                    <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-37e194adb6ce26503b47b6c50edfd67f-tjz66qia.jpg" alt="Top 3 Value Chain Stages" class="sticky-img">
+                </div>
+            </div>
 
-            <!-- STEP 10: CONVICTION, SOURCES & FOOTER -->
-            <section id="conviction">
-                <h3>Conviction</h3>
-                <h4>Synthetic GP Conviction (summary):</h4>
-                <p><strong>Market</strong><br>Pigment disrupts a 'Looks Crowded But Isn't' market for integrated business planning, offering a frictionless, AI-native solution akin to Zoom's market entry.</p>
-                <p><strong>Timing</strong><br>A 'Boomerang' scenario driven by advanced AI and enterprise demand for agile planning creates a timely opportunity for Pigment.</p>
-                <p><strong>Company</strong><br>Pigment's AI-native, user-centric architecture establishes a strong, differentiated position with high switching costs.</p>
-                <p><strong>Founder</strong><br>Serial entrepreneur Romain Niccoli provides exceptional 'Founder-Market Fit' with a proven ability to scale complex enterprise solutions.</p>
-            </section>
-            <div class="section-separator"></div>
+            <h3>Companies sorted by value chain stage specialization</h3>
+            <div class="legend-container">
+                <div class="legend-item"><strong>Tiers:</strong> T1: Global Giant, T2: Scaleup, T3: Startup</div>
+                <div class="legend-item"><strong>Capacity:</strong> <span class='label-cap'>$100M</span> = Acquisition Capacity</div>
+                <div class="legend-item"><strong>Posture:</strong> 
+                    <span style='border-left:4px solid #dc2626; padding-left:5px; margin-right: 10px;'>Red (Hunter)</span>
+                    <span style='border-left:4px solid #ca8a04; padding-left:5px; margin-right: 10px;'>Yellow (Hunted)</span>
+                    <span style='border-left:4px solid #2563eb; padding-left:5px; margin-right: 10px;'>Blue (Fortress)</span>
+                    <span style='border-left:4px solid #16a34a; padding-left:5px;'>Green (Opportunistic)</span>
+                </div>
+            </div>
             
-            <section id="sources">
-                <h3>Sources</h3>
-                <ul class="source-list">
-                    <li><a href="https://dataintelo.com/report/integrated-business-planning-platforms-market" target="_blank">https://dataintelo.com/report/integrated-business-planning-platforms-market</a></li>
-                    <li><a href="https://marketintelo.com/report/integrated-business-planning-market" target="_blank">https://marketintelo.com/report/integrated-business-planning-market</a></li>
-                    <li><a href="https://www.pigment.com/newsroom/pigment-joins-industry-leaders-to-launch-current-ai" target="_blank">https://www.pigment.com/newsroom/pigment-joins-industry-leaders-to-launch-current-ai</a></li>
-                    <li><a href="https://www.sap.com/belgique/products/scm/integrated-business-planning/pricing.html" target="_blank">https://www.sap.com/belgique/products/scm/integrated-business-planning/pricing.html</a></li>
-                    <li><a href="https://www.anaplan.com/news/gartner-mq-financial-planning-software-2025/" target="_blank">https://www.anaplan.com/news/gartner-mq-financial-planning-software-2025/</a></li>
-                    <li><a href="https://www.pigment.com/fr/newsroom/gartner-magic-quadrant-financial-planning-software-2024" target="_blank">https://www.pigment.com/fr/newsroom/gartner-magic-quadrant-financial-planning-software-2024</a></li>
-                    <li><a href="https://o9solutions.com/solutions/integrated-business-planning/digital-ibp/" target="_blank">https://o9solutions.com/solutions/integrated-business-planning/digital-ibp/</a></li>
-                    <li><a href="https://www.kinaxis.com/en/solutions/platform" target="_blank">https://www.kinaxis.com/en/solutions/platform</a></li>
-                    <li><a href="https://www.pigment.com/legal/terms-of-service" target="_blank">https://www.pigment.com/legal/terms-of-service</a></li>
-                    <li><a href="https://www.kinaxis.com/en/solutions/tariffs?utm_source=openai" target="_blank">https://www.kinaxis.com/en/solutions/tariffs?utm_source=openai</a></li>
-                    <li><a href="https://www.pigment.com/newsroom/pigment-announces-145m-series-d" target="_blank">https://www.pigment.com/newsroom/pigment-announces-145m-series-d</a></li>
-                    <li><a href="https://growthmarketreports.com/report/integrated-business-planning-market?utm_source=openai" target="_blank">https://growthmarketreports.com/report/integrated-business-planning-market?utm_source=openai</a></li>
-                    <li><a href="https://investors.kinaxis.com/news-releases/news-release-details/2023/Kinaxis-Positioned-Furthest-for-Completeness-of-Vision-and-Highest-on-Ability-to-Execute-in-the-Gartner-Magic-Quadrant-for-Supply-Chain-Planning-Solutions/default.aspx?utm_source=openai" target="_blank">https://investors.kinaxis.com/...</a></li>
-                    <li><a href="https://dataintelo.com/report/integrated-business-planning-market/amp?utm_source=openai" target="_blank">https://dataintelo.com/report/integrated-business-planning-market/amp?utm_source=openai</a></li>
-                    <li><a href="https://en.wikipedia.org/wiki/Coupa?utm_source=openai" target="_blank">https://en.wikipedia.org/wiki/Coupa?utm_source=openai</a></li>
-                    <li><a href="https://www.linkedin.com/in/romainniccoli/" target="_blank">https://www.linkedin.com/in/romainniccoli/</a></li>
-                    <li><a href="https://www.pigment.com/fr/ai-info-about-pigment" target="_blank">https://www.pigment.com/fr/ai-info-about-pigment</a></li>
-                    <li><a href="https://www.pigment.com/blog/series-d-announcement" target="_blank">https://www.pigment.com/blog/series-d-announcement</a></li>
-                    <li><a href="https://www.linkedin.com/company/pigment-app/" target="_blank">https://www.linkedin.com/company/pigment-app/</a></li>
-                    <li><a href="https://www.pigment.com/product-tour" target="_blank">https://www.pigment.com/product-tour</a></li>
-                    <li><a href="https://www.pigment.com/customers" target="_blank">https://www.pigment.com/customers</a></li>
-                    <li><a href="https://www.pigment.com/pricing" target="_blank">https://www.pigment.com/pricing</a></li>
-                </ul>
-            </section>
-            
-            <footer class="final-footer">
-                Generated by Proplace for Investment Criteria - alexandre@proplace.co (last update: 2026-01-29T14:28:24.000Z)
-            </footer>
+            <div class="battlefield-grid">
+                <div class="stage-column"><h4>1. Data Sources</h4>
+                    <details class="actor-card border-Hunter">
+                        <summary>
+                            <span class="actor-name">SAP S/4HANA</span>
+                            <span class="actor-right-labels"><span class="label-tier">T1</span><span class="label-cap">$10B</span></span>
+                        </summary>
+                        <div class="actor-body">
+                            <p>System of record for finance, sales, and operations data feeding Integrated Business Planning.</p>
+                            <h5>Profile</h5>
+                            <p class="meta-row"><strong>Country:</strong> DE</p>
+                            <p class="meta-row"><strong>Founded:</strong> 1972</p>
+                            <p class="meta-row"><strong>Website:</strong> <a href="https://www.sap.com/s4hana" target="_blank">sap.com/s4hana</a></p>
+                            <p class="meta-row"><strong>Source:</strong> <a href="https://www.sap.com/investors/en/why-invest/acquisitions.html?utm_source=openai" target="_blank">SAP Acquisitions</a></p>
+                            <div class="ws-box">
+                                <h5>Weak Signals</h5>
+                                <ul>
+                                    <li>SAP announced its intent to acquire WalkMe for approximately $1.5 billion in cash in June 2024.</li>
+                                    <li>SAP further announced the acquisition of SmartRecruiters in August 2025.</li>
+                                </ul>
+                            </div>
+                            <h5>SWOT Analysis</h5>
+                            <div class="swot-grid-small">
+                                <div class="sg-box s-green"><strong>S:</strong> T1 Global Giant in Stage 1 data sources. High differentiation (8). Recent acquisitions show aggressive expansion.</div>
+                                <div class="sg-box s-red"><strong>W:</strong> Legacy ERP focus vulnerable to AI disruption. Heavy reliance on integrations.</div>
+                                <div class="sg-box s-blue"><strong>O:</strong> Acquire Stage 4 optimization (River Logic) or Stage 3 AI planner (Delfi) to bolster stack.</div>
+                                <div class="sg-box s-yellow"><strong>T:</strong> Rivals Oracle/Microsoft in Stage 1. Displacement risk from Stage 3 AI natives.</div>
+                            </div>
+                        </div>
+                    </details>
+                    <details class="actor-card border-Hunter">
+                        <summary>
+                            <span class="actor-name">Oracle Cloud ERP</span>
+                            <span class="actor-right-labels"><span class="label-tier">T1</span><span class="label-cap">$10B</span></span>
+                        </summary>
+                        <div class="actor-body">
+                            <p>ERP data for demand, inventory, and finance for large enterprises.</p>
+                            <h5>Profile</h5>
+                            <p class="meta-row"><strong>Country:</strong> USA</p>
+                            <p class="meta-row"><strong>Founded:</strong> 1977</p>
+                             <p class="meta-row"><strong>Website:</strong> <a href="https://www.oracle.com/erp" target="_blank">oracle.com/erp</a></p>
+                            <p class="meta-row"><strong>Source:</strong> <a href="https://investor.oracle.com/investor-news/news-details/2024/Oracle-Announces-Fiscal-2024-Fourth-Quarter-and-Fiscal-Full-Year-Financial-Results/default.aspx?utm_source=openai" target="_blank">Oracle Financials</a></p>
+                            <div class="ws-box">
+                                <h5>Weak Signals</h5>
+                                <ul>
+                                    <li>Reported cash and cash equivalents of approximately $10.454 billion as of May 31, 2024.</li>
+                                    <li>Market capitalization reached approximately $600 billion to $700 billion by mid-to-late 2025.</li>
+                                </ul>
+                            </div>
+                            <h5>SWOT Analysis</h5>
+                            <div class="swot-grid-small">
+                                <div class="sg-box s-green"><strong>S:</strong> T1 Global Giant with $10B+ cash reserves. Strong Stage 1 ERP data. Market cap $600-700B.</div>
+                                <div class="sg-box s-red"><strong>W:</strong> Moderate differentiation (7). Incumbent vulnerability to AI-native challengers.</div>
+                                <div class="sg-box s-blue"><strong>O:</strong> Acquire Stage 3 AI platform (Pigment) to defend against displacement. Bolster FP&A planning with Stage 3 asset (Vena).</div>
+                                <div class="sg-box s-yellow"><strong>T:</strong> Direct rivalry from SAP and Microsoft. ERP moats eroding to agentic AI platforms.</div>
+                            </div>
+                            <div class="strat-inv-box">
+                                <h5>Strategic Involvement</h5>
+                                <ul><li>Stage 3 AI Bidding Frenzy: Oracle, Microsoft, SAP Vie for Pigment's Agentic Moat</li><li>FP&A Fortification: Oracle Targets Vena to Plug Stage 3 Excel Moat</li><li>Stage 1 Squeeze: Kinaxis Caught Between SAP and Oracle Data Feeds</li></ul>
+                            </div>
+                        </div>
+                    </details>
+                    <details class="actor-card border-Hunter">
+                        <summary>
+                            <span class="actor-name">Microsoft Dynamics 365</span>
+                            <span class="actor-right-labels"><span class="label-tier">T1</span><span class="label-cap">$20B</span></span>
+                        </summary>
+                        <div class="actor-body">
+                            <p>Integrated CRM/ERP data for revenue and workforce planning, growing in enterprise FP&A/S&OP.</p>
+                            <h5>Profile</h5>
+                            <p class="meta-row"><strong>Country:</strong> USA</p>
+                            <p class="meta-row"><strong>Website:</strong> <a href="https://dynamics.microsoft.com" target="_blank">dynamics.microsoft.com</a></p>
+                            <p class="meta-row"><strong>Source:</strong> <a href="https://www.kinaxis.com/en/solutions/platform?utm_source=openai" target="_blank">Kinaxis</a></p>
+                            <h5>SWOT Analysis</h5>
+                            <div class="swot-grid-small">
+                                <div class="sg-box s-green"><strong>S:</strong> T1 Global Giant, highest capacity $20B. Growing CRM/ERP adoption in FP&A/S&OP.</div>
+                                <div class="sg-box s-red"><strong>W:</strong> Stage 1 focus limits control of high-value Stage 3 AI engine.</div>
+                                <div class="sg-box s-blue"><strong>O:</strong> Acquire micro Stage 3 BI planner (Rollstack) or low-cap data viz (Lative) to integrate into Dynamics.</div>
+                                <div class="sg-box s-yellow"><strong>T:</strong> Competition from SAP/Oracle. Threat from hyperscaler AI shift.</div>
+                            </div>
+                             <div class="strat-inv-box">
+                                <h5>Strategic Involvement</h5>
+                                <ul><li>BI Infusion: Microsoft Snaps Rollstack to Elevate Dynamics Stage 3</li></ul>
+                            </div>
+                        </div>
+                    </details>
+                </div>
+                <div class="stage-column"><h4>2. Data Integration 🥉</h4>
+                    <details class="actor-card border-Fortress">
+                        <summary>
+                            <span class="actor-name">Kinaxis Data Fabric</span>
+                            <span class="actor-right-labels"><span class="label-tier">T2</span><span class="label-cap">$5B</span></span>
+                        </summary>
+                        <div class="actor-body">
+                            <p>Built-in Maestro data harmonization core to Kinaxis's IBP platform.</p>
+                             <h5>Profile</h5>
+                             <p class="meta-row"><strong>Country:</strong> Unknown</p>
+                            <p class="meta-row"><strong>Website:</strong> <a href="https://www.kinaxis.com/en/solutions/platform" target="_blank">kinaxis.com/platform</a></p>
+                            <p class="meta-row"><strong>Source:</strong> <a href="https://www.kinaxis.com/en/solutions/platform?utm_source=openai" target="_blank">Kinaxis</a></p>
+                            <div class="ws-box">
+                                <h5>Weak Signals</h5>
+                                <ul><li>Market cap fluctuated around C$3–4B ($3.27B USD as of Jan 2026).</li><li>Cash and cash equivalents ranged from ~USD 0.32B.</li></ul>
+                            </div>
+                            <h5>SWOT Analysis</h5>
+                            <div class="swot-grid-small">
+                               <div class="sg-box s-green"><strong>S:</strong> T2 Large, Stage 2 leader. Maestro data harmonization core. Market cap ~$3B.</div>
+                                <div class="sg-box s-red"><strong>W:</strong> Dependencies on Stage 1. Moderate capacity limits aggression.</div>
+                                <div class="sg-box s-blue"><strong>O:</strong> Alliance with SAP or Oracle for seamless ERP data feeds to capture Stage 2 demand.</div>
+                                <div class="sg-box s-yellow"><strong>T:</strong> Rivals MuleSoft and Informatica. Upstream Stage 1 consolidation.</div>
+                            </div>
+                            <div class="strat-inv-box">
+                                <h5>Strategic Involvement</h5>
+                                <ul><li>Data Harmony Pact: Kinaxis-SAP Alliance to Secure Stage 2 Feeds</li><li>Stage 1 Squeeze: Kinaxis Caught Between SAP and Oracle Data Feeds</li></ul>
+                            </div>
+                        </div>
+                    </details>
+                     <details class="actor-card border-Fortress">
+                        <summary>
+                            <span class="actor-name">MuleSoft</span>
+                            <span class="actor-right-labels"><span class="label-tier">T1</span><span class="label-cap">$20B</span></span>
+                        </summary>
+                         <div class="actor-body"><p>API-led data integration for ERP feeds.</p><h5>Profile</h5><p class="meta-row"><strong>Country:</strong> USA</p><p class="meta-row"><strong>Investors:</strong> N/A (owned by Salesforce)</p><p class="meta-row"><strong>Website:</strong> <a href="https://www.mulesoft.com" target="_blank">mulesoft.com</a></p><h5>SWOT Analysis</h5><div class="swot-grid-small"><div class="sg-box s-green"><strong>S:</strong> T1 Giant via Salesforce.</div><div class="sg-box s-red"><strong>W:</strong> Less agile post-acquisition.</div><div class="sg-box s-blue"><strong>O:</strong> Alliance w/ Kinaxis/Informatica.</div><div class="sg-box s-yellow"><strong>T:</strong> Competitors, diluted focus.</div></div></div>
+                    </details>
+                     <details class="actor-card border-Fortress">
+                        <summary>
+                            <span class="actor-name">Informatica</span>
+                            <span class="actor-right-labels"><span class="label-tier">T2</span><span class="label-cap">$5B</span></span>
+                        </summary>
+                        <div class="actor-body"><p>Enterprise data integration and master data management.</p><h5>Profile</h5><p class="meta-row"><strong>Country:</strong> USA</p><p class="meta-row"><strong>Website:</strong> <a href="https://www.informatica.com" target="_blank">informatica.com</a></p><h5>SWOT Analysis</h5><div class="swot-grid-small"><div class="sg-box s-green"><strong>S:</strong> T2 Large leader in integration.</div><div class="sg-box s-red"><strong>W:</strong> Stage 2 dependencies, moderate diff.</div><div class="sg-box s-blue"><strong>O:</strong> Alliance w/ Microsoft or SAP.</div><div class="sg-box s-yellow"><strong>T:</strong> Rivals, cloud disruptors.</div></div></div>
+                    </details>
+                     <details class="actor-card border-Fortress">
+                        <summary>
+                            <span class="actor-name">Talend</span>
+                            <span class="actor-right-labels"><span class="label-tier">T3</span><span class="label-cap">$5B</span></span>
+                        </summary>
+                        <div class="actor-body"><p>ETL for planning data.</p><h5>Profile</h5><p class="meta-row"><strong>Country:</strong> USA</p><p class="meta-row"><strong>Investors:</strong> Thoma Bravo</p><p class="meta-row"><strong>Website:</strong> <a href="https://www.talend.com" target="_blank">talend.com</a></p><h5>SWOT Analysis</h5><div class="swot-grid-small"><div class="sg-box s-green"><strong>S:</strong> ETL specialist, PE-backed.</div><div class="sg-box s-red"><strong>W:</strong> Challenger quadrant, limited scale.</div><div class="sg-box s-blue"><strong>O:</strong> Alliance w/ Oracle or Kinaxis.</div><div class="sg-box s-yellow"><strong>T:</strong> Stronger leaders, acquisition risk.</div></div></div>
+                    </details>
+                </div>
+                <div class="stage-column"><h4>3. AI/Analytics Engine 🥇</h4>
+                     <details class="actor-card border-Hunted">
+                        <summary>
+                            <span class="actor-name">Pigment</span>
+                            <span class="actor-right-labels"><span class="label-tier">T4</span><span class="label-cap">$120M</span></span>
+                        </summary>
+                        <div class="actor-body">
+                            <p>AI-integrated SaaS for cross-functional FP&A/revenue/workforce/S&OP planning for $1B+ enterprises.</p>
+                            <h5>Profile</h5>
+                            <p class="meta-row"><strong>Country:</strong> FR</p>
+                            <p class="meta-row"><strong>Founded:</strong> 2016</p>
+                            <p class="meta-row"><strong>Funding:</strong> $145M Series D (2024-04-04)</p>
+                            <p class="meta-row"><strong>Investors:</strong> ICONIQ Growth, Sandberg Bernthal Venture Partners</p>
+                            <p class="meta-row"><strong>Website:</strong> <a href="https://www.pigment.com" target="_blank">pigment.com</a></p>
+                            <p class="meta-row"><strong>Source:</strong> <a href="https://www.pigment.com/newsroom/pigment-announces-145m-series-d?utm_source=openai" target="_blank">Pigment Newsroom</a></p>
+                            <div class="ws-box">
+                                <h5>Weak Signals</h5>
+                                <ul>
+                                    <li>Finalized a $145 million Series D funding round on April 4, 2024.</li>
+                                    <li>Differentiation is centered on AI agents ('Pigment AI') announced in 2024–2025.</li>
+                                </ul>
+                            </div>
+                            <h5>SWOT Analysis</h5>
+                            <div class="swot-grid-small">
+                                <div class="sg-box s-green"><strong>S:</strong> Elite AI agentic platform in Stage 3 (8.7 score). Founder with Criteo scale experience. $145M Series D. Cross-functional moat.</div>
+                                <div class="sg-box s-red"><strong>W:</strong> Youthful, lacks incumbent lock-in vs SAP/Anaplan. Opaque team/sales. Europe focus, AI hype risk.</div>
+                                <div class="sg-box s-blue"><strong>O:</strong> Exit/Sale to Microsoft/SAP/Anaplan. Alliance with o9 Solutions for US market penetration.</div>
+                                <div class="sg-box s-yellow"><strong>T:</strong> Incumbents with deeper pockets. Macro downturns, AI commoditization, regulatory compliance.</div>
+                            </div>
+                             <div class="strat-inv-box">
+                                <h5>Strategic Involvement</h5>
+                                <ul><li>Stage 3 AI Bidding Frenzy: Oracle, Microsoft, SAP Vie for Pigment's Agentic Moat</li><li>Incumbent Squeeze: Pigment and o9 Chip Away at SAP IBP's Stage 3 Dominance</li><li>Agentic AI Pact: Pigment-o9 Alliance to Challenge Incumbents</li><li>Stage 3 Siege: Jedox and Pigment Assault SAP's IBP Fortress</li></ul>
+                            </div>
+                        </div>
+                    </details>
+                    <details class="actor-card border-Hunter">
+                        <summary>
+                            <span class="actor-name">SAP IBP</span>
+                            <span class="actor-right-labels"><span class="label-tier">T1</span><span class="label-cap">$10B</span></span>
+                        </summary>
+                         <div class="actor-body"><p>AI/ML for demand and inventory planning, market leader.</p><h5>Profile</h5><p class="meta-row"><strong>Country:</strong> DE</p><p class="meta-row"><strong>Website:</strong> <a href="https://www.sap.com/products/scm/integrated-business-planning.html" target="_blank">sap.com/ibp</a></p><h5>SWOT Analysis</h5><div class="swot-grid-small"><div class="sg-box s-green"><strong>S:</strong> T1 Giant, market leader.</div><div class="sg-box s-red"><strong>W:</strong> Vulnerable to AI challengers.</div><div class="sg-box s-blue"><strong>O:</strong> Acquire Jedox or River Logic.</div><div class="sg-box s-yellow"><strong>T:</strong> Challengers o9/Pigment erode moats.</div></div><div class="strat-inv-box"><h5>Involved In:</h5><ul><li>Bidding Frenzy for Pigment</li><li>Race for River Logic</li></ul></div></div>
+                    </details>
+                    <details class="actor-card border-Hunter">
+                        <summary>
+                            <span class="actor-name">Anaplan</span>
+                            <span class="actor-right-labels"><span class="label-tier">T2</span><span class="label-cap">$5B</span></span>
+                        </summary>
+                         <div class="actor-body"><p>Connected AI planning platform.</p><h5>Profile</h5><p class="meta-row"><strong>Country:</strong> USA</p><p class="meta-row"><strong>Investors:</strong> Thoma Bravo</p><p class="meta-row"><strong>Website:</strong> <a href="https://www.anaplan.com" target="_blank">anaplan.com</a></p><h5>SWOT Analysis</h5><div class="swot-grid-small"><div class="sg-box s-green"><strong>S:</strong> T2 Large PE-backed, acquisitive.</div><div class="sg-box s-red"><strong>W:</strong> Post-take-private opacity.</div><div class="sg-box s-blue"><strong>O:</strong> Acquire Planful or Vena.</div><div class="sg-box s-yellow"><strong>T:</strong> Direct rivals SAP/Pigment.</div></div><div class="strat-inv-box"><h5>Involved In:</h5><ul><li>Race for River Logic</li><li>PE Roll-up Blitz</li></ul></div></div>
+                    </details>
+                        <details class="actor-card border-Fortress">
+                        <summary>
+                            <span class="actor-name">o9 Solutions</span>
+                            <span class="actor-right-labels"><span class="label-tier">T3</span><span class="label-cap">$5B</span></span>
+                        </summary>
+                         <div class="actor-body"><p>Digital Brain AI for planning.</p><h5>Profile</h5><p class="meta-row"><strong>Country:</strong> USA</p><p class="meta-row"><strong>Investors:</strong> General Atlantic, KKR</p><p class="meta-row"><strong>Website:</strong> <a href="https://o9solutions.com/" target="_blank">o9solutions.com</a></p><h5>SWOT Analysis</h5><div class="swot-grid-small"><div class="sg-box s-green"><strong>S:</strong> Stage 3 leader, $3.7B valuation.</div><div class="sg-box s-red"><strong>W:</strong> T3 Medium, limited capacity.</div><div class="sg-box s-blue"><strong>O:</strong> Alliance w/ Anaplan/Kinaxis.</div><div class="sg-box s-yellow"><strong>T:</strong> Hunters like SAP IBP.</div></div><div class="strat-inv-box"><h5>Involved In:</h5><ul><li>Squeeze on SAP IBP</li><li>Pact with Pigment</li></ul></div></div>
+                    </details>
+                    <!-- ... other stage 3 actors condensed ... -->
+                </div>
+            </div>
 
-        </main>
-    </div>
+            <h3>Value chain stages description</h3>
+            <div class="stage-desc-grid">
+                <div class="stage-desc-card"><h4>[1] Data Sources</h4><p>This upstream stage involves sourcing raw data from enterprise systems (finance, sales, operations, HR). Value is providing foundational data for AI IBP.</p><p><strong>Score: 6.3 (Strong)</strong></p><p><strong>Defensibility (5.5/10):</strong> Moderate barriers (High capital, Mod tech).</p><p><strong>Margin (7.5/10):</strong> Moderate (40-70%) due to premium pricing.</p><p><strong>Growth (6/10):</strong> Moderate (CAGR 11.6%) due to market maturity.</p></div>
+                <div class="stage-desc-card"><h4>[2] Data Integration</h4><p>This stage harmonizes disparate data via ETL, APIs, and data fabrics, creating a unified source for AI planning. Value is in enabling real-time, compliant data flows.</p><p><strong>Score: 6.3 (Strong)</strong></p><p><strong>Defensibility (7/10):</strong> Moderate barriers (High tech, Strong reg).</p><p><strong>Margin (5/10):</strong> Moderate (40-70%) due to mixed costs.</p><p><strong>Growth (7/10):</strong> High (CAGR 12%) driven by cloud adoption.</p></div>
+                <div class="stage-desc-card"><h4>[3] AI/Analytics Engine</h4><p>Core stage where AI/ML processes unified data into forecasts, diagnostics, and insights. High value from enabling predictive/prescriptive planning accuracy.</p><p><strong>Score: 8.7 (Exceptional)</strong></p><p><strong>Defensibility (8/10):</strong> High barriers (Critical IP, Strong networks).</p><p><strong>Margin (10/10):</strong> High (70-85%) from premium pricing & fixed costs.</p><p><strong>Growth (8/10):</strong> High (CAGR 11.6%) from new AI TAM.</p></div>
+                <div class="stage-desc-card"><h4>[4] Scenario Planning</h4><p>Builds on AI intelligence for what-if scenarios, constraint optimization, and S&OP alignment. Critical for enterprise decision-making in revenue/FP&A.</p><p><strong>Score: 8.1 (Exceptional)</strong></p><p><strong>Defensibility (7/10):</strong> High barriers (Critical IP, High tech).</p><p><strong>Margin (10/10):</strong> High (70-85%) from premium pricing and scale.</p><p><strong>Growth (7/10):</strong> High (CAGR 11.6%) from mainstream adoption.</p></div>
+                <div class="stage-desc-card"><h4>[5] Decision Execution</h4><p>Translates plans into automated actions via ERP/MES/CRM pushes and workflows for S&OP execution. It provides lock-in but suffers from services drag on margins.</p><p><strong>Score: 5.9 (Moderate)</strong></p><p><strong>Defensibility (6.5/10):</strong> Moderate barriers (High tech, High switching).</p><p><strong>Margin (5/10):</strong> Moderate (40-70%) due to mixed costs.</p><p><strong>Growth (6/10):</strong> Moderate (CAGR 11.6%).</p></div>
+                <div class="stage-desc-card"><h4>[6] Performance Mgmt</h4><p>Monitors KPIs, detects drift, and ensures compliance/post-ROI tracking. Benefits from regulation but has lower defensibility than upstream stages.</p><p><strong>Score: 5.8 (Moderate)</strong></p><p><strong>Defensibility (5/10):</strong> Moderate barriers (Strong reg).</p><p><strong>Margin (6.5/10):</strong> Moderate (40-70%) with fixed costs.</p><p><strong>Growth (6/10):</strong> Moderate (CAGR 11.6%) from ROI mandates.</p></div>
+            </div>
+            
+        </section>
+
+        <section id="competition">
+            <div class="split-container">
+                <div class="text-col">
+                    <h3>Competition overview</h3>
+                    <h4>1. THE PREDATORS (11 companies)</h4>
+                    <p>High Capacity, Active Posture. The 'Hunters' with overwhelming firepower. Examples: SAP S/4HANA, Oracle Cloud ERP. Avg. Diff: 7.4. Prefers Stage 1 & 3. Mostly T1 Public companies.</p>
+
+                    <h4>2. THE GIANTS (12 companies)</h4>
+                    <p>High Capacity, Passive Posture. 'Sleeping Giants' with deep pockets but low M&A motive. Examples: Kinaxis Data Fabric, IBM Watson. Avg. Diff: 6.8. Prefers Stage 2 & 3. Mix of T1/T2 Public and PE-backed.</p>
+
+                    <h4>3. THE ASPIRANTS (1 company)</h4>
+                    <p>Low Capacity, Active Posture. The aggressive 'Climbers'. Example: Jedox. Avg. Diff: 7.0. Focused on Stage 3. A T3 VC-backed company.</p>
+
+                    <h4>4. THE POTENTIAL TARGETS (9 companies)</h4>
+                    <p>Low Capacity, Passive Posture. Prime 'Targets' for acquisition. Examples: River Logic, Pigment. Avg. Diff: 6.0. Prefers Stage 3. Mostly VC-backed ScaleUps and Micros.</p>
+
+                    <h3>Competitors list</h3>
+                    <h4>Predators</h4>
+                    <p><strong>SAP S/4HANA</strong>: System of record for finance, sales, and operations data. <a href="https://www.sap.com/s4hana" target="_blank">Website</a> | <a href="https://www.sap.com/investors/en/why-invest/acquisitions.html?utm_source=openai" target="_blank">Source</a></p>
+                    <p><strong>Oracle Cloud ERP</strong>: ERP data for demand, inventory, and finance. <a href="https://www.oracle.com/erp" target="_blank">Website</a> | <a href="https://investor.oracle.com/investor-news/news-details/2024/Oracle-Announces-Fiscal-2024-Fourth-Quarter-and-Fiscal-Full-Year-Financial-Results/default.aspx?utm_source=openai" target="_blank">Source</a></p>
+                    <p><strong>Anaplan</strong>: Connected AI planning platform. <a href="https://www.anaplan.com" target="_blank">Website</a> | <a href="https://dataintelo.com/report/integrated-business-planning-market/amp?utm_source=openai" target="_blank">Source</a></p>
+                    <p>... and 8 more.</p>
+
+                    <h4>Giants</h4>
+                    <p><strong>Kinaxis Data Fabric</strong>: Built-in Maestro data harmonization core. <a href="https://www.kinaxis.com/en/solutions/platform" target="_blank">Website</a> | <a href="https://www.kinaxis.com/en/solutions/platform?utm_source=openai" target="_blank">Source</a></p>
+                    <p><strong>MuleSoft</strong>: API-led data integration for ERP feeds. <a href="https://www.mulesoft.com" target="_blank">Website</a> | <a href="https://www.kinaxis.com/en/solutions/platform?utm_source=openai" target="_blank">Source</a></p>
+                    <p><strong>o9 Solutions</strong>: Digital Brain AI for planning. <a href="https://o9solutions.com/solutions/integrated-business-planning/digital-ibp/" target="_blank">Website</a> | <a href="https://o9solutions.com/solutions/integrated-business-planning/digital-ibp/?utm_source=openai" target="_blank">Source</a></p>
+                    <p>... and 9 more.</p>
+
+                    <h4>Aspirants</h4>
+                    <p><strong>Jedox</strong>: Excel-based, cloud-enabled EPM/BI suite with AI. <a href="https://www.jedox.com" target="_blank">Website</a> | <a href="https://www.jedox.com/en/about/newsroom/jedox-100-million-invest/" target="_blank">Source</a></p>
+
+                    <h4>Potential Targets</h4>
+                    <p><strong>Pigment</strong>: AI-integrated SaaS for cross-functional planning. <a href="https://www.pigment.com" target="_blank">Website</a> | <a href="https://www.pigment.com/newsroom/pigment-announces-145m-series-d?utm_source=openai" target="_blank">Source</a></p>
+                    <p><strong>Vena Solutions</strong>: Cloud-based FP&A with Excel-centric tools. <a href="https://www.venasolutions.com" target="_blank">Website</a> | <a href="https://6sense.com/tech/budgeting-and-forecasting/pigment-market-share" target="_blank">Source</a></p>
+                    <p><strong>River Logic</strong>: Prescriptive optimization for IBP. <a href="https://riverlogic.com" target="_blank">Website</a> | <a href="https://dataintelo.com/report/integrated-business-planning-market/amp?utm_source=openai" target="_blank">Source</a></p>
+                    <p>... and 6 more.</p>
+                </div>
+                <div class="img-col">
+                    <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-a92e88f51367eafb39636dec0b2d4ba5-nnibl8nx.jpg" alt="Competition Overview Quadrant" class="sticky-img">
+                </div>
+            </div>
+        </section>
+
+        <section id="market_study">
+            <div class="split-container">
+                <div class="text-col">
+                    <h3>Market study</h3>
+                    <h4>Total Market Attractivity Score: 86.75/100</h4>
+                    <p>Dynamics: 90/100 (22.5 pts) | Winnable: 85/100 (21.25 pts)<br>
+                    Penetrable: 80/100 (20 pts) | Rewarding: 92/100 (23 pts)</p>
+                    
+                    <h4>❓ Market Definition</h4>
+                    <p>Integrated Business Planning (IBP) software for $1B+ enterprises unifies FP&A, supply chain, and sales planning into a single source of truth. The market is worth approximately $8.7B globally, driven by a 12% CAGR as firms shift from siloed spreadsheets to AI-augmented predictive modeling.</p>
+
+                    <h4>💬 Our Market Thesis</h4>
+                    <p>Legacy players in the $8.7B IBP market, like Anaplan and SAP, are caught in an innovator's dilemma, unable to adopt agentic AI without cannibalizing their existing business models. This paralysis creates a clear opening for a startup to solve the 'technical debt' of legacy systems and build a new market leader.</p>
+                    
+                    <h4>🧠 Our Conviction & Wager on this Market: HIGH</h4>
+                    <p>Our conviction is high because this market presents a rare alignment of timing and structure. The AI-integrated engine shift has opened a temporary window for a decisive founder to build a dominant data moat and capture the market. We are betting that the superiority of a 'decision-intelligence' platform over a 'data-aggregation' tool will drive a massive platform transition in the next 36 months.</p>
+                </div>
+                <div class="img-col">
+                    <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-f79f5d36497b93dc4845ed4c0df20cd4-fyen1z7y.jpg" alt="Market Study Summary" class="sticky-img">
+                </div>
+            </div>
+        </section>
+
+        <section id="strategic_scenarios">
+            <div class="split-container">
+                <div class="text-col">
+                    <h3>Strategic scenarios</h3>
+                    <h4>⚔️ ACQUISITION BATTLES (HIGH CONFLICT)</h4>
+                    <details class="scenario-card">
+                        <summary>Stage 3 AI Bidding Frenzy: Oracle, Microsoft, SAP Vie for Pigment's Agentic Moat<span class="scenario-summary-text">Multiple hunters target elite Stage 3 Pigment to counter incumbent vulnerability.</span></summary>
+                        <div class="scenario-details">
+                            <p><strong>Rationale:</strong> Market expansion in 12% CAGR IBP demands rapid AI integration. This is High Priority as it creates monopoly control of high-margin (70-85%) Stage 3.</p>
+                            <p><strong>Deal Breaker:</strong> Antitrust scrutiny, tech stack mismatch, founder retention.</p>
+                            <p><strong>Synergy:</strong> Acquires IP saving 18-24 months R&D ($300-500M). Enables premium SaaS upsell ($1B+ ARR uplift).</p>
+                            <p><strong>Timeline:</strong> MID-TERM | <strong>Priority:</strong> High | <strong>Confidence:</strong> 40%</p>
+                        </div>
+                    </details>
+                    <details class="scenario-card">
+                        <summary>Prescriptive Optimization Sprint: SAP and Anaplan Race for River Logic's Stage 4 Edge<span class="scenario-summary-text">SAP and Anaplan explicitly target River Logic to complete their IBP stacks with Stage 4 solvers.</span></summary>
+                        <div class="scenario-details">
+                            <p><strong>Rationale:</strong> Short-Term due to target's low capacity and bankruptcy risk. High Priority for downstream value capture.</p>
+                            <p><strong>Deal Breaker:</strong> Target's runway exhaustion, IP friction, competing bids.</p>
+                            <p><strong>Synergy:</strong> Consolidation unlocks fixed-cost IP ($100M+ savings). Enables autonomous re-planning upsell.</p>
+                             <p><strong>Timeline:</strong> SHORT-TERM | <strong>Priority:</strong> High | <strong>Confidence:</strong> 40%</p>
+                        </div>
+                    </details>
+                    
+                    <h4>🤝 INEVITABLE ALLIANCES (HIGH SYNERGY)</h4>
+                     <details class="scenario-card">
+                        <summary>Data Harmony Pact: Kinaxis-SAP Alliance to Secure Stage 2 Feeds<span class="scenario-summary-text">Kinaxis proposes ERP data feeds alliance with SAP to counter upstream consolidation threats.</span></summary>
+                        <div class="scenario-details">
+                            <p><strong>Rationale:</strong> Mid-Term product integration for expanding Europe SAM. Medium Priority for cost efficiency.</p>
+                            <p><strong>Synergy:</strong> Shared integrations cut infra costs 30-40%. Joint GTM for $2.3B European market.</p>
+                             <p><strong>Timeline:</strong> MID-TERM | <strong>Priority:</strong> Medium | <strong>Confidence:</strong> 65%</p>
+                        </div>
+                    </details>
+                </div>
+            <div class="img-col">
+                <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-e8c5542c300549829b1794094215180e-5gdgo82l.jpg" alt="Strategic Scenarios Map" class="sticky-img">
+            </div>
+            </div>
+        </section>
+
+        <section id="synergies">
+             <div class="split-container">
+                <div class="text-col">
+                    <h3>Synergy legend</h3>
+                    <p>The table below systematically compiles diverse strategic scenarios, categorizing them by type. Each scenario is financially quantified with pessimistic estimates for soft revenue and hard cost synergies, providing a clear economic impact. The scenarios are ordered by their total estimated financial impact.</p>
+                    <p>The visual diagram segregates market players into potential acquirers versus potential targets based on the analyzed strategic scenarios.</p>
+                    <h4>Scenarios involving Pigment copy</h4>
+                    <ul>
+                        <li>Stage 3 AI Bidding Frenzy: Oracle, Microsoft, SAP Vie for Pigment's Agentic Moat</li>
+                        <li>Incumbent Squeeze: Pigment and o9 Chip Away at SAP IBP's Stage 3 Dominance</li>
+                        <li>Agentic AI Pact: Pigment-o9 Alliance to Challenge Incumbents</li>
+                        <li>Stage 3 Siege: Jedox and Pigment Assault SAP's IBP Fortress</li>
+                    </ul>
+                </div>
+                 <div class="img-col">
+                    <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-e8c5542c300549829b1794094215180e-5gdgo82l.jpg" alt="Synergy Map" class="sticky-img">
+                </div>
+            </div>
+
+            <h3>Synergy detailed table</h3>
+            <div class="table-container">
+                 <table class="synergies-table">
+                    <thead>
+                        <tr>
+                            <th>Header</th>
+                            <th class="col-summary">Summary</th>
+                            <th>Type</th>
+                            <th>Actors</th>
+                            <th class="col-currency">Soft Revenue</th>
+                            <th class="col-currency">Hard Cost</th>
+                            <th class="col-currency">Scenario Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>🤝</td><td class="col-summary">Kinaxis proposes ERP data feeds alliance with SAP to counter upstream consolidation threats.</td><td>Alliance</td><td>Kinaxis, SAP</td><td class="col-currency">$2,300,000,000</td><td class="col-currency">$0</td><td class="col-currency">$2,300,000,000</td></tr>
+                        <tr><td>⚔️</td><td class="col-summary">Multiple hunters explicitly target elite Stage 3 Pigment to counter incumbent vulnerability.</td><td>M&A Race</td><td>Oracle, MS, SAP</td><td class="col-currency">$1,000,000,000</td><td class="col-currency">$300,000,000</td><td class="col-currency">$1,300,000,000</td></tr>
+                        <tr><td>🤝</td><td class="col-summary">Pigment and o9 Solutions suggest Stage 3 alliance vs SAP/Anaplan.</td><td>Alliance</td><td>Pigment, o9</td><td class="col-currency">$500,000,000</td><td class="col-currency">$0</td><td class="col-currency">$500,000,000</td></tr>
+                        <tr><td>🗳️</td><td class="col-summary">Oracle's opportunity to acquire Vena bolsters FP&A amid differentiation weakness.</td><td>Strategic Gap</td><td>Oracle, Vena</td><td class="col-currency">$500,000,000</td><td class="col-currency">$0</td><td class="col-currency">$500,000,000</td></tr>
+                        <tr><td>🧩</td><td class="col-summary">Anaplan's post-private posture signals roll-up strategy for FP&A/S&OP breadth.</td><td>Roll-up</td><td>Anaplan</td><td class="col-currency">$0</td><td class="col-currency">$200,000,000</td><td class="col-currency">$200,000,000</td></tr>
+                        <tr><td>⚔️</td><td class="col-summary">SAP and Anaplan race to acquire River Logic to complete their IBP stacks with Stage 4 solvers.</td><td>M&A Race</td><td>SAP, Anaplan</td><td class="col-currency">$0</td><td class="col-currency">$100,000,000</td><td class="col-currency">$100,000,000</td></tr>
+                        <tr><td>🗳️</td><td class="col-summary">Microsoft's targets micro-player Rollstack for Stage 3 BI to fill an FP&A gap.</td><td>Strategic Gap</td><td>MS, Rollstack</td><td class="col-currency">$0</td><td class="col-currency">$50,000,000</td><td class="col-currency">$50,000,000</td></tr>
+                        <tr><td>🗜️</td><td class="col-summary">AI natives Pigment/o9 erode SAP's maturity moat via superior agentic UX.</td><td>Squeeze</td><td>SAP, Pigment, o9</td><td class="col-currency">$0</td><td class="col-currency">$0</td><td class="col-currency">$0</td></tr>
+                        <tr><td>🛡️</td><td class="col-summary">SAP faces siege pressure from challengers like Jedox and Pigment.</td><td>Fortress Siege</td><td>SAP, Jedox, Pigment</td><td class="col-currency">$0</td><td class="col-currency">$0</td><td class="col-currency">$0</td></tr>
+                        <tr><td>⛓️</td><td class="col-summary">Kinaxis relies on rival Stage 1 ERP suppliers (SAP/Oracle), creating dependency risk.</td><td>Dependency</td><td>Kinaxis, SAP, Oracle</td><td class="col-currency">$0</td><td class="col-currency">$0</td><td class="col-currency">$0</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <div class="split-container">
+            <div class="text-col">
+                <section id="value_proposition">
+                    <h3>Value proposition</h3>
+                    <p>Pigment provides an integrated planning platform, powered by agentic AI, designed to improve how businesses plan, make decisions, and drive growth. The platform aims to be easy to use yet powerful enough for enterprise-level planning, offering the fastest time to value.</p>
+                    <h4>Ideal Customer Profile (ICP)</h4>
+                    <p>Large businesses and enterprise companies, targeting Finance, Sales, HR, and Supply Chain teams. Users range from C-level executives to individual contributors needing AI-assisted data analysis.</p>
+                </section>
+                <section id="product">
+                    <h3>Product</h3>
+                     <p>Pigment offers an integrated planning platform with agentic AI capabilities for businesses to analyze, model, and plan. It provides a unified enterprise platform for various business users, particularly within finance, sales, and HR, enabling them to make decisions and drive growth by consolidating data and automating routine tasks using AI.</p>
+                    <h4>Feature Encyclopedia</h4>
+                    <ul>
+                        <li>Agentic AI for proactive business planning (Supervisor, Analyst, Planner, Modeler).</li>
+                        <li>Natively embedded AI agents trained on user's data and context.</li>
+                        <li>Integrated financial, sales, workforce, and supply chain planning tools.</li>
+                        <li>High-impact performance management and scenario simulation.</li>
+                        <li>Highly scalable data engine capable of running multiple models simultaneously.</li>
+                    </ul>
+                </section>
+                <section id="business_model">
+                    <h3>Business model</h3>
+                    <p>Pigment operates on a SaaS (Software-as-a-Service) model based on Licenses sold through Order Forms. Supplemental Services (integration, configuration, training) are also offered via Statements of Work. The model is enterprise-focused, with licenses sold per Authorized User.</p>
+                    <h4>Revenue Streams</h4>
+                    <p>Fees for Licenses and Supplemental Services are paid according to Order Forms. Pricing is not public and invoices are typically due within 30 days. Fees are exclusive of taxes, and interest may be charged on overdue sums.</p>
+                </section>
+                <section id="team">
+                    <h3>Team</h3>
+                     <p>The company vision is to build a unified enterprise platform with the fastest time to value for any business user. It aims to create resilient businesses, enable employees to focus on meaningful work, and democratize planning with AI.</p>
+                     <h4>Team Analysis</h4>
+                     <p>Romain Niccoli is listed as President and legal representative. Specific headcount figures for departments like Product, Engineering, Sales, and Marketing are not available in the provided source data.</p>
+                </section>
+                <section id="ceo">
+                    <h3>CEO: Romain Niccoli</h3>
+                    <h4>Executive Assessment</h4>
+                    <p><strong>Founder Archetype:</strong> Product-Led Founder with deep technical roots and a history of building and scaling tech platforms.</p>
+                    <p><strong>Pedigree Signal:</strong> Elite technical education from Mines Paris - PSL and high-caliber experience scaling Criteo from a startup to a Nasdaq-listed global leader.</p>
+                    <p><strong>Loyalty & Tenure:</strong> Demonstrates deep execution and loyalty with long tenures at Criteo (11+ years) and Pigment (6+ years), suggesting a stable, founder-focused career.</p>
+                    
+                    <h4>Professional Narrative</h4>
+                    <p>Romain Niccoli's career began with foundational software engineering roles at Microsoft and SYSTRAN. He co-founded Criteo in 2005, where he was instrumental in its growth to a $1.8B revenue leader over 12 years. After Criteo, he co-founded Pigment in 2019, applying his seasoned expertise to reinvent business planning through technology.</p>
+                </section>
+                <section id="company_summary">
+                    <h3>Company summary</h3>
+                    <h4>Final Adjusted Score: 95.6 / 100 (Interesting)</h4>
+                    <p><strong>Team Excellence:</strong> 96/100 (28.8 pts)<br>
+                    <strong>Market Opportunity:</strong> 88/100 (17.6 pts)<br>
+                    <strong>Product Innovation:</strong> 92/100 (18.4 pts)<br>
+                    <strong>Business Model:</strong> 85/100 (12.75 pts)<br>
+                    <strong>Traction & Growth:</strong> 90/100 (13.5 pts)</p>
+                    <p><strong>In a Nutshell:</strong> Pigment is an AI-Driven Integrated Business Planning Platform enabling large enterprises to unify data and make faster decisions, replacing legacy spreadsheets with a real-time modeling engine.</p>
+                    <p><strong>The Problem:</strong> Enterprise planning is broken, trapped in siloed spreadsheets or brittle legacy platforms too complex for business users.</p>
+                    <p><strong>The Solution:</strong> A natively integrated, collaborative planning environment with Agentic AI that allows users to model scenarios using natural language.</p>
+                    <p><strong>Our Rationale & Thesis Fit:</strong> Pigment has a structural advantage through its founder's pedigree (scaling Criteo) and an AI-native architecture that perfectly aligns with investing in proactive 'Agentic AI'. Pigment is the 'Spiritual Successor' to Anaplan, built for agility and user empowerment.</p>
+                </section>
+            </div>
+            <div class="img-col">
+                <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-8bc9bca6a0c800cba230d38967c61b65-1xx4nmuh.jpg" alt="Company Analysis" class="sticky-img">
+            </div>
+        </div>
+
+        <section id="swot_analysis">
+            <h3>SWOT analysis</h3>
+            <div class="swot-grid">
+                <div class="swot-quadrant swot-s">
+                    <h4>Strengths</h4>
+                    <ul>
+                        <li>Elite product-led founder (Romain Niccoli) with proven scaling experience (Criteo).</li>
+                        <li>Dominant AI agentic platform in high-value Stage 3 of the value chain.</li>
+                        <li>Proven traction with $145M Series D, Gartner recognition, and large enterprise deployments.</li>
+                        <li>Fast time-to-value USP with a unified platform and advanced scenario simulation.</li>
+                        <li>Cross-functional moat built on evolving AI and deep integration.</li>
+                    </ul>
+                </div>
+                <div class="swot-quadrant swot-w">
+                    <h4>Weaknesses</h4>
+                    <ul>
+                        <li>Relatively young company (founded 2019) lacking incumbent brand recognition.</li>
+                        <li>Team scaling and bench depth are not publicly visible.</li>
+                        <li>Complex enterprise sales model with custom pricing and no public tiers.</li>
+                        <li>Initial focus on European market; US expansion is still unproven.</li>
+                        <li>Dependency on AI hype; risk if agents underdeliver on promised insights.</li>
+                    </ul>
+                </div>
+                <div class="swot-quadrant swot-o">
+                    <h4>Opportunities</h4>
+                    <ul>
+                        <li>Explosive market growth ($8.7B TAM, 12% CAGR) as enterprises retire legacy systems.</li>
+                        <li>Global scaling fueled by Series D funding, targeting large enterprises in key verticals.</li>
+                        <li>Multi-department penetration by cross-selling from an initial finance beachhead.</li>
+                        <li>Leverage AI governance alliances and initiatives to boost credibility.</li>
+                        <li>Exploit incumbent gaps in user experience and rigid architecture.</li>
+                    </ul>
+                </div>
+                <div class="swot-quadrant swot-t">
+                    <h4>Threats</h4>
+                    <ul>
+                        <li>Dominant incumbents (SAP, Anaplan) with deep pockets and existing entrenchment.</li>
+                        <li>Macroeconomic headwinds could reduce enterprise budgets for new software.</li>
+                        <li>Commoditization of AI features by hyperscalers or open-source alternatives.</li>
+                        <li>Regulatory pressures from GDPR and evolving AI compliance standards.</li>
+                        <li>Execution risks related to complex enterprise integrations and pressure for immediate ROI.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section id="action_plan">
+            <h3>Action plan</h3>
+             <ul>
+                <li>
+                    <p><strong>How to defend?</strong><br>Fortify Stage 3/4 value chain supremacy with proprietary AI IP/data flywheels, high switch costs, and Criteo-honed loyalty; out-execute incumbents on UX speed.</p>
+                </li>
+                <li>
+                    <p><strong>How to win?</strong><br>Weaponize founder scaling DNA + agentic AI moat to blitz enterprise beachheads (finance → cross-functional); capture 3% SAM ($69M SOM) via US expansion, Current AI alliances, and 70%+ margins on ARPU ~€28K.</p>
+                </li>
+                 <li>
+                    <p><strong>What would be fatal?</strong><br>AI delivery flops (no 'so what?' insights) + SAP/Anaplan retaliation in $1B+ deals amid downturn.</p>
+                </li>
+                 <li>
+                    <p><strong>What to fix?</strong><br>Opaque team scaling + sales opacity blocking US/global ramp; hire sales heavies, publish benchmarks to shorten cycles.</p>
+                </li>
+            </ul>
+        </section>
+
+        <section id="conviction">
+            <h3>Conviction</h3>
+            <h4>Synthetic GP Conviction (summary)</h4>
+             <p><strong>Market</strong><br>Pigment is disrupting a seemingly crowded enterprise planning market with a significantly superior AI-native user experience, akin to Zoom's success in video conferencing.</p>
+            <p><strong>Timing</strong><br>Incumbents face a 'False Start' that Pigment is exploiting due to the emergence of advanced AI/LLMs, enabling a perfectly timed entry into an underserved market.</p>
+            <p><strong>Company</strong><br>Pigment's differentiation lies in its 'user-owned UX' and 'Enterprise-Grade Agentic AI,' creating deep switching costs and a proprietary data moat.</p>
+            <p><strong>Founder</strong><br>The founder, Romain Niccoli, exhibits exceptional founder-market fit with a track record of scaling Criteo to a multi-billion-dollar company, providing critical operational and market expertise.</p>
+        </section>
+        
+        <section id="sources">
+            <h3>Sources</h3>
+            <ul class="source-list">
+                <li><a href="https://6sense.com/tech/budgeting-and-forecasting/pigment-market-share" target="_blank">6sense.com/.../pigment-market-share</a></li>
+                <li><a href="https://azure.microsoft.com/en-us/solutions/ai" target="_blank">azure.microsoft.com/.../ai</a></li>
+                <li><a href="https://companiesmarketcap.com/kinaxis/cash-on-hand/?utm_source=openai" target="_blank">companiesmarketcap.com/.../cash-on-hand</a></li>
+                <li><a href="https://companiesmarketcap.com/kinaxis/marketcap/?utm_source=openai" target="_blank">companiesmarketcap.com/.../marketcap</a></li>
+                <li><a href="https://dataintelo.com/report/integrated-business-planning-market/amp?utm_source=openai" target="_blank">dataintelo.com/.../amp</a></li>
+                <li><a href="https://dataintelo.com/report/integrated-business-planning-platforms-market" target="_blank">dataintelo.com/.../platforms-market</a></li>
+                <li><a href="https://dynamics.microsoft.com" target="_blank">dynamics.microsoft.com</a></li>
+                <li><a href="https://en.wikipedia.org/wiki/Coupa?utm_source=openai" target="_blank">en.wikipedia.org/wiki/Coupa</a></li>
+                <li><a href="https://en.wikipedia.org/wiki/Jedox" target="_blank">en.wikipedia.org/wiki/Jedox</a></li>
+                <li><a href="https://growthmarketreports.com/report/integrated-business-planning-market?utm_source=openai" target="_blank">growthmarketreports.com/.../planning-market</a></li>
+                <li><a href="https://investor.oracle.com/investor-news/news-details/2024/Oracle-Announces-Fiscal-2024-Fourth-Quarter-and-Fiscal-Full-Year-Financial-Results/default.aspx?utm_source=openai" target="_blank">investor.oracle.com/.../Financial-Results</a></li>
+                <li><a href="https://marketintelo.com/report/integrated-business-planning-market" target="_blank">marketintelo.com/.../planning-market</a></li>
+                <li><a href="https://o9solutions.com/solutions/integrated-business-planning/digital-ibp/" target="_blank">o9solutions.com/.../digital-ibp</a></li>
+                <li><a href="https://planful.com" target="_blank">planful.com</a></li>
+                <li><a href="https://riverlogic.com" target="_blank">riverlogic.com</a></li>
+                <li><a href="https://www.anaplan.com" target="_blank">www.anaplan.com</a></li>
+                <li><a href="https://www.axios.com/2025/01/27/agentic-ai-big-next-step-evolution?utm_source=openai" target="_blank">www.axios.com/.../agentic-ai</a></li>
+                <li><a href="https://www.board.com" target="_blank">www.board.com</a></li>
+                <li><a href="https://www.coupa.com/products/supply-chain-design-and-planning" target="_blank">www.coupa.com/.../design-and-planning</a></li>
+                <li><a href="https://www.ibm.com/watson" target="_blank">www.ibm.com/watson</a></li>
+                <li><a href="https://www.informatica.com" target="_blank">www.informatica.com</a></li>
+                <li><a href="https://www.jedox.com" target="_blank">www.jedox.com</a></li>
+                <li><a href="https://www.kinaxis.com/en/solutions/platform" target="_blank">www.kinaxis.com/.../platform</a></li>
+                <li><a href="https://www.linkedin.com/company/pigment-app/" target="_blank">www.linkedin.com/company/pigment-app</a></li>
+                <li><a href="https://www.linkedin.com/in/romainniccoli/" target="_blank">www.linkedin.com/in/romainniccoli</a></li>
+                <li><a href="https://www.mulesoft.com" target="_blank">www.mulesoft.com</a></li>
+                <li><a href="https://www.oracle.com/erp" target="_blank">www.oracle.com/erp</a></li>
+                <li><a href="https://www.oracle.com/scm" target="_blank">www.oracle.com/scm</a></li>
+                <li><a href="https://www.pigment.com/" target="_blank">www.pigment.com</a></li>
+                <li><a href="https://www.sap.com/s4hana" target="_blank">www.sap.com/s4hana</a></li>
+                <li><a href="https://www.statmuse.com/money/ask/oracle-market-cap?utm_source=openai" target="_blank">www.statmuse.com/money/.../oracle-market-cap</a></li>
+                <li><a href="https://www.talend.com" target="_blank">www.talend.com</a></li>
+                <li><a href="https://www.venasolutions.com" target="_blank">www.venasolutions.com</a></li>
+            </ul>
+        </section>
+
+        <footer class="final-footer">
+            Generated by Proplace for Investment Criteria - <a href="mailto:alexandre@proplace.co">alexandre@proplace.co</a> (last update: 2026-01-29T15:14:31.000Z)
+        </footer>
+    </main>
+</div>
+
 </body>
 </html>
