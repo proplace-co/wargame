@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Alan Interactive Memo</title>
+  <title>Alan Interactive Memo — Proplace</title>
   <style>
 :root { --bg-app: #f8fafc; --text-main: #1e293b; --yellow-menu: #FEF9C3; --green-menu: #DCFCE7; --grey-menu: #F1F5F9; }
 body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-app); color: var(--text-main); margin: 0; display: flex; }
@@ -100,11 +100,17 @@ li { margin-bottom: 0.5em; line-height: 1.6; }
 .border-fortress { border-left-color: #2563eb !important; } 
 .border-opportunistic { border-left-color: #16a34a !important; } 
 
-.actor-card summary, .scen-header { padding: 10px; cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; align-items: center; }
-.actor-card summary::-webkit-details-marker, .scen-header::-webkit-details-marker { display: none; }
+/* SCENARIO CARD BEAUTIFICATION */
+details { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 15px; padding: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.03); transition: all 0.2s ease; }
+details:hover { box-shadow: 0 4px 8px rgba(0,0,0,0.06); border-color: #cbd5e1; }
+details[open] { background: #f8fafc; border-color: #94a3b8; }
+
+.actor-card summary, .scen-header, details > summary { padding: 15px; cursor: pointer; font-weight: 500; list-style: none; display: flex; justify-content: space-between; align-items: flex-start; outline: none; }
+details > summary::-webkit-details-marker { display: none; }
+
 /* Custom + Icon */
-.actor-card summary::after, .scen-header::after { content: "+"; font-size: 1.2em; font-weight: bold; color: #94a3b8; transition: transform 0.2s; margin-left: 10px; }
-.actor-card[open] summary::after, details[open] .scen-header::after { content: "−"; color: #1e293b; }
+.actor-card summary::after, .scen-header::after, details > summary::after { content: "+"; font-size: 1.4em; font-weight: 300; color: #94a3b8; transition: transform 0.2s; margin-left: 15px; line-height: 1; }
+.actor-card[open] summary::after, details[open] > summary::after { content: "−"; color: #475569; font-weight: 500; }
 
 .actor-header-flex { display: flex; justify-content: space-between; align-items: center; flex: 1; }
 .actor-right-labels { display: flex; gap: 8px; align-items: center; }
@@ -122,8 +128,8 @@ li { margin-bottom: 0.5em; line-height: 1.6; }
 
 /* SCENARIO LOGIC GRID */
 .scen-logic-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; width: 100%; }
-.logic-tag { font-size: 0.75em; background: #f1f5f9; padding: 3px 8px; border-radius: 4px; border: 1px solid #e2e8f0; font-weight: 600; color: #475569; }
-.scen-summary-text { font-weight: 400; color: #334155; }
+.logic-tag { font-size: 0.75em; background: #f1f5f9; padding: 4px 10px; border-radius: 20px; border: 1px solid #e2e8f0; font-weight: 600; color: #475569; display: inline-block; }
+.scen-summary-text { font-weight: 400; color: #334155; font-size: 1.05em; line-height: 1.5; }
 
 /* SYNERGIES TABLE */
 .synergies-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.9em; table-layout: fixed; }
@@ -146,49 +152,55 @@ li { margin-bottom: 0.5em; line-height: 1.6; }
 </head>
 <body>
   <div class="main-wrapper">
-    <aside class="sidebar">
-      <!-- Sidebar Top Block (forced at top to ensure mobile visibility) -->
-      <div class="sb-top-data" style="padding:0 25px;">
-        <span class="sb-score score-green">94</span>
-        <span class="sb-tag">France</span>
-        <span class="sb-tag">Series E+</span>
-        <span class="sb-tag">Both</span>
-      </div>
 
-      <div class="meta-block">
-        <h3 class="meta-h3">Alan</h3>
-        <div class="meta-tagline">Comprehensive health partner that prevents, ensures, and supports daily health needs through integrated insurance and wellness.</div>
-        <div class="meta-market">HealthTech & Digital Health</div>
-      </div>
-
-      <div style="padding:0 25px 15px;">
-        <div class="contact-row">
-          <a class="contact-item" href="#"><span>👤</span><span>Jean-Charles Samuelian-Werve</span></a>
-          <a class="contact-item" href="https://linkedin.com/in/jcsamuelian" target="_blank"><span>🔗</span><span>LinkedIn</span></a>
-          <a class="contact-item" href="mailto:charles@alan.com"><span>✉️</span><span>charles@alan.com</span></a>
-          <a class="contact-item" href="tel:"><span>📞</span><span>Not provided</span></a>
-
-          <div class="keyword-chips" aria-label="Keywords">
-            <span class="k-chip">HealthTech & Digital Health</span>
-            <span class="k-chip">InsurTech</span>
-            <span class="k-chip">FinTech</span>
-            <span class="k-chip">SMB</span>
-            <span class="k-chip">Mid-Market</span>
-            <span class="k-chip">Enterprise</span>
-            <span class="k-chip">B2C</span>
-            <span class="k-chip">Government & Public Sector</span>
-            <span class="k-chip">B2B</span>
-            <span class="k-chip">Subscription (SaaS/Recurring)</span>
-            <span class="k-chip">Enterprise Sales</span>
-            <span class="k-chip">SaaS</span>
-            <span class="k-chip">Platform</span>
-            <span class="k-chip">AI / ML</span>
-          </div>
+    <!-- SIDEBAR -->
+    <aside class="sidebar" aria-label="Sidebar navigation">
+      <!-- Top block (visible on mobile) -->
+      <div class="sb-top-data" style="padding:0 25px 10px;">
+        <div class="sb-label-row" style="width:100%; align-items:center;">
+          <span class="sb-score score-green">94</span>
+          <span class="sb-tag">France</span>
+          <span class="sb-tag">Series E+</span>
+          <span class="sb-tag">Both</span>
         </div>
       </div>
 
-      <nav style="padding: 10px 0 0 0;">
-        <!-- Yellow Group -->
+      <!-- Company Name -->
+      <div style="padding: 0 25px;">
+        <h3 class="meta-h3">Alan</h3>
+        <span class="meta-tagline">Comprehensive health partner that prevents, ensures, and supports daily health needs through integrated insurance and wellness.</span>
+        <div class="meta-market">HealthTech &amp; Digital Health</div>
+      </div>
+
+      <!-- Contact Info & Keywords -->
+      <div style="padding: 0 25px 15px;">
+        <div class="contact-row">
+          <div class="contact-item">👤 Jean-Charles Samuelian-Werve</div>
+          <a class="contact-item" href="https://linkedin.com/in/jcsamuelian" target="_blank">🔗 LinkedIn</a>
+          <a class="contact-item" href="mailto:charles@alan.com">✉️ charles@alan.com</a>
+          <a class="contact-item" href="#" aria-disabled="true">☎️ No phone listed</a>
+        </div>
+        <div class="keyword-chips">
+          <span class="k-chip">HealthTech &amp; Digital Health</span>
+          <span class="k-chip">InsurTech</span>
+          <span class="k-chip">FinTech</span>
+          <span class="k-chip">SMB</span>
+          <span class="k-chip">Mid-Market</span>
+          <span class="k-chip">Enterprise</span>
+          <span class="k-chip">B2C</span>
+          <span class="k-chip">Government &amp; Public Sector</span>
+          <span class="k-chip">B2B</span>
+          <span class="k-chip">Subscription (SaaS/Recurring)</span>
+          <span class="k-chip">Enterprise Sales</span>
+          <span class="k-chip">SaaS</span>
+          <span class="k-chip">Platform</span>
+          <span class="k-chip">AI / ML</span>
+        </div>
+      </div>
+
+      <!-- Menu -->
+      <nav style="padding-top:10px;">
+        <!-- Yellow group -->
         <a class="nav-item bg-yellow" href="#market">Market</a>
         <a class="nav-item bg-yellow" href="#value-chain">Value chain</a>
         <a class="nav-item bg-yellow" href="#competition">Competition</a>
@@ -196,8 +208,8 @@ li { margin-bottom: 0.5em; line-height: 1.6; }
         <a class="nav-item bg-yellow" href="#strategic-scenarios">Strategic scenarios</a>
         <a class="nav-item bg-yellow" href="#synergies">Synergies</a>
 
-        <!-- Green Group -->
-        <a class="nav-item bg-green" href="#value-proposition">Value proposition</a>
+        <!-- Green group -->
+        <a class="nav-item bg-green" href="#value-prop">Value proposition</a>
         <a class="nav-item bg-green" href="#product">Product</a>
         <a class="nav-item bg-green" href="#business-model">Business model</a>
         <a class="nav-item bg-green" href="#team">Team</a>
@@ -206,1540 +218,1557 @@ li { margin-bottom: 0.5em; line-height: 1.6; }
         <a class="nav-item bg-green" href="#swot">SWOT analysis</a>
         <a class="nav-item bg-green" href="#action-plan">Action plan</a>
 
-        <!-- Grey Group -->
+        <!-- Grey group -->
         <a class="nav-item bg-grey" href="#conviction">Conviction</a>
         <a class="nav-item bg-grey" href="#sources">Sources</a>
       </nav>
 
+      <!-- CTA -->
       <a class="cta-btn" href="https://forms.proplace.co/meet" target="_blank">Schedule a strategy call</a>
-      <div class="promo-text"><em><a href="https://www.proplace.co" target="_blank" style="color:inherit;">Get AI companies studied in depth every day in your inbox</a></em></div>
+      <div class="promo-text">
+        <em><a href="https://www.proplace.co" target="_blank" style="color:inherit; text-decoration: none;">Get AI companies studied in depth every day in your inbox</a></em>
+      </div>
     </aside>
 
+    <!-- CONTENT AREA -->
     <main class="content-area">
-      <!-- STEP 2: CONTENT HEADER -->
-      <div class="header-tags"><span class="sb-score score-green">94</span> <span class="sb-tag">France</span> <span class="sb-tag">Series E+</span> <span class="sb-tag">Both</span></div>
+      <!-- STEP 2: Header Tags (above title) -->
+      <div class="header-tags">
+        <span class="sb-score score-green">94</span>
+        <span class="sb-tag">France</span>
+        <span class="sb-tag">Series E+</span>
+        <span class="sb-tag">Both</span>
+      </div>
+
       <h1>Alan Interactive Memo</h1>
-      <h2>HealthTech & Digital Health &gt; Integrated Digital Health Insurance SaaS</h2>
-      <div style="font-style:italic; margin-bottom:20px;">Digital integrated health insurance and wellness platforms for SMEs, self-employed, and retirees in Europe with automated HR and preventive care.</div>
+      <h2>HealthTech &amp; Digital Health &gt; Integrated Digital Health Insurance SaaS</h2>
+      <p style="font-style:italic; margin-top:-8px;">Digital integrated health insurance and wellness platforms for SMEs, self-employed, and retirees in Europe with automated HR and preventive care.</p>
+
+      <!-- Completeness counts -->
+      <p style="font-weight:600; color:#475569;">
+        Rendered items: Actors (32) · Strategic scenarios (15) · Competitors (17) · Sources (20)
+      </p>
 
       <!-- STEP 3: MARKET (Grouped Sticky) -->
-      <section id="market" class="split-container">
-        <div class="text-col">
-          <h3>Market sizing</h3>
+      <section id="market">
+        <div class="split-container">
+          <div class="text-col">
+            <h3>Market sizing</h3>
 
-          <p>
-            <strong>Top-Down Market Analysis (Funnel Approach)</strong><br>
-            Total Addressable Market (TAM): $148.16B — perimeter: digital insurance platform market revenue, covering cloud-based, platform-oriented insurance technology including health insurance SaaS (global, 2025). Source: Mordor Intelligence.
-          </p>
+            <p>Top-Down Market Analysis (Funnel Approach)</p>
+            <p>Total Addressable Market (TAM): $148.16B</p>
+            <p>Perimeter: Digital Insurance Platform market revenue, encompassing cloud-based, platform-oriented insurance technology activity, including health insurance SaaS (Global, 2025).</p>
+            <p>Source Data: <a href="https://www.mordorintelligence.com/industry-reports/digital-insurance-platform-market?utm_source=openai" target="_blank">Mordor Intelligence - Digital Insurance Platform Market Report</a>.</p>
 
-          <p>
-            Serviceable Available Market (SAM): $8.75B — perimeter: Europe's share of global healthcare SaaS market including health IT, payer/insurer tech, and care management (Europe, 2024). Logic: filtered for Europe SME health insurance SaaS components. Source: Cognitive Market Research.
-          </p>
+            <p>Serviceable Available Market (SAM): $8.75B</p>
+            <p>Perimeter: Europe’s share of global Healthcare SaaS market, including software for health IT, payer/insurer tech, and care management, used as a proxy for integrated health insurance SaaS components (Europe, 2024).</p>
+            <p>Source Verification: <a href="https://www.cognitivemarketresearch.com/healthcare-saas-market-report?utm_source=openai" target="_blank">Cognitive Market Research - Healthcare SaaS Market Report</a>.</p>
 
-          <p>
-            Serviceable Obtainable Market (SOM): $262.5M — perimeter: realistic 3% market share capture rationale for an early entrant, based on SAM filtering and competitive landscape.
-          </p>
+            <p>Serviceable Obtainable Market (SOM): $262.5M</p>
+            <p>Perimeter: Realistic 3% market share of SAM for an early entrant; logic based on competitive landscape and penetration assumptions.</p>
 
-          <p><strong>Bottom-Up Market Analysis (Calculated Approach)</strong><br>
-            This approach multiplies validated potential customers by an average price point.<br>
-            1) Customer segment (volume): 100,000 — target: SMEs (100-999 employees), self-employed, retirees; buyers include insurers, employers, TPAs seeking HR automation and preventive care platforms. Source: Market.us.<br>
-            2) Unit economics (price): $50,000 ARPU (annual per organization) — midpoint of tiered SaaS pricing. Source: FasterCapital unit economics analysis.<br>
-            3) Calculated result: $5B (Serviceable Available Market using bottom-up inputs).
-          </p>
+            <p style="margin-top:12px;">Bottom-Up Market Analysis (Calculated Approach)</p>
+            <p>This approach multiplies validated potential customers by average price assumptions to estimate market size.</p>
+            <p>Customer Segment (Volume): 100,000 (SMEs 100–999 employees, self-employed, retirees; buyers include insurers, employers, TPAs).</p>
+            <p>Unit Economics (Average Price): $50,000 ARPU (annual per organization, tiered SaaS pricing midpoint).</p>
+            <p>Calculated Result (Bottom-up SAM proxy): $5B</p>
+            <p>Sources referenced: <a href="https://market.us/report/digital-health-insurance-market/?utm_source=openai" target="_blank">Market.us - Digital Health Insurance Market Report</a>, <a href="https://fastercapital.com/content/Unit-economics-for-healthtech-operation--Healthy-Margins--How-Unit-Economics-Drive-HealthTech-Success.html?utm_source=openai" target="_blank">FasterCapital - Unit Economics</a>.</p>
 
-          <h3>Market Trends</h3>
-          <p>
-            Market intelligence highlights a Europe SME insurtech platform surge. Key trends include:
-          </p>
-          <ul>
-            <li><strong>Structural shift:</strong> cloud-native platforms integrating preventive care, HR automation and wellness for SMEs, addressing manual admin and GDPR compliance pressures. (Source: Market.us)</li>
-            <li><strong>Velocity & validation:</strong> global digital insurance platform TAM at $148.16B in 2025 with an estimated 7% CAGR to 2030; Europe healthcare SaaS SAM at $8.75B (2024) with a proxy CAGR ~19.5%. (Sources: Mordor Intelligence, Cognitive Market Research)</li>
-            <li><strong>Value chain control points:</strong> Policy administration & underwriting (Stage 3) is a primary control point with the highest strategic scoring and margin potential due to proprietary actuarial models and scalable rules engines. (Source: CFO Pro Analytics)</li>
-            <li><strong>Competitive dislocation:</strong> incumbent commoditization among some players (e.g., Luko, Coya) creates acquisition and consolidation opportunities for digital-native platforms like Alan. (Source: sector reporting)</li>
-            <li><strong>Unit economics & value capture:</strong> modular Stage 3 policy administration integrated with member engagement can deliver significant ARPU to insurers/employers via HR automation and preventive bundling. (Source: FasterCapital, CFO Pro Analytics)</li>
-          </ul>
-        </div>
+            <h3>Market Trends</h3>
+            <p>Market intelligence indicates a Europe SME insurtech platform surge driven by cloud-native adoption, integrated preventive care, and demand for automated HR/benefits workflows.</p>
+            <p>Key points:</p>
+            <ul>
+              <li>Structural shift toward digital-first, GDPR-compliant platforms for SMEs, self-employed, and retirees. (<a href="https://market.us/report/digital-health-insurance-market/?utm_source=openai" target="_blank">market.us</a>)</li>
+              <li>Velocity: Global digital insurance platform TAM estimated at $148.16B (2025) with ~7% CAGR to 2030; European healthcare SaaS SAM around $8.75B (2024) with higher growth proxies. (<a href="https://www.mordorintelligence.com/industry-reports/digital-insurance-platform-market?utm_source=openai" target="_blank">Mordor</a>, <a href="https://www.cognitivemarketresearch.com/healthcare-saas-market-report?utm_source=openai" target="_blank">Cognitive</a>)</li>
+              <li>Value-chain control point: Policy Administration &amp; Underwriting is a strategic bottleneck with high margin potential and defensibility.</li>
+              <li>Unit economics favor upstream/midstream stages due to software scaling and pricing power; typical SaaS gross margins cited by industry analysis. (<a href="https://cfoproanalytics.com/cfo-wiki/saas/gross-margin-targets-for-saas-companies/?utm_source=openai" target="_blank">CFO Pro Analytics</a>)</li>
+            </ul>
+          </div>
 
-        <div class="img-col">
-          <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-3ce053158628e55fdaa6d770d4c3367d-nypk2aij.jpg" alt="Top-down market image" class="sticky-img" />
-          <div style="height:16px;"></div>
-          <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-982c1b74888c2da2b77d7dce8640e5e8-dlcnp3w5.jpg" alt="Bottom-up market image" class="sticky-img" />
+          <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-3423df77cf96fedb324a230d92dbdf03-htjyb662.jpg" alt="Market top-down image" />
+            <div style="height:18px"></div>
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-b367257f257b8511d0ffb554c29967a4-ivpzsvpn.jpg" alt="Market bottom-up image" />
+          </div>
         </div>
       </section>
 
-      <!-- STEP 4: VALUE CHAIN (Battlefield Layout) -->
+      <!-- STEP 4: VALUE CHAIN (Grouped Sticky) -->
       <section id="value-chain">
-        <h3>Value chain stages description</h3>
+        <div class="split-container">
+          <div class="text-col">
+            <h3>Value chain stages description</h3>
+            <p>The integrated digital health insurance value chain spans upstream platform strategy and data foundation, through policy administration and underwriting, claims, provider network/ preventive care integration, to downstream member engagement and HR/service delivery. Each stage offers distinct margin, defensibility and growth characteristics.</p>
 
-        <div class="stage-desc-grid">
-          <p><strong>Stage 1 — Platform Development & Strategy:</strong> Upstream stage involving market research, GDPR alignment, SME/retiree product design, and foundational SaaS architecture. Strategic Score: 7.2. Defensibility moderate; high margin potential and strong growth. Specialized companies: Oracle Health, Guidewire, SAP.</p>
+            <h3>Top 3 Value chain stage</h3>
+            <p>Rank 1: Stage [3] - Policy Administration &amp; Underwriting — Strategic Score: 7.5. Rationale: strong defensibility from actuarial IP, high margin potential from fixed-cost software automation, and direct access to premium pricing.</p>
+            <p>Rank 2: Stage [1] - Platform Development &amp; Strategy — Strategic Score: 7.2. Rationale: upstream control enables differentiation and high margins through product-led platform development tailored for European SME needs.</p>
+            <p>Rank 3: Stage [2] - Data Foundation &amp; Interoperability — Strategic Score: 6.9. Rationale: high defensibility from data moats, regulatory barriers and interoperability expertise (HL7/FHIR), essential for advanced underwriting and personalization.</p>
 
-          <p><strong>Stage 2 — Data Foundation & Interoperability:</strong> Aggregation and standardization of claims, EHR and wearables data using standards like HL7 FHIR. Strategic Score: 6.9. High defensibility from technical and regulatory barriers. Specialized companies: CompuGroup Medical, Verisk Analytics, Sapiens.</p>
+            <h3>Companies sorted by value chain stage specialization (battlefield)</h3>
 
-          <p><strong>Stage 3 — Policy Administration & Underwriting:</strong> Core stage for underwriting, eligibility and enrollment, delivering dynamic pricing and HR automation. Strategic Score: 7.5. High defensibility and margin potential; key economic engine. Specialized companies: Oracle Health Insurance Cloud, Guidewire Cloud, HealthEdge.</p>
+            <h4>Legends</h4>
+            <ul>
+              <li><strong>Tiers</strong>: T1 = Global Giant; T2 = Large; T4 = ScaleUp; Unknown = not specified.</li>
+              <li><strong>Capacity (cap)</strong>: Numerical proxy of relative capacity shown in the dataset (higher = more capacity).</li>
+              <li><strong>Posture</strong>: 'Hunter' (active acquirer), 'Hunted' (target), 'Fortress' (defensive incumbent), 'Opportunistic' (acquiring/growing), 'Distressed' (vulnerable).</li>
+            </ul>
 
-          <p><strong>Stage 4 — Claims Adjudication & Payments:</strong> Claims intake, validation and payments, integrating preventive reimbursements. Strategic Score: 5.6. Transactional value with moderate margins. Specialized companies: HealthEdge, Change Healthcare, Waystar.</p>
+            <div class="battlefield-grid">
+              <!-- Column headers -->
+              <div class="battlefield-col">
+                <h4>Platform Development &amp; Strategy<br/>(Stage 1 — 3 actors)</h4>
 
-          <p><strong>Stage 5 — Provider Network & Preventive Care Integration:</strong> Provider contracting and telehealth/wellness integration. Strategic Score: 6.4. Network effects and growth via preventive care adoption. Specialized companies: Oracle Health, Salesforce Health Cloud, Persivia.</p>
+                <!-- Oracle Health -->
+                <details class="actor-card border-hunted">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Oracle Health</div>
+                      <div class="actor-right-labels"><span class="label-tier">Unknown</span><span class="label-cap">Cap: 0</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Country: Unknown · Tier: Unknown · Capacity: 0</p>
+                    <p>Platform strategy specialist listed as a specialized company for Stage 1 in value chain analysis.</p>
+                    <p>Founding: Unknown · Funding: Unknown · Investors: Unknown</p>
+                    <p>Website: Unknown</p>
+                    <p>Source: Value chain analysis (full response text)</p>
+                  </div>
+                </details>
 
-          <p><strong>Stage 6 — Member Engagement & HR/Service Delivery:</strong> Self-service portals, wellness apps and HR automation for SMEs/retirees. Strategic Score: 6.2. High growth and retention potential but lower defensibility. Specialized companies: Salesforce Health Cloud, Judi Health, Plum, YuLife.</p>
-        </div>
+                <!-- Guidewire -->
+                <details class="actor-card border-hunted">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Guidewire</div>
+                      <div class="actor-right-labels"><span class="label-tier">Unknown</span><span class="label-cap">Cap: 0</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Country: Unknown · Tier: Unknown · Capacity: 0</p>
+                    <p>Policy platform specialist listed as a specialized company for Stage 1 in value chain analysis.</p>
+                    <p>Founding: Unknown · Funding: Unknown · Investors: Unknown</p>
+                    <p>Website: Unknown</p>
+                    <p>Source: Value chain analysis (full response text)</p>
+                  </div>
+                </details>
 
-        <h3>Top 3 Value chain stage</h3>
-        <p>
-          Based on Strategic Position Score (Defensibility 40%, Margin Potential 35%, Growth 25%), the top three stages are:
-        </p>
-        <ul>
-          <li><strong>1 — Stage 3: Policy Administration & Underwriting</strong> — Strategic Score: 7.5. Rationale: core economic engine with high margins and defensibility through IP and actuarial models.</li>
-          <li><strong>2 — Stage 1: Platform Development & Strategy</strong> — Strategic Score: 7.2. Rationale: foundational tech and upstream control enabling differentiation for Europe SME niche.</li>
-          <li><strong>3 — Stage 2: Data Foundation & Interoperability</strong> — Strategic Score: 6.9. Rationale: data moats and regulatory barriers produce defensibility for long-term platform advantage.</li>
-        </ul>
+                <!-- SAP -->
+                <details class="actor-card border-fortress">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>SAP</div>
+                      <div class="actor-right-labels"><span class="label-tier">Unknown</span><span class="label-cap">Cap: 0</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Country: Unknown · Tier: Unknown · Capacity: 0</p>
+                    <p>Listed as a specialized company (analytics) for Stage 1 in value chain analysis.</p>
+                    <p>Website: <a href="https://www.sap.com" target="_blank">sap.com</a></p>
+                    <p>Source: Value chain analysis (full response text)</p>
+                  </div>
+                </details>
 
-        <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-5c633f0384a35f4589887676b5182585-7hfbckth.jpg" alt="Top 3 value chain image" class="sticky-img" style="margin-bottom:20px;" />
+              </div>
 
-        <h3>Companies sorted by value chain stage specialization (20)</h3>
-        <p>Legend — Tiers, Capacity, Posture</p>
-        <div style="margin-bottom:10px;">
-          <span class="k-chip">T1_Global_Giant</span>
-          <span class="k-chip">T2_Large</span>
-          <span class="k-chip">T4_ScaleUp</span>
-          <span class="k-chip">Cap: USD millions acquisition capacity</span>
-          <span class="k-chip">Posture: Hunter / Hunted / Fortress / Opportunistic / Distressed</span>
-        </div>
+              <div class="battlefield-col">
+                <h4>Data Foundation &amp; Interoperability<br/>(Stage 2 — 4 actors)</h4>
 
-        <div class="battlefield-grid" aria-label="Value chain battlefield">
-          <!-- Column 1: Stage 1 -->
-          <div class="battlefield-col">
-            <h4>Platform Development &amp; Strategy</h4>
-            <!-- No actors for this stage in input -->
-            <div style="font-size:0.9em;color:#64748b;">No specialized companies listed in dataset for this stage.</div>
+                <!-- CompuGroup Medical -->
+                <details class="actor-card">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>CompuGroup Medical</div>
+                      <div class="actor-right-labels"><span class="label-tier">Unknown</span><span class="label-cap">Cap: 0</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Data exchange specialist listed in Stage 2.</p>
+                    <p>Website: Unknown · Source: Value chain analysis (full response text)</p>
+                  </div>
+                </details>
+
+                <!-- Verisk Analytics -->
+                <details class="actor-card">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Verisk Analytics</div>
+                      <div class="actor-right-labels"><span class="label-tier">Unknown</span><span class="label-cap">Cap: 0</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Website: <a href="https://www.verisk.com" target="_blank">verisk.com</a></p>
+                    <p>Data foundation specialist listed in Stage 2.</p>
+                    <p>Source: Value chain analysis (full response text)</p>
+                  </div>
+                </details>
+
+                <!-- Sapiens -->
+                <details class="actor-card">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Sapiens</div>
+                      <div class="actor-right-labels"><span class="label-tier">Unknown</span><span class="label-cap">Cap: 0</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Website: <a href="https://www.sapiens.com" target="_blank">sapiens.com</a></p>
+                    <p>Data exchange specialist listed in Stage 2.</p>
+                  </div>
+                </details>
+
+                <!-- StoneRiver -->
+                <details class="actor-card">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>StoneRiver</div>
+                      <div class="actor-right-labels"><span class="label-tier">Unknown</span><span class="label-cap">Cap: 0</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Data exchange specialist listed in Stage 2.</p>
+                    <p>Website: Unknown · Source: Value chain analysis (full response text)</p>
+                  </div>
+                </details>
+
+              </div>
+
+              <div class="battlefield-col">
+                <h4>Policy Administration &amp; Underwriting<br/>(Stage 3 — 15 actors)</h4>
+
+                <!-- Alan -->
+                <details class="actor-card border-hunted">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Alan</div>
+                      <div class="actor-right-labels"><span class="label-tier">T4_ScaleUp</span><span class="label-cap">Cap: 120</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Country: FR · Tier: T4_ScaleUp · Capacity: 120 · Diff Score: 8 · Posture: Hunted</p>
+                    <p>Comprehensive AI-driven platform streamlining claims to member engagement, specifically tailored for the European regulatory environment. Modular SaaS for digital health benefits.</p>
+                    <p>Founding: 2018 · Funding Round: Series F (2024-09-01)</p>
+                    <p>Investors: Belfius Bank, OTPP via Teachers’ Venture Growth, Temasek, Coatue, Lakestar</p>
+                    <p>Website: <a href="https://alan.com" target="_blank">alan.com</a></p>
+                    <p>Source: <a href="https://news.crunchbase.com/venture/french-company-alan-secures-54m-series-c-to-expand-digital-health-insurance-across-europe/?utm_source=openai" target="_blank">Crunchbase / news link</a></p>
+
+                    <div>
+                      <strong>Signals</strong>
+                      <ul>
+                        <li><a href="https://techcrunch.com/2024/09/20/health-insurance-startup-alan-reaches-45-billion-valuation-with-new-funding-round/?utm_source=openai" target="_blank">€173M Series F led by Belfius Bank (Sep 2024)</a></li>
+                      </ul>
+                    </div>
+
+                    <div>
+                      <strong>SWOT</strong>
+                      <ul>
+                        <li><strong>Strengths:</strong> Elite founder DNA; vertically integrated AI-driven platform; GDPR-compliant; €173M Series F, €60-70M ARR, 700+ team; high differentiation score.</li>
+                        <li><strong>Weaknesses:</strong> Unprofitable to 2026 target; Europe-centric; opaque unit economics; nascent data moat; CEO-dominant structure.</li>
+                        <li><strong>Opportunities:</strong> Potential exits/sales to AXA or Allianz; alliances with US players; distribution partnerships.</li>
+                        <li><strong>Threats:</strong> Incumbent hunting by AXA/Allianz/Generali; regulatory volatility; macro downturn affecting SME budgets.</li>
+                      </ul>
+                    </div>
+
+                    <div class="strat-inv-box">
+                      <strong>Strategic signals / invitations</strong>
+                      <ul>
+                        <li>Hunter Bidding War: AXA vs Allianz for Alan's Stage 3 AI Platform</li>
+                        <li>Gap Closure: AXA Acquires Alan to Fix Legacy Innovation</li>
+                        <li>Cross-Atlantic Tech Share: Lemonade-Allianz AI Underwriting Partnership</li>
+                      </ul>
+                    </div>
+                  </div>
+                </details>
+
+                <!-- Lemonade -->
+                <details class="actor-card border-fortress">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Lemonade</div>
+                      <div class="actor-right-labels"><span class="label-tier">T2_Large</span><span class="label-cap">Cap: 1000</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Country: USA · Tier: T2_Large · Capacity: 1000 · Diff Score: 6 · Posture: Fortress</p>
+                    <p>Digital-first insurer leveraging AI and behavioral economics for underwriting and claims processing.</p>
+                    <p>Founding: 2015 · Funding: Series C (private 2017), IPO (2020)</p>
+                    <p>Website: <a href="https://www.lemonade.com" target="_blank">lemonade.com</a></p>
+                    <p>Source: <a href="https://news.crunchbase.com/venture/insurance-startup-lemonade-gets-sweeter-with-300m-infusion/?utm_source=openai" target="_blank">Crunchbase article</a></p>
+                    <div>
+                      <strong>Signals</strong>
+                      <ul>
+                        <li><a href="https://news.crunchbase.com/venture/insurance-startup-lemonade-gets-sweeter-with-300m-infusion/?utm_source=openai" target="_blank">No recent private rounds; public markets financing history</a></li>
+                      </ul>
+                    </div>
+                  </div>
+                </details>
+
+                <!-- AXA -->
+                <details class="actor-card border-hunter">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>AXA</div>
+                      <div class="actor-right-labels"><span class="label-tier">T1_Global_Giant</span><span class="label-cap">Cap: 20000</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Tier: T1_Global_Giant · Capacity: 20000 · Diff Score: 6 · Posture: Hunter</p>
+                    <p>Major global insurer active in capital deployment and strategic investments, with large acquisition capacity.</p>
+                    <p>Website: <a href="https://www.axa.com" target="_blank">axa.com</a></p>
+                    <p>Source: <a href="https://www.axa.com/en/press/press-releases/axa-announces-the-placement-of-euro-750-million-senior-notes-due-2034?utm_source=openai" target="_blank">AXA press release</a></p>
+                  </div>
+                </details>
+
+                <!-- Allianz -->
+                <details class="actor-card border-hunter">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Allianz</div>
+                      <div class="actor-right-labels"><span class="label-tier">T1_Global_Giant</span><span class="label-cap">Cap: 20000</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Tier: T1_Global_Giant · Capacity: 20000 · Diff Score: 6 · Posture: Hunter</p>
+                    <p>Global financial services company focused on insurance and asset management, active in acquisitions and strategic capital deployment.</p>
+                    <p>Website: <a href="https://www.allianz.com" target="_blank">allianz.com</a></p>
+                    <p>Source: <a href="https://www.allianz.com/en/mediacenter/news/media-releases/financials/241210-allianz-capital-markets-day.html?utm_source=openai" target="_blank">Allianz press</a></p>
+                  </div>
+                </details>
+
+                <!-- Generali -->
+                <details class="actor-card border-hunter">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Generali</div>
+                      <div class="actor-right-labels"><span class="label-tier">T1_Global_Giant</span><span class="label-cap">Cap: 20000</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Tier: T1_Global_Giant · Capacity: 20000 · Diff Score: 6 · Posture: Hunter</p>
+                    <p>Global insurance and asset management group with strategic capital management programs.</p>
+                    <p>Website: <a href="https://www.generali.com" target="_blank">generali.com</a></p>
+                    <p>Source: <a href="https://presse.generali.fr/actualites/generali-lance-un-programme-de-rachat-dactions-pour-un-montant-maximal-de-500-millions-deuros-91506-a5035.html?utm_source=openai" target="_blank">Generali press</a></p>
+                  </div>
+                </details>
+
+                <!-- Oscar Health -->
+                <details class="actor-card border-fortress">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Oscar Health</div>
+                      <div class="actor-right-labels"><span class="label-tier">T2_Large</span><span class="label-cap">Cap: 3000</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Tier: T2_Large · Capacity: 3000 · Diff Score: 6 · Posture: Fortress</p>
+                    <p>Public insurer with a digital platform for claims, clinical management and member experience.</p>
+                    <p>Source: <a href="https://www.wsj.com/livecoverage/stock-market-today-dow-sp500-nasdaq-live-06-07-2024/card/oscar-health-bets-employers-want-workers-to-get-their-own-insurance-2JUO6RaxzVf7Mk5Fcg3Y?utm_source=openai" target="_blank">WSJ coverage</a></p>
+                  </div>
+                </details>
+
+                <!-- Getsafe -->
+                <details class="actor-card border-opportunistic">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Getsafe</div>
+                      <div class="actor-right-labels"><span class="label-tier">T4_ScaleUp</span><span class="label-cap">Cap: 120</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Country: DE · Tier: T4_ScaleUp · Capacity: 120 · Diff Score: 7 · Posture: Opportunistic</p>
+                    <p>Mobile-first European insurtech focusing on flexible digital products and M&A to expand customer base.</p>
+                    <p>Source: <a href="https://techcrunch.com/2024/01/17/getsafe-buys-deinestudienfinanzierung/?utm_source=openai" target="_blank">TechCrunch</a></p>
+                  </div>
+                </details>
+
+                <!-- Coya -->
+                <details class="actor-card border-fortress">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Coya</div>
+                      <div class="actor-right-labels"><span class="label-tier">T2_Large</span><span class="label-cap">Cap: 28</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Country: DE · Tier: T2_Large · Capacity: 28 · Diff Score: 4 · Posture: Fortress</p>
+                    <p>Digital-first P&amp;C insurer; parts acquired/rebranded in Europe.</p>
+                    <p>Source: <a href="https://www.wsj.com/articles/healthier-capital-pockets-220-million-for-debut-healthtech-venture-fund-0a2816d4?utm_source=openai" target="_blank">WSJ</a></p>
+                  </div>
+                </details>
+
+                <!-- Wefox -->
+                <details class="actor-card border-hunted">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Wefox</div>
+                      <div class="actor-right-labels"><span class="label-tier">T4_ScaleUp</span><span class="label-cap">Cap: 120</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Tier: T4_ScaleUp · Capacity: 120 · Diff Score: 4 · Posture: Distressed</p>
+                    <p>Insurtech pivoting to asset-light MGA and distribution model; engaged in restructuring and refinancing.</p>
+                    <p>Website: <a href="https://www.wefox.com" target="_blank">wefox.com</a></p>
+                    <p>Source: <a href="https://www.wefox.com/press/wefox-successfully-secures-eur-151m-funding-to-support-new-strategy-with-focus-on-mga-business-and-smart-insurance-distribution/?utm_source=openai" target="_blank">wefox press</a></p>
+                  </div>
+                </details>
+
+                <!-- Ottonova -->
+                <details class="actor-card border-hunted">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Ottonova</div>
+                      <div class="actor-right-labels"><span class="label-tier">T4_ScaleUp</span><span class="label-cap">Cap: 120</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Tier: T4_ScaleUp · Capacity: 120 · Diff Score: 6 · Posture: Hunted</p>
+                    <p>German health insurtech with digital underwriting and engagement tools.</p>
+                    <p>Source: <a href="https://beinsure.com/news/german-health-insurtech-ottonova-raises-e34-mn-in-series-f-financing/?utm_source=openai" target="_blank">BeInsure</a></p>
+                  </div>
+                </details>
+
+                <!-- Sidecar Health -->
+                <details class="actor-card">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Sidecar Health</div>
+                      <div class="actor-right-labels"><span class="label-tier">T4_ScaleUp</span><span class="label-cap">Cap: 120</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Employer-focused price-transparency healthcare app; $165M Series D in 2024.</p>
+                    <p>Website: <a href="https://sidecarhealth.com" target="_blank">sidecarhealth.com</a></p>
+                    <p>Source: <a href="https://sidecarhealth.com/press-releases/sidecar-health-selects-koch-disruptive-technologies-to-lead-165m-series-d-financing/?utm_source=openai" target="_blank">Sidecar Health press</a></p>
+                  </div>
+                </details>
+
+                <!-- Aetna -->
+                <details class="actor-card border-fortress">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Aetna (CVS Health)</div>
+                      <div class="actor-right-labels"><span class="label-tier">T1_Global_Giant</span><span class="label-cap">Cap: 20000</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Subsidiary of CVS Health; enterprise-scale payer with integrated care platforms.</p>
+                    <p>Source: <a href="https://investors.cvshealth.com/news/news-details/2025/CVS-HEALTH-CORPORATION-REPORTS-FOURTH-QUARTER-AND-FULL-YEAR-2024-RESULTS?utm_source=openai" target="_blank">CVS Health investor report</a></p>
+                  </div>
+                </details>
+
+                <!-- HealthEdge -->
+                <details class="actor-card">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>HealthEdge</div>
+                      <div class="actor-right-labels"><span class="label-tier">Unknown</span><span class="label-cap">Cap: 0</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Policy-to-payment and claims systems specialist referenced in Stage 3/4.</p>
+                    <p>Website: Unknown · Source: Value chain analysis (full response text)</p>
+                  </div>
+                </details>
+
+                <!-- Guidewire Cloud -->
+                <details class="actor-card">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Guidewire Cloud</div>
+                      <div class="actor-right-labels"><span class="label-tier">Unknown</span><span class="label-cap">Cap: 0</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Policy lifecycle specialist in Stage 3.</p>
+                    <p>Website: <a href="https://www.guidewire.com" target="_blank">guidewire.com</a></p>
+                  </div>
+                </details>
+
+                <!-- Oracle Health Insurance Cloud -->
+                <details class="actor-card">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Oracle Health Insurance Cloud</div>
+                      <div class="actor-right-labels"><span class="label-tier">Unknown</span><span class="label-cap">Cap: 0</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Referenced in Stage 3 as policy admin specialist.</p>
+                    <p>Website: Unknown · Source: Value chain analysis (full response text)</p>
+                  </div>
+                </details>
+
+              </div>
+
+              <div class="battlefield-col">
+                <h4>Claims Adjudication &amp; Payments<br/>(Stage 4 — 2 actors)</h4>
+
+                <!-- Change Healthcare -->
+                <details class="actor-card">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Change Healthcare</div>
+                      <div class="actor-right-labels"><span class="label-tier">Unknown</span><span class="label-cap">Cap: 0</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">RCM specialist listed in Stage 4.</p>
+                    <p>Website: <a href="https://www.changehealthcare.com" target="_blank">changehealthcare.com</a></p>
+                  </div>
+                </details>
+
+                <!-- Waystar -->
+                <details class="actor-card">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Waystar</div>
+                      <div class="actor-right-labels"><span class="label-tier">Unknown</span><span class="label-cap">Cap: 0</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">RCM specialist listed in Stage 4.</p>
+                    <p>Website: <a href="https://www.waystar.com" target="_blank">waystar.com</a></p>
+                  </div>
+                </details>
+
+              </div>
+
+              <div class="battlefield-col">
+                <h4>Provider Network &amp; Preventive Care<br/>(Stage 5 — 2 actors)</h4>
+
+                <!-- Persivia -->
+                <details class="actor-card">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Persivia</div>
+                      <div class="actor-right-labels"><span class="label-tier">Unknown</span><span class="label-cap">Cap: 0</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Value-based care specialist for provider network integration.</p>
+                    <p>Website: <a href="https://persivia.com" target="_blank">persivia.com</a></p>
+                    <p>Source: <a href="https://persivia.com/2026/01/07/top-8-value-based-care-platforms-in-2026-compared/?utm_source=openai" target="_blank">Persivia article</a></p>
+                  </div>
+                </details>
+
+                <!-- Salesforce Health Cloud -->
+                <details class="actor-card">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Salesforce Health Cloud</div>
+                      <div class="actor-right-labels"><span class="label-tier">Unknown</span><span class="label-cap">Cap: 0</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Care coordination and engagement specialist for provider networks.</p>
+                    <p>Website: <a href="https://www.salesforce.com" target="_blank">salesforce.com</a></p>
+                  </div>
+                </details>
+
+              </div>
+
+              <div class="battlefield-col">
+                <h4>Member Engagement &amp; HR/Service Delivery<br/>(Stage 6 — 6 actors)</h4>
+
+                <!-- Plum -->
+                <details class="actor-card">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Plum</div>
+                      <div class="actor-right-labels"><span class="label-tier">T4_ScaleUp</span><span class="label-cap">Cap: 120</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Smart money app with ML-led product expansion; Stage 6 relevance for engagement/benefits.</p>
+                    <p>Source: <a href="https://www.finsmes.com/2024/07/plum-raises-16m-in-series-b-funding.html?utm_source=openai" target="_blank">Finsmes</a></p>
+                  </div>
+                </details>
+
+                <!-- Luko -->
+                <details class="actor-card border-hunted">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Luko</div>
+                      <div class="actor-right-labels"><span class="label-tier">T4_ScaleUp</span><span class="label-cap">Cap: 120</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">FR · Cap: 120 · Posture: Hunted</p>
+                    <p>Digital home insurance company evolved via strategic mergers; part of Admiral Group.</p>
+                    <p>Source: <a href="https://www.wsj.com/articles/healthier-capital-pockets-220-million-for-debut-healthtech-venture-fund-0a2816d4?utm_source=openai" target="_blank">WSJ</a></p>
+                  </div>
+                </details>
+
+                <!-- Hedvig -->
+                <details class="actor-card">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Hedvig</div>
+                      <div class="actor-right-labels"><span class="label-tier">T4_ScaleUp</span><span class="label-cap">Cap: 120</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">SE · Digital home insurance platform; bridge funding in 2024.</p>
+                    <p>Source: <a href="https://nordic9.com/news/hedvig-in-a-sek-501-million-bridge-round-led-by-adelis-equity-in-sweden/?utm_source=openai" target="_blank">Nordic9</a></p>
+                  </div>
+                </details>
+
+                <!-- Collective Health -->
+                <details class="actor-card">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Collective Health</div>
+                      <div class="actor-right-labels"><span class="label-tier">T4_ScaleUp</span><span class="label-cap">Cap: 120</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Employer-focused benefits platform; Series F in 2021.</p>
+                    <p>Website: <a href="https://collectivehealth.com" target="_blank">collectivehealth.com</a></p>
+                    <p>Source: <a href="https://www.hcsc.com/newsroom/news-releases/2021/collective-health-280-million-funding?utm_source=openai" target="_blank">HCSC</a></p>
+                  </div>
+                </details>
+
+                <!-- YuLife -->
+                <details class="actor-card">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>YuLife</div>
+                      <div class="actor-right-labels"><span class="label-tier">T4_ScaleUp</span><span class="label-cap">Cap: 120</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Gamified wellbeing-insurance platform; Series C in 2022.</p>
+                    <p>Source: <a href="https://www.prnewswire.com/il/news-releases/yulife-raises-120m-series-c-round-led-by-dai-ichi-life-to-accelerate-global-expansion-301582061.html?utm_source=openai" target="_blank">PR Newswire</a></p>
+                  </div>
+                </details>
+
+                <!-- Judi Health -->
+                <details class="actor-card">
+                  <summary>
+                    <div class="actor-header-flex">
+                      <div>Judi Health</div>
+                      <div class="actor-right-labels"><span class="label-tier">Unknown</span><span class="label-cap">Cap: 0</span></div>
+                    </div>
+                  </summary>
+                  <div class="actor-body">
+                    <p class="meta-row">Member engagement / benefits specialist referenced in Stage 6.</p>
+                    <p>Website: Unknown · Source: Value chain analysis (full response text)</p>
+                  </div>
+                </details>
+
+              </div>
+
+            </div>
           </div>
 
-          <!-- Column 2: Stage 2 -->
-          <div class="battlefield-col">
-            <h4>Data Foundation &amp; Interoperability</h4>
-            <!-- No actors for this stage in input -->
-            <div style="font-size:0.9em;color:#64748b;">No specialized companies listed in dataset for this stage.</div>
-          </div>
-
-          <!-- Column 3: Stage 3 -->
-          <div class="battlefield-col">
-            <h4>Policy Administration &amp; Underwriting</h4>
-
-            <!-- Lemonade -->
-            <details class="actor-card border-fortress">
-              <summary>
-                <div class="actor-header-flex"><span>Lemonade — USA</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">T2_Large</span>
-                    <span class="label-cap">1000</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> Digital-first insurer focused on property & casualty using AI and behavioral economics for underwriting, quotes and claims automation.</div>
-                <div class="meta-row"><strong>Founding:</strong> 2015 &nbsp; <strong>Funding round:</strong> Series C (private, 2017); Public IPO (2020)</div>
-                <div class="meta-row"><strong>Investors:</strong> SoftBank</div>
-                <div class="meta-row"><strong>Website:</strong> <a href="https://www.lemonade.com" target="_blank">https://www.lemonade.com</a> &nbsp; <strong>Source:</strong> <a href="https://www.wsj.com/articles/healthier-capital-pockets-220-million-for-debut-healthtech-venture-fund-0a2816d4?utm_source=openai" target="_blank">WSJ</a></div>
-                <div class="meta-row"><strong>Analysis:</strong> Differentiation Score: 6 &nbsp; Posture: Fortress</div>
-
-                <div class="ws-box"><strong>Weak signals</strong>
-                  <ul>
-                    <li>Did not report private equity rounds in 2024–2025; relied on public markets. <a href="https://news.crunchbase.com/venture/insurance-startup-lemonade-gets-sweeter-with-300m-infusion/?utm_source=openai" target="_blank">source</a></li>
-                    <li>Market cap fluctuated between ~€2.7B and €5.3B by late 2024. <a href="https://companiesmarketcap.com/eur/lemonade/marketcap/?utm_source=openai" target="_blank">source</a></li>
-                    <li>Reported cash on hand trends for 2024–2025 show variation. <a href="https://www.macrotrends.net/stocks/charts/LMND/lemonade/cash-on-hand?utm_source=openai" target="_blank">source</a></li>
-                    <li>Liquidity improving into 2025. <a href="https://www.lemonade.com/investor/?utm_source=openai" target="_blank">investor</a></li>
-                  </ul>
-                </div>
-
-                <div class="swot-grid-small">
-                  <div class="sg-box s-green"><strong>S</strong>
-                    <ul><li>Public T2_Large with improving liquidity and AI-driven underwriting; Differentiation Score 6.</li></ul>
-                  </div>
-                  <div class="sg-box s-red"><strong>W</strong>
-                    <ul><li>No recent private funding; P&C focus limits health SME pure-play.</li></ul>
-                  </div>
-                  <div class="sg-box s-blue"><strong>O</strong>
-                    <ul><li>Alliances with Alan for Europe SME entry; partnerships with other health players.</li></ul>
-                  </div>
-                  <div class="sg-box s-yellow"><strong>T</strong>
-                    <ul><li>Hunters like AXA acquiring agile startups; regulatory barriers for US-EU expansion.</li></ul>
-                  </div>
-                </div>
-
-                <div class="strat-inv-box">
-                  <strong>Strategic involvement</strong>
-                  <ul>
-                    <li>Cross-Atlantic Tech Share: Lemonade-Allian AI Underwriting Partnership</li>
-                    <li>Undisclosed AI Moat: Lemonade-Oscar Cross-Underwriting Synergy</li>
-                    <li>US Fortress Alliance: Oscar-Lemonade Shared AI for Health Expansion</li>
-                  </ul>
-                </div>
-              </div>
-            </details>
-
-            <!-- AXA -->
-            <details class="actor-card border-hunter">
-              <summary>
-                <div class="actor-header-flex"><span>AXA — France</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">T1_Global_Giant</span>
-                    <span class="label-cap">20000</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> Major global insurer prioritizing strengthening core businesses and technology investments; active in capital deployment and strategic M&A.</div>
-                <div class="meta-row"><strong>Website:</strong> <a href="https://www.axa.com" target="_blank">https://www.axa.com</a> &nbsp; <strong>Source:</strong> <a href="https://www.axa.com/en/press/press-releases/axa-announces-the-placement-of-euro-750-million-senior-notes-due-2034?utm_source=openai" target="_blank">press release</a></div>
-                <div class="meta-row"><strong>Analysis:</strong> Differentiation Score: 6 &nbsp; Posture: Hunter</div>
-
-                <div class="ws-box"><strong>Weak signals</strong>
-                  <ul>
-                    <li>AXA uses debt issuance and internal flows; issued €750M senior notes in 2024. <a href="https://www.axa.com/en/press/press-releases/axa-announces-the-placement-of-euro-750-million-senior-notes-due-2034?utm_source=openai" target="_blank">source</a></li>
-                    <li>Market cap ~€75–88B range 2024–2025. <a href="https://companiesmarketcap.com/axa/marketcap/?utm_source=openai" target="_blank">tracker</a></li>
-                  </ul>
-                </div>
-
-                <div class="swot-grid-small">
-                  <div class="sg-box s-green"><strong>S</strong>
-                    <ul><li>T1_Global_Giant, €80B+ market cap, substantial liquidity; Stage 3 leader.</li></ul>
-                  </div>
-                  <div class="sg-box s-red"><strong>W</strong>
-                    <ul><li>Legacy systems slow to innovate.</li></ul>
-                  </div>
-                  <div class="sg-box s-blue"><strong>O</strong>
-                    <ul><li>Acquire Alan to scale SME offerings; buy distressed assets to consolidate market.</li></ul>
-                  </div>
-                  <div class="sg-box s-yellow"><strong>T</strong>
-                    <ul><li>Disruption from agile ScaleUps like Alan; regulatory caps.</li></ul>
-                  </div>
-                </div>
-
-                <div class="strat-inv-box">
-                  <strong>Strategic involvement</strong>
-                  <ul>
-                    <li>Hunter Bidding War: AXA vs Allianz for Alan's Stage 3 AI Platform</li>
-                    <li>Gap Closure: AXA Acquires Alan to Fix Legacy Innovation in SME Underwriting</li>
-                    <li>SME Super-Platform: AXA Builds via Alan + Luko Acquisitions</li>
-                    <li>Low-Cash Siege: AXA Targets Vulnerable Coya Fortress</li>
-                  </ul>
-                </div>
-              </div>
-            </details>
-
-            <!-- Allianz -->
-            <details class="actor-card border-hunter">
-              <summary>
-                <div class="actor-header-flex"><span>Allianz — Germany</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">T1_Global_Giant</span>
-                    <span class="label-cap">20000</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> Global financial services leader in insurance and asset management; focuses on smart growth and productivity through targeted capital deployment.</div>
-                <div class="meta-row"><strong>Website:</strong> <a href="https://www.allianz.com" target="_blank">https://www.allianz.com</a> &nbsp; <strong>Source:</strong> <a href="https://www.allianz.com/en/mediacenter/news/media-releases/financials/241210-allianz-capital-markets-day.html?utm_source=openai" target="_blank">media</a></div>
-                <div class="meta-row"><strong>Analysis:</strong> Differentiation Score: 6 &nbsp; Posture: Hunter</div>
-
-                <div class="ws-box"><strong>Weak signals</strong>
-                  <ul>
-                    <li>Allianz X led a $300M funding round in 2024–2025 for Ualá, signaling active VC engagement. <a href="https://www.ft.com/content/c3ecfbb1-e621-48c4-b095-45c01bda8d7e?utm_source=openai" target="_blank">source</a></li>
-                  </ul>
-                </div>
-
-                <div class="swot-grid-small">
-                  <div class="sg-box s-green"><strong>S</strong>
-                    <ul><li>Large market cap (€140–167B) with significant cash reserves; active via Allianz X.</li></ul>
-                  </div>
-                  <div class="sg-box s-red"><strong>W</strong>
-                    <ul><li>Heavy asset management focus may dilute insurtech prioritization.</li></ul>
-                  </div>
-                  <div class="sg-box s-blue"><strong>O</strong>
-                    <ul><li>Acquire Ottonova or bolt-on assets to expand digital health footprint.</li></ul>
-                  </div>
-                  <div class="sg-box s-yellow"><strong>T</strong>
-                    <ul><li>VC-backed challengers eroding SME share.</li></ul>
-                  </div>
-                </div>
-
-                <div class="strat-inv-box">
-                  <strong>Strategic involvement</strong>
-                  <ul>
-                    <li>Hunter Bidding War: AXA vs Allianz for Alan's Stage 3 AI Platform</li>
-                    <li>Nordic Bolt-On: Allianz Fills Digital Engagement Gap with Hedvig</li>
-                  </ul>
-                </div>
-              </div>
-            </details>
-
-            <!-- Generali -->
-            <details class="actor-card border-hunter">
-              <summary>
-                <div class="actor-header-flex"><span>Generali — Italy</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">T1_Global_Giant</span>
-                    <span class="label-cap">20000</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> Global insurance and asset management group with a strategic plan and capital management activities aligned to 2025–2027.</div>
-                <div class="meta-row"><strong>Website:</strong> <a href="https://www.generali.com" target="_blank">https://www.generali.com</a> &nbsp; <strong>Source:</strong> <a href="https://presse.generali.fr/actualites/generali-lance-un-programme-de-rachat-dactions-pour-un-montant-maximal-de-500-millions-deuros-91506-a5035.html?utm_source=openai" target="_blank">press</a></div>
-                <div class="meta-row"><strong>Analysis:</strong> Differentiation Score: 6 &nbsp; Posture: Hunter</div>
-
-                <div class="ws-box"><strong>Weak signals</strong>
-                  <ul>
-                    <li>Initiated a €500M share buyback program in 2025, reflecting capital allocation strategy. <a href="https://presse.generali.fr/actualites/generali-lance-un-programme-de-rachat-dactions-pour-un-montant-maximal-de-500-millions-deuros-91506-a5035.html?utm_source=openai" target="_blank">source</a></li>
-                  </ul>
-                </div>
-
-                <div class="swot-grid-small">
-                  <div class="sg-box s-green"><strong>S</strong>
-                    <ul><li>Large cash base and strategic capital deployment.</li></ul>
-                  </div>
-                  <div class="sg-box s-red"><strong>W</strong>
-                    <ul><li>Slower digital transformation.</li></ul>
-                  </div>
-                  <div class="sg-box s-blue"><strong>O</strong>
-                    <ul><li>Acquire regional digital health players to accelerate presence.</li></ul>
-                  </div>
-                  <div class="sg-box s-yellow"><strong>T</strong>
-                    <ul><li>Hunters racing for top talent; SME digital shift pressures.</li></ul>
-                  </div>
-                </div>
-
-                <div class="strat-inv-box">
-                  <strong>Strategic involvement</strong>
-                  <ul>
-                    <li>German Health Play Race: Generali vs AXA for Ottonova</li>
-                    <li>Stage 6 Squeeze: Plum Pressured on YuLife by Generali Hunters</li>
-                  </ul>
-                </div>
-              </div>
-            </details>
-
-            <!-- Oscar Health -->
-            <details class="actor-card border-fortress">
-              <summary>
-                <div class="actor-header-flex"><span>Oscar Health — USA</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">T2_Large</span>
-                    <span class="label-cap">3000</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> Publicly traded insurer with a digital platform for claims, clinical management and member experience; targets employer engagement and individual markets.</div>
-                <div class="meta-row"><strong>Funding round:</strong> IPO (2021) &nbsp; <strong>Source:</strong> <a href="https://www.wsj.com/livecoverage/stock-market-today-dow-sp500-nasdaq-live-06-07-2024/card/oscar-health-bets-employers-want-workers-to-get-their-own-insurance-2JUO6RaxzVf7Mk5Fcg3Y?utm_source=openai" target="_blank">WSJ</a></div>
-                <div class="meta-row"><strong>Analysis:</strong> Differentiation Score: 6 &nbsp; Posture: Fortress</div>
-
-                <div class="ws-box"><strong>Weak signals</strong>
-                  <ul>
-                    <li>No new public equity or venture funding rounds in 2024–2025. <a href="https://www.wsj.com/livecoverage/stock-market-today-dow-sp500-nasdaq-live-06-07-2024/card/oscar-health-bets-employers-want-workers-to-get-their-own-insurance-2JUO6RaxzVf7Mk5Fcg3Y?utm_source=openai" target="_blank">source</a></li>
-                  </ul>
-                </div>
-
-                <div class="swot-grid-small">
-                  <div class="sg-box s-green"><strong>S</strong>
-                    <ul><li>Public T2_Large with digital health focus and employer capabilities.</li></ul>
-                  </div>
-                  <div class="sg-box s-red"><strong>W</strong>
-                    <ul><li>US-centric market footprint.</li></ul>
-                  </div>
-                  <div class="sg-box s-blue"><strong>O</strong>
-                    <ul><li>Alliances with Lemonade or cross-Atlantic partnerships to scale tech.</li></ul>
-                  </div>
-                  <div class="sg-box s-yellow"><strong>T</strong>
-                    <ul><li>Hunters like Allianz entering similar markets.</li></ul>
-                  </div>
-                </div>
-
-                <div class="strat-inv-box">
-                  <strong>Strategic involvement</strong>
-                  <ul>
-                    <li>US Fortress Alliance: Oscar-Lemonade Shared AI for Health Expansion</li>
-                    <li>Undisclosed AI Moat: Lemonade-Oscar Cross-Underwriting Synergy</li>
-                  </ul>
-                </div>
-              </div>
-            </details>
-
-            <!-- Getsafe -->
-            <details class="actor-card border-opportunistic">
-              <summary>
-                <div class="actor-header-flex"><span>Getsafe — DE</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">T4_ScaleUp</span>
-                    <span class="label-cap">120</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> Mobile-first European insurtech offering flexible personal and professional insurance products; known for digital-native customer journeys and targeted acquisitions.</div>
-                <div class="meta-row"><strong>Founding:</strong> 2017</div>
-                <div class="meta-row"><strong>Analysis:</strong> Differentiation Score: 7 &nbsp; Posture: Opportunistic</div>
-
-                <div class="ws-box"><strong>Weak signals</strong>
-                  <ul>
-                    <li>No disclosed new equity rounds in 2024–2025; pursuing targeted acquisitions (e.g., Luko portfolio). <a href="https://techcrunch.com/2024/01/17/getsafe-buys-deinestudienfinanzierung/?utm_source=openai" target="_blank">source</a></li>
-                    <li>Acquired Luko's German portfolio to expand customer base. <a href="https://www.iris.vc/articles/getsafe-acquires-luko-insurances-german-portfolio?utm_source=openai" target="_blank">source</a></li>
-                  </ul>
-                </div>
-
-                <div class="swot-grid-small">
-                  <div class="sg-box s-green"><strong>S</strong>
-                    <ul><li>Mobile-first scale-up with recent acquisitions and 550k+ customers across markets.</li></ul>
-                  </div>
-                  <div class="sg-box s-red"><strong>W</strong>
-                    <ul><li>Limited public funding disclosure and cash transparency.</li></ul>
-                  </div>
-                  <div class="sg-box s-blue"><strong>O</strong>
-                    <ul><li>Consolidation of distressed assets to build scale and portfolio synergies.</li></ul>
-                  </div>
-                  <div class="sg-box s-yellow"><strong>T</strong>
-                    <ul><li>Outbidding by Hunters and commoditization pressures.</li></ul>
-                  </div>
-                </div>
-
-                <div class="strat-inv-box">
-                  <strong>Strategic involvement</strong>
-                  <ul>
-                    <li>Distressed Fire-Sale Squeeze: AXA and Getsafe Circling Wefox Assets</li>
-                    <li>ScaleUp Roll-Up: Getsafe Consolidating Distressed Europe Insurtech Assets</li>
-                  </ul>
-                </div>
-              </div>
-            </details>
-
-            <!-- Coya -->
-            <details class="actor-card border-fortress">
-              <summary>
-                <div class="actor-header-flex"><span>Coya — DE</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">T2_Large</span>
-                    <span class="label-cap">28</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> Digital-first insurer historically focused on property & casualty; underwent acquisition and parts rebranding within the Luko ecosystem.</div>
-                <div class="meta-row"><strong>Founding:</strong> 2017 &nbsp; <strong>Funding round:</strong> Acquired</div>
-                <div class="meta-row"><strong>Analysis:</strong> Differentiation Score: 4 &nbsp; Posture: Fortress</div>
-
-                <div class="ws-box"><strong>Weak signals</strong>
-                  <ul>
-                    <li>Cash on hand reported to have decreased into 2025; low differentiation and acquisition/rebranding activity. <a href="https://businessquant.com/metrics/coya/cash-and-equivalents?utm_source=openai" target="_blank">source</a></li>
-                  </ul>
-                </div>
-
-                <div class="swot-grid-small">
-                  <div class="sg-box s-green"><strong>S</strong>
-                    <ul><li>Public T2_Large with P&C focus and digital-first approach.</li></ul>
-                  </div>
-                  <div class="sg-box s-red"><strong>W</strong>
-                    <ul><li>Low cash reserves and declining liquidity; acquired/rebranded.</li></ul>
-                  </div>
-                  <div class="sg-box s-blue"><strong>O</strong>
-                    <ul><li>Partner with Getsafe for portfolio synergies; tech alliances for claims processing.</li></ul>
-                  </div>
-                  <div class="sg-box s-yellow"><strong>T</strong>
-                    <ul><li>Cash burn risk and Hunts by large incumbents.</li></ul>
-                  </div>
-                </div>
-
-                <div class="strat-inv-box">
-                  <strong>Strategic involvement</strong>
-                  <ul>
-                    <li>Stage 3 Bottleneck Risk: Alan Controls Displacement of Commoditized Players</li>
-                    <li>Low-Cash Siege: AXA Targets Vulnerable Coya Fortress</li>
-                  </ul>
-                </div>
-              </div>
-            </details>
-
-            <!-- Wefox -->
-            <details class="actor-card border-opportunistic">
-              <summary>
-                <div class="actor-header-flex"><span>Wefox — Europe</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">T4_ScaleUp</span>
-                    <span class="label-cap">120</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> Insurtech pivoting to an asset-light MGA and distribution model focused on profitability and European expansion.</div>
-                <div class="meta-row"><strong>Funding round:</strong> Equity &amp; Refinancing &nbsp; <strong>Funding date:</strong> 2025-07-07</div>
-                <div class="meta-row"><strong>Investors:</strong> Searchlight Capital Partners &nbsp; <strong>Website:</strong> <a href="https://www.wefox.com" target="_blank">wefox.com</a></div>
-                <div class="meta-row"><strong>Analysis:</strong> Differentiation Score: 4 &nbsp; Posture: Distressed</div>
-
-                <div class="ws-box"><strong>Weak signals</strong>
-                  <ul>
-                    <li>Significant capital restructuring with the sale of carrier assets in 2024 and a €151M funding package in 2025 including refinancing. <a href="https://www.wefox.com/press/wefox-successfully-secures-eur-151m-funding-to-support-new-strategy-with-focus-on-mga-business-and-smart-insurance-distribution/?utm_source=openai" target="_blank">source</a></li>
-                  </ul>
-                </div>
-
-                <div class="swot-grid-small">
-                  <div class="sg-box s-green"><strong>S</strong>
-                    <ul><li>Pivoted to asset-light MGA with €151M recent funding.</li></ul>
-                  </div>
-                  <div class="sg-box s-red"><strong>W</strong>
-                    <ul><li>Asset sales and distressed posture; lower differentiation score.</li></ul>
-                  </div>
-                  <div class="sg-box s-blue"><strong>O</strong>
-                    <ul><li>Potential fire-sale to Hunters or opportunistic acquisition by scale-ups.</li></ul>
-                  </div>
-                  <div class="sg-box s-yellow"><strong>T</strong>
-                    <ul><li>Bankruptcy risk and displacement by larger incumbents.</li></ul>
-                  </div>
-                </div>
-
-                <div class="strat-inv-box">
-                  <strong>Strategic involvement</strong>
-                  <ul>
-                    <li>Distressed Fire-Sale Squeeze: AXA and Getsafe Circling Wefox Assets</li>
-                    <li>ScaleUp Roll-Up: Getsafe Consolidating Distressed Europe Insurtech Assets</li>
-                    <li>Consolidation Domino: AXA-Alan Deal Forces Getsafe Wefox Grab</li>
-                  </ul>
-                </div>
-              </div>
-            </details>
-
-            <!-- Ottonova -->
-            <details class="actor-card border-hunted">
-              <summary>
-                <div class="actor-header-flex"><span>Ottonova — Germany</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">T4_ScaleUp</span>
-                    <span class="label-cap">120</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> German health insurtech offering digital underwriting, teleconsultations and advanced customer engagement tooling.</div>
-                <div class="meta-row"><strong>Funding round:</strong> Series F &nbsp; <strong>Funding date:</strong> 2024-09-24 &nbsp; <strong>Investors:</strong> Cadence Growth Capital</div>
-                <div class="meta-row"><strong>Source:</strong> <a href="https://beinsure.com/news/german-health-insurtech-ottonova-raises-e34-mn-in-series-f-financing/?utm_source=openai" target="_blank">press</a></div>
-                <div class="meta-row"><strong>Analysis:</strong> Differentiation Score: 6 &nbsp; Posture: Hunted</div>
-
-                <div class="ws-box"><strong>Weak signals</strong>
-                  <ul>
-                    <li>Series F round closed in 2023 led by Cadence Growth Capital. <a href="https://beinsure.com/news/german-health-insurtech-ottonova-raises-e34-mn-in-series-f-financing/?utm_source=openai" target="_blank">source</a></li>
-                  </ul>
-                </div>
-
-                <div class="swot-grid-small">
-                  <div class="sg-box s-green"><strong>S</strong>
-                    <ul><li>€159M total funding and German market specialization.</li></ul>
-                  </div>
-                  <div class="sg-box s-red"><strong>W</strong>
-                    <ul><li>Series F may be the last pre-break-even stage; profitability timeline uncertain.</li></ul>
-                  </div>
-                  <div class="sg-box s-blue"><strong>O</strong>
-                    <ul><li>Acquire by Allianz or Generali for German expansion.</li></ul>
-                  </div>
-                  <div class="sg-box s-yellow"><strong>T</strong>
-                    <ul><li>Competition from Alan-like entrants delaying break-even.</li></ul>
-                  </div>
-                </div>
-
-                <div class="strat-inv-box">
-                  <strong>Strategic involvement</strong>
-                  <ul>
-                    <li>German Health Play Race: Generali vs AXA for Ottonova</li>
-                  </ul>
-                </div>
-              </div>
-            </details>
-
-            <!-- Sidecar Health -->
-            <details class="actor-card border-hunted">
-              <summary>
-                <div class="actor-header-flex"><span>Sidecar Health — USA</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">T4_ScaleUp</span>
-                    <span class="label-cap">120</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> Consumer-centric healthcare model providing price transparency and direct member-provider cost-sharing via a mobile app; focused on employer benefits.</div>
-                <div class="meta-row"><strong>Funding round:</strong> Series D (2024-06-26) &nbsp; <strong>Investors:</strong> Koch Disruptive Technologies, GreatPoint Ventures, BOND, Cathay Innovation, Drive Capital, Menlo Ventures</div>
-                <div class="meta-row"><strong>Website:</strong> <a href="https://sidecarhealth.com" target="_blank">sidecarhealth.com</a> &nbsp; <strong>Source:</strong> <a href="https://sidecarhealth.com/press-releases/sidecar-health-selects-koch-disruptive-technologies-to-lead-165m-series-d-financing/?utm_source=openai" target="_blank">press</a></div>
-                <div class="meta-row"><strong>Analysis:</strong> Differentiation Score: 6 &nbsp; Posture: Hunted</div>
-
-                <div class="swot-grid-small">
-                  <div class="sg-box s-green"><strong>S</strong>
-                    <ul><li>$165M Series D and price transparency model.</li></ul>
-                  </div>
-                  <div class="sg-box s-red"><strong>W</strong>
-                    <ul><li>VC-backed scale-up with associated funding risk if markets tighten.</li></ul>
-                  </div>
-                  <div class="sg-box s-blue"><strong>O</strong>
-                    <ul><li>Potential sale to larger incumbents for transparency tech.</li></ul>
-                  </div>
-                  <div class="sg-box s-yellow"><strong>T</strong>
-                    <ul><li>US focus amid rising Europe insurtech consolidation.</li></ul>
-                  </div>
-                </div>
-              </div>
-            </details>
-
-            <!-- Alan (as Stage 3 actor) -->
-            <details class="actor-card border-hunted">
-              <summary>
-                <div class="actor-header-flex"><span>Alan — FR</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">T4_ScaleUp</span>
-                    <span class="label-cap">120</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> AI-driven integrated digital health insurance and wellness platform tailored to European regulatory environment with modular SaaS enabling SMEs to manage digital health benefits.</div>
-                <div class="meta-row"><strong>Founding:</strong> 2018 &nbsp; <strong>Funding round:</strong> Series F (2024)</div>
-                <div class="meta-row"><strong>Investors:</strong> Belfius Bank, OTPP (Teachers’ Venture Growth), Temasek, Coatue, Lakestar &nbsp; <strong>Website:</strong> <a href="https://alan.com" target="_blank">alan.com</a></div>
-                <div class="meta-row"><strong>Analysis:</strong> Differentiation Score: 8 &nbsp; Posture: Hunted</div>
-
-                <div class="ws-box"><strong>Weak signals</strong>
-                  <ul>
-                    <li>Series F €173M in Sep 2024 valuing Alan at ~€4–4.5B; strategic distribution partnership with Belfius. <a href="https://techcrunch.com/2024/09/20/health-insurance-startup-alan-reaches-45-billion-valuation-with-new-funding-round/?utm_source=openai" target="_blank">source</a></li>
-                    <li>Series F funds allocated for growth and tech development; cash balance not publicly specified as of early 2026. <a href="https://techcrunch.com/2024/09/20/health-insurance-startup-alan-reaches-45-billion-valuation-with-new-funding-round/?utm_source=openai" target="_blank">source</a></li>
-                  </ul>
-                </div>
-
-                <div class="swot-grid-small">
-                  <div class="sg-box s-green"><strong>S</strong>
-                    <ul><li>Elite founder DNA, vertically integrated platform, €173M Series F, €60–70M ARR, 700+ team, GDPR compliance and high differentiation.</li></ul>
-                  </div>
-                  <div class="sg-box s-red"><strong>W</strong>
-                    <ul><li>Unprofitable to 2026 target, opaque unit economics, France-heavy operations.</li></ul>
-                  </div>
-                  <div class="sg-box s-blue"><strong>O</strong>
-                    <ul><li>M&A runway, AI partnerships, Europe SAM expansion and public sector tenders.</li></ul>
-                  </div>
-                  <div class="sg-box s-yellow"><strong>T</strong>
-                    <ul><li>Incumbent hunters (AXA/Allianz/Generali), regulatory volatility and macro recession risks.</li></ul>
-                  </div>
-                </div>
-
-                <div class="strat-inv-box">
-                  <strong>Strategic involvement</strong>
-                  <ul>
-                    <li>Hunter Bidding War: AXA vs Allianz for Alan's Stage 3 AI Platform</li>
-                    <li>Gap Closure: AXA Acquires Alan to Fix Legacy Innovation in SME Underwriting</li>
-                    <li>Cross-Atlantic Tech Share ideas with Lemonade/Oscar</li>
-                  </ul>
-                </div>
-              </div>
-            </details>
-
-          </div>
-
-          <!-- Column 4: Stage 4 -->
-          <div class="battlefield-col">
-            <h4>Claims Adjudication &amp; Payments</h4>
-
-            <!-- HealthEdge -->
-            <details class="actor-card">
-              <summary>
-                <div class="actor-header-flex"><span>HealthEdge</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">Specialist</span>
-                    <span class="label-cap">N/A</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> Specialized in policy-to-payment solutions and claims processing; referenced as Stage 4/Stage 3 specialist.</div>
-                <div class="meta-row"><strong>Website:</strong> Unknown &nbsp; <strong>Source:</strong> Value chain analysis</div>
-
-                <div class="swot-grid-small">
-                  <div class="sg-box s-green"><strong>S</strong>
-                    <ul><li>Specialist in claims-adjudication workflows.</li></ul>
-                  </div>
-                  <div class="sg-box s-red"><strong>W</strong>
-                    <ul><li>Public profile limited in dataset.</li></ul>
-                  </div>
-                </div>
-              </div>
-            </details>
-          </div>
-
-          <!-- Column 5: Stage 5 -->
-          <div class="battlefield-col">
-            <h4>Provider Network &amp; Preventive Care Integration</h4>
-
-            <!-- Oracle Health -->
-            <details class="actor-card">
-              <summary>
-                <div class="actor-header-flex"><span>Oracle Health</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">Enterprise</span>
-                    <span class="label-cap">N/A</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> Provider of broad healthcare platforms including provider network and integration capabilities.</div>
-                <div class="meta-row"><strong>Website:</strong> <a href="https://www.oracle.com/health/" target="_blank">oracle.com/health</a></div>
-              </div>
-            </details>
-
-            <!-- Salesforce Health Cloud -->
-            <details class="actor-card">
-              <summary>
-                <div class="actor-header-flex"><span>Salesforce Health Cloud</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">Enterprise</span>
-                    <span class="label-cap">N/A</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> Care coordination and engagement platform for providers and payers.</div>
-                <div class="meta-row"><strong>Website:</strong> <a href="https://www.salesforce.com/solutions/industries/healthcare/" target="_blank">salesforce.com/healthcare</a></div>
-              </div>
-            </details>
-
-            <!-- Persivia -->
-            <details class="actor-card">
-              <summary>
-                <div class="actor-header-flex"><span>Persivia</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">Specialist</span>
-                    <span class="label-cap">N/A</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> Value-based care and care coordination specialist.</div>
-                <div class="meta-row"><strong>Website:</strong> <a href="https://persivia.com" target="_blank">persivia.com</a></div>
-              </div>
-            </details>
-          </div>
-
-          <!-- Column 6: Stage 6 -->
-          <div class="battlefield-col">
-            <h4>Member Engagement &amp; HR/Service Delivery</h4>
-
-            <!-- Plum -->
-            <details class="actor-card border-opportunistic">
-              <summary>
-                <div class="actor-header-flex"><span>Plum</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">T4_ScaleUp</span>
-                    <span class="label-cap">120</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> Smart money app expanding product footprint in Europe; positioned in member engagement and HR service delivery.</div>
-                <div class="meta-row"><strong>Funding round:</strong> Series B (2024-07-23) &nbsp; <strong>Investors:</strong> Eurobank, iGrow VC</div>
-                <div class="meta-row"><strong>Analysis:</strong> Differentiation Score: 4 &nbsp; Posture: Opportunistic</div>
-
-                <div class="ws-box"><strong>Weak signals</strong>
-                  <ul>
-                    <li>Series B raised ~£16M in July 2024; reported AUM >£1B. <a href="https://www.finsmes.com/2024/07/plum-raises-16m-in-series-b-funding.html?utm_source=openai" target="_blank">source</a></li>
-                  </ul>
-                </div>
-              </div>
-            </details>
-
-            <!-- Luko -->
-            <details class="actor-card border-hunted">
-              <summary>
-                <div class="actor-header-flex"><span>Luko — FR</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">T4_ScaleUp</span>
-                    <span class="label-cap">120</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> Digital home insurance with transparency focus; evolved through mergers and now part of Admiral Group.</div>
-                <div class="meta-row"><strong>Founding:</strong> 2016 &nbsp; <strong>Funding round:</strong> Series B (2020)</div>
-                <div class="meta-row"><strong>Analysis:</strong> Differentiation Score: 5 &nbsp; Posture: Hunted</div>
-
-                <div class="ws-box"><strong>Weak signals</strong>
-                  <ul>
-                    <li>Raised €50M Series B in 2020; acquired by Admiral Group in 2023 following judicial proceedings. <a href="https://www.insurtechinsights.com/french-insurtech-startup-luko-locks-in-e50-million-series-b-led-by-eqt-ventures/?utm_source=openai" target="_blank">source</a></li>
-                  </ul>
-                </div>
-              </div>
-            </details>
-
-            <!-- Hedvig -->
-            <details class="actor-card border-hunted">
-              <summary>
-                <div class="actor-header-flex"><span>Hedvig — SE</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">T4_ScaleUp</span>
-                    <span class="label-cap">120</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> Digital home insurance platform focusing on customer satisfaction; acquired as a subsidiary (now part of Commvault related group).</div>
-                <div class="meta-row"><strong>Funding:</strong> Bridge round (2024-12-01) &nbsp; <strong>Investors:</strong> Adelis Equity et al.</div>
-              </div>
-            </details>
-
-            <!-- Collective Health -->
-            <details class="actor-card border-hunted">
-              <summary>
-                <div class="actor-header-flex"><span>Collective Health</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">T4_ScaleUp</span>
-                    <span class="label-cap">120</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> Platform for self-funded employers to manage health benefits and member experience; focuses on platform expansion and partner ecosystem.</div>
-                <div class="meta-row"><strong>Funding round:</strong> Series F (2021) &nbsp; <strong>Investors:</strong> HCSC, DFJ Growth, Founders Fund, NEA, SoftBank</div>
-                <div class="meta-row"><strong>Website:</strong> <a href="https://collectivehealth.com" target="_blank">collectivehealth.com</a></div>
-              </div>
-            </details>
-
-            <!-- YuLife -->
-            <details class="actor-card border-hunted">
-              <summary>
-                <div class="actor-header-flex"><span>YuLife</span>
-                  <div class="actor-right-labels">
-                    <span class="label-tier">T4_ScaleUp</span>
-                    <span class="label-cap">120</span>
-                  </div>
-                </div>
-              </summary>
-              <div class="actor-body">
-                <div class="meta-row"><strong>Profile:</strong> Gamified wellbeing-insurance platform with rewards and wellness engagement tools.</div>
-                <div class="meta-row"><strong>Funding round:</strong> Series C (2022) &nbsp; <strong>Investor:</strong> Dai-ichi Life Holdings</div>
-                <div class="meta-row"><strong>Analysis:</strong> Differentiation Score: 6 &nbsp; Posture: Hunted</div>
-              </div>
-            </details>
-
+          <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-98d02c830da8a8df570e7073712d24e6-e0iltapi.jpg" alt="Top 3 value chain image" />
           </div>
         </div>
       </section>
 
       <!-- STEP 5: COMPETITION (Grouped Sticky) -->
-      <section id="competition" class="split-container">
-        <div class="text-col">
-          <h3>Competition overview</h3>
-          <p>
-            Quadrant summaries describe the different strategic postures across incumbents and scale-ups:
-          </p>
+      <section id="competition">
+        <div class="split-container">
+          <div class="text-col">
+            <h3>Competition overview</h3>
+            <p>The competitive landscape segments players by capacity and posture: Predators (active hunters with high capacity), Aspirants (smaller active challengers), Giants (passive but deep-pocketed incumbents), and Potential Targets (low capacity/passive targets attractive to acquirers).</p>
 
-          <h4>Predators</h4>
-          <p>
-            These are 'Hunters' with high capacity and active M&A posture: AXA, Allianz, Generali, Lemonade, Oscar Health. They target Policy Administration &amp; Underwriting (Stage 3) to enhance AI capabilities and consolidate the insurtech landscape.
-          </p>
+            <h3 id="competitors">Competitors list</h3>
 
-          <h4>Aspirants</h4>
-          <p>
-            'Climbers' include T4 scale-ups with low acquisition capacity but active M&A posture: Getsafe, Plum, Coya. They pursue targeted acquisitions and strategic alliances but risk being outbid by Hunters.
-          </p>
+            <h4>Predators</h4>
+            <p><strong>Lemonade</strong>: Digital-first insurer using AI for underwriting and claims. Website: <a href="https://www.lemonade.com" target="_blank">https://www.lemonade.com</a>. Source: <a href="https://www.wsj.com/articles/healthier-capital-pockets-220-million-for-debut-healthtech-venture-fund-0a2816d4?utm_source=openai" target="_blank">WSJ</a>.</p>
+            <br>
+            <p><strong>AXA</strong>: Major global insurer with active capital deployment. Website: <a href="https://www.axa.com" target="_blank">https://www.axa.com</a>. Source: <a href="https://www.axa.com/en/press/press-releases/axa-announces-the-placement-of-euro-750-million-senior-notes-due-2034?utm_source=openai" target="_blank">AXA press</a>.</p>
+            <br>
+            <p><strong>Allianz</strong>: Global insurer and asset manager, active in bolt-on acquisitions. Website: <a href="https://www.allianz.com" target="_blank">https://www.allianz.com</a>. Source: <a href="https://www.allianz.com/en/mediacenter/news/media-releases/financials/241210-allianz-capital-markets-day.html?utm_source=openai" target="_blank">Allianz press</a>.</p>
+            <br>
+            <p><strong>Generali</strong>: Global insurance group with strategic programs and capital management. Website: <a href="https://www.generali.com" target="_blank">https://www.generali.com</a>. Source: <a href="https://presse.generali.fr/actualites/generali-lance-un-programme-de-rachat-dactions-pour-un-montant-maximal-de-500-millions-deuros-91506-a5035.html?utm_source=openai" target="_blank">Generali press</a>.</p>
+            <br>
+            <p><strong>Oscar Health</strong>: Public insurer focused on digital member experience and employer engagement. Source: <a href="https://www.wsj.com/livecoverage/stock-market-today-dow-sp500-nasdaq-live-06-07-2024/card/oscar-health-bets-employers-want-workers-to-get-their-own-insurance-2JUO6RaxzVf7Mk5Fcg3Y?utm_source=openai" target="_blank">WSJ</a>.</p>
 
-          <h4>Giants</h4>
-          <p>
-            'Sleeping Giants' have high capacity but passive M&A posture: Aetna (CVS Health). They focus on internal integrations and alliances rather than aggressive external acquisitions.
-          </p>
+            <h4>Giants</h4>
+            <p><strong>Aetna</strong>: Subsidiary of CVS Health, focusing on integrated care platforms. Source: <a href="https://investors.cvshealth.com/news/news-details/2025/CVS-HEALTH-CORPORATION-REPORTS-FOURTH-QUARTER-AND-FULL-YEAR-2024-RESULTS?utm_source=openai" target="_blank">CVS Health investor report</a>.</p>
 
-          <h4>Potential Targets</h4>
-          <p>
-            Low-capacity/passive-posture companies that are acquisition or partnership candidates: Alan, Luko, Hedvig, Wefox, Ottonova, Sidecar Health, Collective Health, YuLife.
-          </p>
+            <h4>Aspirants</h4>
+            <p><strong>Getsafe</strong>: Mobile-first European insurtech expanding via acquisitions. Source: <a href="https://www.wsj.com/articles/healthier-capital-pockets-220-million-for-debut-healthtech-venture-fund-0a2816d4?utm_source=openai" target="_blank">WSJ</a>.</p>
+            <br>
+            <p><strong>Coya</strong>: Digital-first P&amp;C insurer previously acquired/rebranded. Source: <a href="https://www.wsj.com/articles/healthier-capital-pockets-220-million-for-debut-healthtech-venture-fund-0a2816d4?utm_source=openai" target="_blank">WSJ</a>.</p>
+            <br>
+            <p><strong>Plum</strong>: Smart money app with expansion into engagement/benefits use cases. Source: <a href="https://www.finsmes.com/2024/07/plum-raises-16m-in-series-b-funding.html?utm_source=openai" target="_blank">Finsmes</a>.</p>
 
-          <h3>Competitors list</h3>
+            <h4>Potential Targets</h4>
+            <p><strong>Alan</strong>: Modular AI-driven health insurance and benefits platform. Website: <a href="https://alan.com" target="_blank">https://alan.com</a>. Source: <a href="https://news.crunchbase.com/venture/french-company-alan-secures-54m-series-c-to-expand-digital-health-insurance-across-europe/?utm_source=openai" target="_blank">Crunchbase</a>.</p>
+            <br>
+            <p><strong>Luko</strong>: Digital home insurer evolved via mergers; part of Admiral Group. Source: <a href="https://www.wsj.com/articles/healthier-capital-pockets-220-million-for-debut-healthtech-venture-fund-0a2816d4?utm_source=openai" target="_blank">WSJ</a>.</p>
+            <br>
+            <p><strong>Hedvig</strong>: Digital insurer with Nordic footprint and recent financing. Source: <a href="https://www.wsj.com/articles/healthier-capital-pockets-220-million-for-debut-healthtech-venture-fund-0a2816d4?utm_source=openai" target="_blank">WSJ</a>.</p>
+            <br>
+            <p><strong>Wefox</strong>: Pivoting to MGA and distribution; recent refinancing rounds. Website: <a href="https://www.wefox.com" target="_blank">https://www.wefox.com</a>. Source: <a href="https://www.wefox.com/press/wefox-successfully-secures-eur-151m-funding-to-support-new-strategy-with-focus-on-mga-business-and-smart-insurance-distribution/?utm_source=openai" target="_blank">wefox press</a>.</p>
+            <br>
+            <p><strong>Ottonova</strong>: German digital health insurer. Source: <a href="https://beinsure.com/news/german-health-insurtech-ottonova-raises-e34-mn-in-series-f-financing/?utm_source=openai" target="_blank">BeInsure</a>.</p>
+            <br>
+            <p><strong>Sidecar Health</strong>: Price-transparency employer health model. Website: <a href="https://sidecarhealth.com" target="_blank">sidecarhealth.com</a>. Source: <a href="https://sidecarhealth.com/press-releases/sidecar-health-selects-koch-disruptive-technologies-to-lead-165m-series-d-financing/?utm_source=openai" target="_blank">Sidecar Health press</a>.</p>
+            <br>
+            <p><strong>Collective Health</strong>: Platform for self-funded employers. Website: <a href="https://collectivehealth.com" target="_blank">collectivehealth.com</a>. Source: <a href="https://www.hcsc.com/newsroom/news-releases/2021/collective-health-280-million-funding?utm_source=openai" target="_blank">HCSC</a>.</p>
+            <br>
+            <p><strong>YuLife</strong>: Gamified wellbeing-insurance platform. Source: <a href="https://www.prnewswire.com/il/news-releases/yulife-raises-120m-series-c-round-led-by-dai-ichi-life-to-accelerate-global-expansion-301582061.html?utm_source=openai" target="_blank">PR Newswire</a>.</p>
 
-          <h4>Predators</h4>
-          <p>
-            Lemonade — <a href="https://www.lemonade.com" target="_blank">https://www.lemonade.com</a><br>
-            AXA — <a href="https://www.axa.com" target="_blank">https://www.axa.com</a><br>
-            Allianz — <a href="https://www.allianz.com" target="_blank">https://www.allianz.com</a><br>
-            Generali — <a href="https://www.generali.com" target="_blank">https://www.generali.com</a><br>
-            Oscar Health — (coverage & reporting: <a href="https://www.wsj.com/livecoverage/stock-market-today-dow-sp500-nasdaq-live-06-07-2024/card/oscar-health-bets-employers-want-workers-to-get-their-own-insurance-2JUO6RaxzVf7Mk5Fcg3Y?utm_source=openai" target="_blank">WSJ</a>)
-          </p>
+          </div>
 
-          <h4>Aspirants</h4>
-          <p>
-            Getsafe — (coverage: <a href="https://www.wsj.com/articles/healthier-capital-pockets-220-million-for-debut-healthtech-venture-fund-0a2816d4?utm_source=openai" target="_blank">WSJ</a>)<br>
-            Coya — (coverage & acquisition notes: <a href="https://www.wsj.com/articles/healthier-capital-pockets-220-million-for-debut-healthtech-venture-fund-0a2816d4?utm_source=openai" target="_blank">WSJ</a>)<br>
-            Plum — <a href="https://www.finsmes.com/2024/07/plum-raises-16m-in-series-b-funding.html?utm_source=openai" target="_blank">funding note</a>
-          </p>
-
-          <h4>Giants</h4>
-          <p>
-            Aetna — (CVS Health reporting: <a href="https://investors.cvshealth.com/news/news-details/2025/CVS-HEALTH-CORPORATION-REPORTS-FOURTH-QUARTER-AND-FULL-YEAR-2024-RESULTS?utm_source=openai" target="_blank">CVS results</a>)
-          </p>
-
-          <h4>Potential Targets</h4>
-          <p>
-            Alan — <a href="https://alan.com" target="_blank">https://alan.com</a><br>
-            Luko — (coverage: <a href="https://www.wsj.com/articles/healthier-capital-pockets-220-million-for-debut-healthtech-venture-fund-0a2816d4?utm_source=openai" target="_blank">WSJ</a>)<br>
-            Hedvig — (coverage: <a href="https://www.wsj.com/articles/healthier-capital-pockets-220-million-for-debut-healthtech-venture-fund-0a2816d4?utm_source=openai" target="_blank">WSJ</a>)<br>
-            Wefox — <a href="https://www.wefox.com" target="_blank">https://www.wefox.com</a><br>
-            Ottonova — (coverage: <a href="https://beinsure.com/news/german-health-insurtech-ottonova-raises-e34-mn-in-series-f-financing/?utm_source=openai" target="_blank">press</a>)<br>
-            Sidecar Health — <a href="https://sidecarhealth.com" target="_blank">https://sidecarhealth.com</a><br>
-            Collective Health — <a href="https://collectivehealth.com" target="_blank">https://collectivehealth.com</a><br>
-            YuLife — (coverage: <a href="https://www.prnewswire.com/il/news-releases/yulife-raises-120m-series-c-round-led-by-dai-ichi-life-to-accelerate-global-expansion-301582061.html?utm_source=openai" target="_blank">press</a>)
-          </p>
-        </div>
-
-        <div class="img-col">
-          <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-eda05146845bb8033c6cada259cfb661-kzi0euga.jpg" alt="Competition overview image" class="sticky-img" />
+          <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-baeb7585377e2a8f858716d3884b9865-ei73rsfi.jpg" alt="Competition overview image" />
+          </div>
         </div>
       </section>
 
       <!-- STEP 6: MARKET STUDY -->
-      <section id="market-study" class="split-container">
-        <div class="text-col">
-          <h3>Market study</h3>
-          <p>
-            HealthTech &amp; Digital Health &gt; Integrated Digital Health Insurance SaaS
-          </p>
-          <p>
-            Market attractiveness scoring (weighted):<br>
-            IS IT AN ATTRACTIVE MARKET? (Dynamics): 88/100 × 25% = 22.0 points<br>
-            IS IT A WINNABLE MARKET? (Competition): 84/100 × 25% = 21.0 points<br>
-            IS IT A PENETRABLE MARKET? (GTM): 85/100 × 25% = 21.25 points<br>
-            IS IT A REWARDING MARKET? (Exits): 92/100 × 25% = 23.0 points<br>
-            <strong>TOTAL MARKET ATTRACTIVITY SCORE: 87.25/100</strong>
-          </p>
+      <section id="market-study">
+        <div class="split-container">
+          <div class="text-col">
+            <h3>Market study</h3>
+            <p><strong>Market Opportunity Score</strong></p>
+            <p>Sector: HealthTech &amp; Digital Health &gt; Integrated Digital Health Insurance SaaS. Model: Both (Insurance + SaaS).</p>
 
-          <p>
-            Market definition: Digital integrated health insurance and wellness platforms for SMEs, self-employed, and retirees in Europe with automated HR and preventive care. This market transitions health insurance from a legacy financial product to a vertically integrated health operating system, leveraging European SME adoption of digital benefits to deliver automated HR services and proactive preventive health interventions.
-          </p>
+            <p>IS IT AN ATTRACTIVE MARKET? (Dynamics): 88/100 × 25% = 22.0 points</p>
+            <p>IS IT A WINNABLE MARKET? (Competition): 84/100 × 25% = 21.0 points</p>
+            <p>IS IT A PENETRABLE MARKET? (GTM): 85/100 × 25% = 21.25 points</p>
+            <p>IS IT A REWARDING MARKET? (Exits): 92/100 × 25% = 23.0 points</p>
 
-          <p>
-            Market thesis: A regulatory inflection and digital mandates are accelerating platform transition away from legacy systems. A founder that becomes the go-to platform, with a proprietary data loop, can capture the system-of-record position for the industry.
-          </p>
+            <p><strong>Total Market Attractivity Score:</strong> 87.25/100</p>
 
-          <p>
-            Conviction &amp; wager: HIGH — the alignment of timing and structure favors a land grab strategy to build a moat via proprietary data and platform effects.
-          </p>
-        </div>
+            <h4>Market definition</h4>
+            <p>Digital integrated health insurance and wellness platforms for SMEs, self-employed, and retirees in Europe with automated HR and preventive care. These platforms transform health insurance into a vertically integrated health operating system and leverage large-scale SME adoption of digital benefits to automate HR and prevent health issues.</p>
 
-        <div class="img-col">
-          <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-bb8a8ccb4955ab229c4d0e444869ef2c-7qodojzr.jpg" alt="Market study image" class="sticky-img" />
+            <h4>Market thesis & conviction</h4>
+            <p>Market inflection: regulatory and digital adoption changes create a platform transition away from legacy systems. High conviction that timing and moat-building (data + regulatory licensing) enable a decisive founder-led platform to become system of record in this vertical.</p>
+
+            <h4>Score highlights</h4>
+            <ul>
+              <li>Attractive market dynamics with TAM: $148.16B, SAM: $8.75B, SOM: $262.5M.</li>
+              <li>Winnable market with fragmented incumbents and clear white space among SMEs.</li>
+              <li>Penetrability supported by enterprise sales and PLG motions with $50k ARPU benchmarks.</li>
+              <li>Rewarding exit environment with strong strategic buyer interest and healthy multiples.</li>
+            </ul>
+          </div>
+
+          <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-51cb85777aeecc6866fbc2d0b8a30877-jfm3tma5.jpg" alt="Market study image" />
+          </div>
         </div>
       </section>
 
       <!-- STEP 7: STRATEGIC SCENARIOS -->
-      <section id="strategic-scenarios" class="split-container">
-        <div class="text-col">
-          <h3>Strategic scenarios (14)</h3>
+      <section id="strategic-scenarios">
+        <div class="split-container">
+          <div class="text-col">
+            <h3>Strategic scenarios</h3>
+            <p>Total scenarios rendered: 15</p>
 
-          <!-- Iterate groups and scenarios -->
-          <!-- Group 1: Acquisition battles -->
-          <h4>⚔️ ACQUISITION BATTLES (HIGH CONFLICT)</h4>
+            <!-- Loop groups and scenarios -->
+            <!-- Group 1 -->
+            <h4>⚔️ ACQUISITION BATTLES (HIGH CONFLICT)</h4>
 
-          <details>
-            <summary class="scen-header">
-              <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
-                <div style="flex:1;"><span class="scen-summary-text">✦ Target: Alan - High-stakes bidding wars emerging for prime Policy Administration & Underwriting platforms. (Competing Actors: AXA, Allianz)</span>
+            <details>
+              <summary>
+                <div style="flex:1;">
+                  <div class="scen-summary-text">Target: Alan - AXA and Allianz are in a bidding war for Alan's Policy Administration &amp; Underwriting AI platform, a high-stakes competition for leadership in this function. (Competing Actors: AXA, Allianz)</div>
                   <div class="scen-logic-grid">
+                    <span class="logic-tag">Actors: AXA, Allianz</span>
                     <span class="logic-tag">Target: Alan</span>
-                    <span class="logic-tag">Actors: AXA</span>
-                    <span class="logic-tag">Actors: Allianz</span>
-                    <span class="logic-tag">Type: Acquisition</span>
-                    <span class="logic-tag">Stage: Policy Admin &amp; Underwriting (Stage 3)</span>
                   </div>
                 </div>
+              </summary>
+              <div style="padding:12px;">
+                <h4>Hunter Bidding War: AXA vs Allianz for Alan's Stage 3 AI Platform</h4>
+                <p><strong>Rationale:</strong> AXA and Allianz, both T1 hunters, have strong acquisition capacity and view Alan (highly differentiated Stage 3/6 platform) as a strategic bolt-on. Window: mid-term (6–18 months) given funding momentum and Alan’s private status.</p>
+                <p><strong>Deal breaker:</strong> EU antitrust scrutiny and integration complexity between cloud-native Alan and incumbent stacks.</p>
+                <p><strong>Synergy:</strong> Hard cost saving: bypass €500M+ R&amp;D for underwriting engine. Soft revenue: bundling could unlock €1B+ ARR in preventive care upsells.</p>
+                <p><strong>Macro:</strong> Direct leverage of Europe SME insurtech surge; Stage 3 control point with high strategic value.</p>
+                <p><strong>Priority:</strong> High Priority · <strong>Timeline:</strong> MID-TERM</p>
+                <p><strong>Confidence:</strong> 55 — Data gaps on unit economics, CEO concentration and private status reduce certainty.</p>
+                <p><strong>Estimated Financials:</strong> Total synergies ≈ €1,500,000,000 (Soft revenue ≈ €1,000,000,000 · Hard cost ≈ €500,000,000)</p>
               </div>
-            </summary>
-            <div style="padding:10px;">
-              <h4>Hunter Bidding War: AXA vs Allianz for Alan's Stage 3 AI Platform</h4>
-              <p><strong>Rationale:</strong> AXA and Allianz, both T1 Hunters with substantial acquisition capacity, are positioned to compete for Alan due to its high-diff Stage 3/6 integration and AI underwriting capabilities. Classified as mid-term (6–18 months) given funding momentum and profitability timeline. High priority due to monopoly creation risk from owning GDPR-compliant AI underwriting.</p>
-              <p><strong>Confidence:</strong> 55 (confidence rationale not provided)</p>
-              <p><strong>Deal breaker:</strong> EU antitrust scrutiny and integration complexity.</p>
-              <p><strong>Synergy:</strong> HARD COST: acquiring Alan's rules engine saves €500M+ R&amp;D; SOFT REVENUE: bundling with incumbents' distribution could unlock €1B+ ARR in preventive care upsell.</p>
-              <p><strong>Macro:</strong> Leverages Europe SME insurtech surge and Stage 3 scarcity.</p>
-              <p><strong>Priority:</strong> High Priority &nbsp; <strong>Timeline:</strong> MID-TERM</p>
-            </div>
-          </details>
+            </details>
 
-          <details>
-            <summary class="scen-header">
-              <div style="flex:1;"><span class="scen-summary-text">✦ Actor: AXA - Hunters leveraging acquisitions to plug innovation gaps; Alan is an obvious logical solution. (Logical Solution: Alan)</span>
-                <div class="scen-logic-grid">
-                  <span class="logic-tag">Actor: AXA</span>
-                  <span class="logic-tag">Target: Alan</span>
-                  <span class="logic-tag">Type: Acquisition</span>
-                  <span class="logic-tag">Stage: Policy Admin &amp; Underwriting</span>
+            <details>
+              <summary>
+                <div style="flex:1;">
+                  <div class="scen-summary-text">Target: Ottonova - Generali and AXA competing to acquire Ottonova for German market control. (Competing Actors: Generali, AXA)</div>
+                  <div class="scen-logic-grid">
+                    <span class="logic-tag">Actors: Generali, AXA</span>
+                    <span class="logic-tag">Target: Ottonova</span>
+                  </div>
                 </div>
+              </summary>
+              <div style="padding:12px;">
+                <h4>German Health Play Race: Generali vs AXA for Ottonova</h4>
+                <p><strong>Rationale:</strong> Hunters target Ottonova to secure German SME health platform presence; mid-term timeline tied to funding cycles.</p>
+                <p><strong>Deal breaker:</strong> Break-even delays at Ottonova.</p>
+                <p><strong>Synergy:</strong> Hard cost: acquire pre-break-even tech at discount.</p>
+                <p><strong>Priority:</strong> High Priority · <strong>Timeline:</strong> MID-TERM</p>
+                <p><strong>Confidence:</strong> 65</p>
+                <p><strong>Estimated Financials:</strong> Total synergies ≈ €10,000,000</p>
               </div>
-            </summary>
-            <div style="padding:10px;">
-              <h4>Gap Closure: AXA Acquires Alan to Fix Legacy Innovation in SME Underwriting</h4>
-              <p><strong>Rationale:</strong> AXA's substantial cash and legacy weaknesses make acquiring Alan strategically attractive to immediately integrate high-diff Stage 3 IP and capture SME market share. Classified Short-Term due to Alan's unprofitability and immediate hunting threats. High priority.</p>
-              <p><strong>Confidence:</strong> 30</p>
-              <p><strong>Deal breaker:</strong> Tech stack mismatch and France regulatory volatility.</p>
-              <p><strong>Synergy:</strong> HARD COST: Series F asset acquisition bypasses internal build (~$300M+ savings); SOFT REVENUE: SME employer bundling drives ARPU uplift.</p>
-              <p><strong>Macro:</strong> Aligns with €8.75B Europe SAM at ~19.5% CAGR.</p>
-              <p><strong>Priority:</strong> High Priority &nbsp; <strong>Timeline:</strong> SHORT-TERM</p>
-            </div>
-          </details>
+            </details>
 
-          <details>
-            <summary class="scen-header">
-              <div style="flex:1;"><span class="scen-summary-text">✦ Target: Alan - Generali also vying for Ottonova; regional hunts for Germany assets are active. (Competing Actors: Generali, AXA)</span>
-                <div class="scen-logic-grid">
-                  <span class="logic-tag">Actors: Generali</span>
-                  <span class="logic-tag">Actors: AXA</span>
-                  <span class="logic-tag">Target: Ottonova</span>
-                  <span class="logic-tag">Type: Acquisition</span>
+            <details>
+              <summary>
+                <div style="flex:1;">
+                  <div class="scen-summary-text">Target: Ottonova-like Assets - Allianz and Generali engaged in a resource war over similar German assets (Competing Actors: Allianz, Generali).</div>
+                  <div class="scen-logic-grid">
+                    <span class="logic-tag">Actors: Allianz, Generali</span>
+                    <span class="logic-tag">Contested Resource: German SME Health Platforms</span>
+                  </div>
                 </div>
+              </summary>
+              <div style="padding:12px;">
+                <h4>German Turf War: Allianz vs Generali for Ottonova-like Assets</h4>
+                <p><strong>Rationale:</strong> Giants stake a short-term push to secure German market control; regulatory caps possible.</p>
+                <p><strong>Synergy:</strong> Soft revenue: market share lock-in.</p>
+                <p><strong>Priority:</strong> High Priority · <strong>Timeline:</strong> SHORT-TERM</p>
+                <p><strong>Confidence:</strong> 80</p>
+                <p><strong>Estimated Financials:</strong> Total synergies ≈ €50,000,000</p>
               </div>
-            </summary>
-            <div style="padding:10px;">
-              <h4>German Health Play Race: Generali vs AXA for Ottonova</h4>
-              <p><strong>Rationale:</strong> Hunters competing for German Stage 3 assets to consolidate local market dominance. Classified Mid-Term. High priority for monopoly creation in Germany.</p>
-              <p><strong>Confidence:</strong> 65</p>
-              <p><strong>Deal breaker:</strong> Break-even delays and valuation risk.</p>
-              <p><strong>Synergy:</strong> HARD COST: acquire pre-break-even tech at discount.</p>
-              <p><strong>Macro:</strong> Germany is a key proxy for Europe SME platform TAM.</p>
-              <p><strong>Priority:</strong> High Priority &nbsp; <strong>Timeline:</strong> MID-TERM</p>
-            </div>
-          </details>
+            </details>
 
-          <!-- Group 2: Alliances -->
-          <h4>🤝 INEVITABLE ALLIANCES (HIGH SYNERGY)</h4>
+            <!-- Group 2 -->
+            <h4>🤝 INEVITABLE ALLIANCES (HIGH SYNERGY)</h4>
 
-          <details>
-            <summary class="scen-header">
-              <div style="flex:1;"><span class="scen-summary-text">✦ Alliance: Lemonade and Allianz - Partnership to combine AI underwriting for Europe entry.</span>
-                <div class="scen-logic-grid">
-                  <span class="logic-tag">Alliance: Lemonade + Allianz</span>
-                  <span class="logic-tag">Type: Partnership</span>
-                  <span class="logic-tag">Stage: Policy Admin &amp; Underwriting</span>
+            <details>
+              <summary>
+                <div style="flex:1;">
+                  <div class="scen-summary-text">Alliance: Lemonade and Oscar Health - Sharing AI underwriting technology to expand health offerings and improve preventive care (Foci: US health expansion).</div>
+                  <div class="scen-logic-grid">
+                    <span class="logic-tag">Actors: Lemonade, Alan</span>
+                  </div>
                 </div>
+              </summary>
+              <div style="padding:12px;">
+                <h4>Cross-Atlantic Tech Share: Lemonade-Allian AI Underwriting Partnership</h4>
+                <p><strong>Rationale:</strong> Fortress Lemonade seeks Europe entry; alliance could address US/Europe gaps. Mid-term timeline for regulatory navigation.</p>
+                <p><strong>Deal breaker:</strong> IP-sharing disputes and divergent product focus.</p>
+                <p><strong>Synergy:</strong> Shared actuarial IP could target $100M ARR and reduce redundant R&amp;D by ~30% (estimated).</p>
+                <p><strong>Priority:</strong> Medium Priority · <strong>Timeline:</strong> MID-TERM</p>
+                <p><strong>Confidence:</strong> 65</p>
+                <p><strong>Estimated Financials:</strong> Total synergies ≈ €130,000,000</p>
               </div>
-            </summary>
-            <div style="padding:10px;">
-              <h4>Cross-Atlantic Tech Share: Lemonade-Allian AI Underwriting Partnership</h4>
-              <p><strong>Rationale:</strong> Lemonade seeks Europe entry via partnerships to overcome regulatory barriers; Allianz provides distribution and local knowledge. Mid-Term; medium priority.</p>
-              <p><strong>Confidence:</strong> 65</p>
-              <p><strong>Deal breaker:</strong> IP sharing disputes and P&amp;C vs health strategic misalignment.</p>
-              <p><strong>Synergy:</strong> SOFT REVENUE: shared actuarial IP enabling Europe entry; HARD COST: reduces redundant R&amp;D by ~30%.</p>
-              <p><strong>Priority:</strong> Medium Priority &nbsp; <strong>Timeline:</strong> MID-TERM</p>
-            </div>
-          </details>
+            </details>
 
-          <details>
-            <summary class="scen-header">
-              <div style="flex:1;"><span class="scen-summary-text">✦ Alliance: Oscar Health and Lemonade - Shared AI for health expansion in the US market.</span>
-                <div class="scen-logic-grid">
-                  <span class="logic-tag">Alliance: Oscar + Lemonade</span>
-                  <span class="logic-tag">Type: Partnership</span>
-                  <span class="logic-tag">Stage: Policy Admin &amp; Underwriting</span>
+            <details>
+              <summary>
+                <div style="flex:1;">
+                  <div class="scen-summary-text">Alliance: Oscar Health and Lemonade - Shared AI for US health expansion and product efficiency. (Actors: Oscar Health, Lemonade)</div>
+                  <div class="scen-logic-grid">
+                    <span class="logic-tag">Actors: Oscar Health, Lemonade</span>
+                  </div>
                 </div>
+              </summary>
+              <div style="padding:12px;">
+                <h4>US Fortress Alliance: Oscar-Lemonade Shared AI for Health Expansion</h4>
+                <p><strong>Rationale:</strong> Twin Fortresses share R&amp;D to improve cost base and underwriting capabilities; long-term structural play.</p>
+                <p><strong>Deal breaker:</strong> Strategic misalignment across companies.</p>
+                <p><strong>Synergy:</strong> Joint R&amp;D halves development costs.</p>
+                <p><strong>Priority:</strong> Medium Priority · <strong>Timeline:</strong> LONG-TERM</p>
+                <p><strong>Confidence:</strong> 90</p>
+                <p><strong>Estimated Financials:</strong> Total synergies ≈ €50,000,000</p>
               </div>
-            </summary>
-            <div style="padding:10px;">
-              <h4>US Fortress Alliance: Oscar-Lemonade Shared AI for Health Expansion</h4>
-              <p><strong>Rationale:</strong> Twin Fortress alliance for US market scale and shared AI underwriting. Long-Term structural play. Medium priority for cost efficiency.</p>
-              <p><strong>Confidence:</strong> 90</p>
-              <p><strong>Deal breaker:</strong> Strategic misalignment.</p>
-              <p><strong>Synergy:</strong> HARD COST: joint R&amp;D halves development costs.</p>
-              <p><strong>Priority:</strong> Medium Priority &nbsp; <strong>Timeline:</strong> LONG-TERM</p>
-            </div>
-          </details>
+            </details>
 
-          <!-- Group 3: Squeeze Threats -->
-          <h4>🗜️ SQUEEZE THREATS (REMOVING INTERMEDIARIES)</h4>
+            <!-- Group 3 -->
+            <h4>🗜️ SQUEEZE THREATS (REMOVING INTERMEDIARIES)</h4>
 
-          <details>
-            <summary class="scen-header">
-              <div style="flex:1;"><span class="scen-summary-text">✦ Threatened: Wefox - Hunters applying dependency squeezes and consolidation tactics (Attackers: AXA, Getsafe).</span>
-                <div class="scen-logic-grid">
-                  <span class="logic-tag">Target: Wefox</span>
-                  <span class="logic-tag">Actors: AXA</span>
-                  <span class="logic-tag">Actors: Getsafe</span>
-                  <span class="logic-tag">Type: Asset consolidation</span>
+            <details>
+              <summary>
+                <div style="flex:1;">
+                  <div class="scen-summary-text">Threatened: Wefox - AXA and Getsafe circling Wefox assets due to distress and asset sales. (Attackers: AXA, Getsafe)</div>
+                  <div class="scen-logic-grid">
+                    <span class="logic-tag">Threatened: Wefox</span>
+                    <span class="logic-tag">Attackers: AXA, Getsafe</span>
+                  </div>
                 </div>
+              </summary>
+              <div style="padding:12px;">
+                <h4>Distressed Fire-Sale Squeeze: AXA and Getsafe Circling Wefox Assets</h4>
+                <p><strong>Rationale:</strong> Wefox’s restructuring and asset sales make it vulnerable to squeeze by Hunters and Opportunistic acquirers; short-term bankruptcy triggers possible.</p>
+                <p><strong>Deal breaker:</strong> Asset quality and potential outbidding.</p>
+                <p><strong>Synergy:</strong> Hard cost: consolidation savings ≈ €50M+</p>
+                <p><strong>Priority:</strong> High Priority · <strong>Timeline:</strong> SHORT-TERM</p>
+                <p><strong>Confidence:</strong> 65</p>
+                <p><strong>Estimated Financials:</strong> Total synergies ≈ €50,000,000</p>
               </div>
-            </summary>
-            <div style="padding:10px;">
-              <h4>Distressed Fire-Sale Squeeze: AXA and Getsafe Circling Wefox Assets</h4>
-              <p><strong>Rationale:</strong> Wefox's distressed posture and asset sales make it vulnerable to Hunts and opportunistic bidders. Short-Term and high priority for attackers seeking cheap assets.</p>
-              <p><strong>Confidence:</strong> 65</p>
-              <p><strong>Deal breaker:</strong> Asset quality and outbidding dynamics.</p>
-              <p><strong>Synergy:</strong> HARD COST: consolidation saves operational redundancies; potential €50M+ savings.</p>
-              <p><strong>Priority:</strong> High Priority &nbsp; <strong>Timeline:</strong> SHORT-TERM</p>
-            </div>
-          </details>
+            </details>
 
-          <!-- Group 4: Dependency Risks -->
-          <h4>⛓️ DEPENDENCY RISKS (RELIANCE ON SUPPLIERS)</h4>
+            <!-- Group 4 -->
+            <h4>⛓️ DEPENDENCY RISKS (RELIANCE ON SUPPLIERS)</h4>
 
-          <details>
-            <summary class="scen-header">
-              <div style="flex:1;"><span class="scen-summary-text">✦ Dependent: Plum - Generali pressures YuLife and suppliers, constraining service bundling opportunities.</span>
-                <div class="scen-logic-grid">
-                  <span class="logic-tag">Target: Plum</span>
-                  <span class="logic-tag">Supplier: YuLife</span>
-                  <span class="logic-tag">Actor: Generali</span>
-                  <span class="logic-tag">Type: Squeeze / Dependency risk</span>
+            <details>
+              <summary>
+                <div style="flex:1;">
+                  <div class="scen-summary-text">Dependent: YuLife / Plum - Plum relies on YuLife for gamified wellbeing and faces pressure from Generali. (Supplier: YuLife)</div>
+                  <div class="scen-logic-grid">
+                    <span class="logic-tag">Dependent: Plum</span>
+                    <span class="logic-tag">Supplier: YuLife</span>
+                    <span class="logic-tag">Competitor: Generali</span>
+                  </div>
                 </div>
+              </summary>
+              <div style="padding:12px;">
+                <h4>Stage 6 Squeeze: Plum Pressured on YuLife by Generali Hunters</h4>
+                <p><strong>Rationale:</strong> Generali's acquisition pressure on YuLife could block Plum's engagement and rewards bundling; mid-term speculative risk.</p>
+                <p><strong>Priority:</strong> Low Priority · <strong>Timeline:</strong> MID-TERM</p>
+                <p><strong>Confidence:</strong> 55</p>
               </div>
-            </summary>
-            <div style="padding:10px;">
-              <h4>Stage 6 Squeeze: Plum Pressured on YuLife by Generali Hunters</h4>
-              <p><strong>Rationale:</strong> Generali's acquisitions (e.g., YuLife) create supplier dependency risks for smaller aspirants like Plum. Mid-Term and lower priority but material to Stage 6 bundling strategies.</p>
-              <p><strong>Confidence:</strong> 55</p>
-              <p><strong>Deal breaker:</strong> Plum's funding lag limiting defensive responses.</p>
-              <p><strong>Priority:</strong> Low Priority &nbsp; <strong>Timeline:</strong> MID-TERM</p>
-            </div>
-          </details>
+            </details>
 
-          <!-- Group 5: Market Consolidation -->
-          <h4>🧩 MARKET CONSOLIDATION (BUYING SMALLER PLAYERS)</h4>
+            <!-- Group 5 -->
+            <h4>🧩 MARKET CONSOLIDATION (BUYING SMALLER PLAYERS)</h4>
 
-          <details>
-            <summary class="scen-header">
-              <div style="flex:1;"><span class="scen-summary-text">✦ Actor: Getsafe - Opportunistic roll-ups of distressed assets to capture market share and scale.</span>
-                <div class="scen-logic-grid">
-                  <span class="logic-tag">Actor: Getsafe</span>
-                  <span class="logic-tag">Targets: Wefox, Luko</span>
-                  <span class="logic-tag">Type: Roll-up</span>
+            <details>
+              <summary>
+                <div style="flex:1;">
+                  <div class="scen-summary-text">Actor: Getsafe - consolidating distressed Europe insurtech assets (example: Luko's German portfolio acquisition).</div>
+                  <div class="scen-logic-grid">
+                    <span class="logic-tag">Actors: Getsafe</span>
+                  </div>
                 </div>
+              </summary>
+              <div style="padding:12px;">
+                <h4>ScaleUp Roll-Up: Getsafe Consolidating Distressed Europe Insurtech Assets</h4>
+                <p><strong>Rationale:</strong> Getsafe uses roll-up to build MGA and portfolio scale; medium-term consolidation opportunity.</p>
+                <p><strong>Synergy:</strong> Hard cost: portfolio integration savings (≈ €25M estimated).</p>
+                <p><strong>Priority:</strong> Medium Priority · <strong>Timeline:</strong> MID-TERM</p>
+                <p><strong>Confidence:</strong> 65</p>
               </div>
-            </summary>
-            <div style="padding:10px;">
-              <h4>ScaleUp Roll-Up: Getsafe Consolidating Distressed Europe Insurtech Assets</h4>
-              <p><strong>Rationale:</strong> Getsafe's opportunistic M&A activity targets distressed assets to build scale vs Giants. Mid-Term with medium priority given funding constraints.</p>
-              <p><strong>Confidence:</strong> 65</p>
-              <p><strong>Deal breaker:</strong> Funding capacity and integration complexity.</p>
-              <p><strong>Synergy:</strong> HARD COST: portfolio synergies can improve margins significantly.</p>
-              <p><strong>Priority:</strong> Medium Priority &nbsp; <strong>Timeline:</strong> MID-TERM</p>
-            </div>
-          </details>
+            </details>
 
-          <!-- Group 6: Defensive Struggles -->
-          <h4>🛡️ DEFENSIVE STRUGGLES (UNDER ATTACK)</h4>
+            <!-- Group 6 -->
+            <h4>🕳️ MISSED OPPORTUNITIES (GAPS)</h4>
 
-          <details>
-            <summary class="scen-header">
-              <div style="flex:1;"><span class="scen-summary-text">✦ Defender: Coya - Low cash levels invite Hunters to target vulnerable companies for acquisition.</span>
-                <div class="scen-logic-grid">
-                  <span class="logic-tag">Target: Coya</span>
-                  <span class="logic-tag">Actors: AXA</span>
-                  <span class="logic-tag">Type: Acquisition / Defensive</span>
+            <details>
+              <summary>
+                <div style="flex:1;">
+                  <div class="scen-summary-text">Actor: AXA - acquiring Alan to close legacy innovation gap in SME underwriting (Solution: Alan).</div>
+                  <div class="scen-logic-grid">
+                    <span class="logic-tag">Actors: AXA</span>
+                    <span class="logic-tag">Solution: Alan</span>
+                  </div>
                 </div>
+              </summary>
+              <div style="padding:12px;">
+                <h4>Gap Closure: AXA Acquires Alan to Fix Legacy Innovation in SME Underwriting</h4>
+                <p><strong>Rationale:</strong> AXA would fill product and underwriting gaps by acquiring Alan; short-term urgency due to Alan’s unprofitability and incumbent threats.</p>
+                <p><strong>Deal breaker:</strong> Integration complexity and regulatory volatility.</p>
+                <p><strong>Synergy:</strong> Hard cost saving: bypass internal build; soft revenue: SME bundling ARPU uplift.</p>
+                <p><strong>Priority:</strong> High Priority · <strong>Timeline:</strong> SHORT-TERM</p>
+                <p><strong>Confidence:</strong> 30</p>
+                <p><strong>Estimated Financials:</strong> Total synergies ≈ €350,000,000</p>
               </div>
-            </summary>
-            <div style="padding:10px;">
-              <h4>Low-Cash Siege: AXA Targets Vulnerable Coya Fortress</h4>
-              <p><strong>Rationale:</strong> Coya's diminishing cash and Fortress posture make it susceptible to takeover. Short-Term risks with medium priority for attackers to extract assets.</p>
-              <p><strong>Confidence:</strong> 75</p>
-              <p><strong>Deal breaker:</strong> Public trading halts or legal impediments.</p>
-              <p><strong>Priority:</strong> Medium Priority &nbsp; <strong>Timeline:</strong> SHORT-TERM</p>
-            </div>
-          </details>
+            </details>
 
-          <!-- Group 7: Missed Opportunities -->
-          <h4>🕳️ MISSED OPPORTUNITIES (GAPS)</h4>
-
-          <details>
-            <summary class="scen-header">
-              <div style="flex:1;"><span class="scen-summary-text">✦ Actor: AXA - Building an SME Super-Platform via combined acquisitions (Alan + Luko) to lock-in users and block competition.</span>
-                <div class="scen-logic-grid">
-                  <span class="logic-tag">Actor: AXA</span>
-                  <span class="logic-tag">Targets: Alan, Luko</span>
-                  <span class="logic-tag">Type: Super-Platform</span>
+            <details>
+              <summary>
+                <div style="flex:1;">
+                  <div class="scen-summary-text">Actor: Allianz - bolt-on Hedvig to fill digital engagement gap in Nordic markets (Solution: Hedvig).</div>
+                  <div class="scen-logic-grid">
+                    <span class="logic-tag">Actors: Allianz</span>
+                    <span class="logic-tag">Solution: Hedvig</span>
+                  </div>
                 </div>
+              </summary>
+              <div style="padding:12px;">
+                <h4>Nordic Bolt-On: Allianz Fills Digital Engagement Gap with Hedvig</h4>
+                <p><strong>Rationale:</strong> Allianz uses Hedvig to boost member engagement in Nordic markets; short-term due to subsidiary complexity.</p>
+                <p><strong>Priority:</strong> Medium Priority · <strong>Timeline:</strong> SHORT-TERM</p>
+                <p><strong>Confidence:</strong> 50</p>
+                <p><strong>Estimated Financials:</strong> Total synergies ≈ €20,000,000</p>
               </div>
-            </summary>
-            <div style="padding:10px;">
-              <h4>SME Super-Platform: AXA Builds via Alan + Luko Acquisitions</h4>
-              <p><strong>Rationale:</strong> Vertical stacking of Stage 3 and Stage 6 assets creates a super-platform with high ARPU and lock-in. Mid-Term and high priority for monopoly formation.</p>
-              <p><strong>Confidence:</strong> 55</p>
-              <p><strong>Deal breaker:</strong> Multi-target antitrust concerns.</p>
-              <p><strong>Synergy:</strong> HARD COST: fixed-cost scaling to 85% margins.</p>
-              <p><strong>Priority:</strong> High Priority &nbsp; <strong>Timeline:</strong> MID-TERM</p>
-            </div>
-          </details>
+            </details>
 
-          <!-- Group 8: Chain Reactions -->
-          <h4>📉 CHAIN REACTIONS (PREDICTED COUNTER-MOVES)</h4>
+            <!-- Group 7 -->
+            <h4>📉 CHAIN REACTIONS (PREDICTED COUNTER-MOVES)</h4>
 
-          <details>
-            <summary class="scen-header">
-              <div style="flex:1;"><span class="scen-summary-text">✦ Threatened Actor: Wefox - AXA-Alan consolidation could force Getsafe to acquire Wefox assets.</span>
-                <div class="scen-logic-grid">
-                  <span class="logic-tag">Trigger: AXA-Alan deal</span>
-                  <span class="logic-tag">Predicted response: Getsafe buys Wefox</span>
+            <details>
+              <summary>
+                <div style="flex:1;">
+                  <div class="scen-summary-text">Threatened Actor: Wefox - AXA-Alan deal could force Getsafe to acquire Wefox, triggering a consolidation cascade.</div>
+                  <div class="scen-logic-grid">
+                    <span class="logic-tag">Threatened Actor: Wefox</span>
+                    <span class="logic-tag">Response Move: Acquisition of Wefox</span>
+                  </div>
                 </div>
+              </summary>
+              <div style="padding:12px;">
+                <h4>Consolidation Domino: AXA-Alan Deal Forces Getsafe Wefox Grab</h4>
+                <p><strong>Rationale:</strong> One major acquisition can trigger defensive acquisitions to secure complementary assets; short-term bidding urgency.</p>
+                <p><strong>Priority:</strong> Medium Priority · <strong>Timeline:</strong> SHORT-TERM</p>
+                <p><strong>Confidence:</strong> 60</p>
+                <p><strong>Estimated Financials:</strong> Total synergies ≈ €10,000,000</p>
               </div>
-            </summary>
-            <div style="padding:10px;">
-              <h4>Consolidation Domino: AXA-Alan Deal Forces Getsafe Wefox Grab</h4>
-              <p><strong>Rationale:</strong> An AXA acquisition of Alan could push Getsafe to pursue Wefox assets defensively, accelerating consolidation. Short-Term and medium priority for defensive positioning.</p>
-              <p><strong>Confidence:</strong> 60</p>
-              <p><strong>Deal breaker:</strong> cascade outbidding wars.</p>
-              <p><strong>Priority:</strong> Medium Priority &nbsp; <strong>Timeline:</strong> SHORT-TERM</p>
-            </div>
-          </details>
+            </details>
 
-          <!-- Group 9: Systemic Risks -->
-          <h4>⚠️ SYSTEMIC RISKS (MARKET FRAGILITY)</h4>
+            <!-- Group 8 -->
+            <h4>⚠️ SYSTEMIC RISKS (MARKET FRAGILITY)</h4>
 
-          <details>
-            <summary class="scen-header">
-              <div style="flex:1;"><span class="scen-summary-text">✦ Risk Point: Alan - Control of Stage 3 creates systemic displacement risk for commoditized players.</span>
-                <div class="scen-logic-grid">
-                  <span class="logic-tag">Risk Point: Alan</span>
-                  <span class="logic-tag">Stage: Policy Admin &amp; Underwriting</span>
+            <details>
+              <summary>
+                <div style="flex:1;">
+                  <div class="scen-summary-text">Risk Point: Coya - Alan controlling Stage 3 could displace commoditized players like Coya, creating systemic risk for low-diff incumbents.</div>
+                  <div class="scen-logic-grid">
+                    <span class="logic-tag">Controlling Actor: Alan</span>
+                    <span class="logic-tag">Vulnerable Actors: Luko, Coya</span>
+                  </div>
                 </div>
+              </summary>
+              <div style="padding:12px;">
+                <h4>Stage 3 Bottleneck Risk: Alan Controls Displacement of Commoditized Players</h4>
+                <p><strong>Rationale:</strong> Alan's Stage 3 IP can marginalize low-differentiation players; long-term structural risk.</p>
+                <p><strong>Priority:</strong> High Priority · <strong>Timeline:</strong> LONG-TERM</p>
+                <p><strong>Confidence:</strong> 75</p>
               </div>
-            </summary>
-            <div style="padding:10px;">
-              <h4>Stage 3 Bottleneck Risk: Alan Controls Displacement of Commoditized Players</h4>
-              <p><strong>Rationale:</strong> Alan's elite Stage 3 IP can systematically displace low-diff players like Luko and Coya, creating systemic market fragility. Long-Term and high priority for dominance strategies.</p>
-              <p><strong>Confidence:</strong> 75</p>
-              <p><strong>Priority:</strong> High Priority &nbsp; <strong>Timeline:</strong> LONG-TERM</p>
-            </div>
-          </details>
+            </details>
 
-          <!-- Group 10: Platform Strategies (duplicate scenario) -->
-          <h4>🌀 PLATFORM STRATEGIES (CONTROLLED ECOSYSTEMS)</h4>
+            <!-- Group 9 -->
+            <h4>🌀 PLATFORM STRATEGIES (CONTROLLED ECOSYSTEMS)</h4>
 
-          <details>
-            <summary class="scen-header">
-              <div style="flex:1;"><span class="scen-summary-text">✦ Actor: AXA - Ambition to lock users by building an SME Super-Platform via acquisitions.</span>
-                <div class="scen-logic-grid">
-                  <span class="logic-tag">Actor: AXA</span>
-                  <span class="logic-tag">Targets: Alan, Luko</span>
-                  <span class="logic-tag">Type: Super-Platform</span>
+            <details>
+              <summary>
+                <div style="flex:1;">
+                  <div class="scen-summary-text">Actor: AXA - Building SME super-platform via acquisitions (Alan + Luko) to control ecosystem and lock users.</div>
+                  <div class="scen-logic-grid">
+                    <span class="logic-tag">Actors: AXA</span>
+                  </div>
                 </div>
+              </summary>
+              <div style="padding:12px;">
+                <h4>SME Super-Platform: AXA Builds via Alan + Luko Acquisitions</h4>
+                <p><strong>Rationale:</strong> Vertical stacking of Stage 3 and Stage 6 to create high-ARPU SME super-platform; mid-term integration risk and regulatory scrutiny.</p>
+                <p><strong>Priority:</strong> High Priority · <strong>Timeline:</strong> MID-TERM</p>
+                <p><strong>Confidence:</strong> 55</p>
+                <p><strong>Estimated Financials:</strong> Total synergies ≈ €100,000,000</p>
               </div>
-            </summary>
-            <div style="padding:10px;">
-              <h4>SME Super-Platform: AXA Builds via Alan + Luko Acquisitions</h4>
-              <p><strong>Rationale:</strong> Vertical stacking to create a comprehensive SME offering; repetition of the SME Super-Platform thesis underscores strategic importance. Mid-Term.</p>
-              <p><strong>Confidence:</strong> 55</p>
-              <p><strong>Deal breaker:</strong> Antitrust risks.</p>
-              <p><strong>Priority:</strong> High Priority &nbsp; <strong>Timeline:</strong> MID-TERM</p>
-            </div>
-          </details>
+            </details>
 
-          <!-- Group 11: Resource Conflicts -->
-          <h4>💧 RESOURCE CONFLICTS (SCARCE ASSETS)</h4>
+            <!-- Group 10 -->
+            <h4>⚡ HIDDEN SYNERGIES</h4>
 
-          <details>
-            <summary class="scen-header">
-              <div style="flex:1;"><span class="scen-summary-text">✦ Contested Resource: Ottonova-like Assets - Giants battle regionally for Germany-focused assets. (Contesting Actors: Allianz, Generali)</span>
-                <div class="scen-logic-grid">
-                  <span class="logic-tag">Actors: Allianz</span>
-                  <span class="logic-tag">Actors: Generali</span>
-                  <span class="logic-tag">Target: Ottonova-like assets</span>
+            <details>
+              <summary>
+                <div style="flex:1;">
+                  <div class="scen-summary-text">Synergies: Lemonade &amp; Oscar Health exploring undisclosed cross-underwriting synergies for enhanced predictive models and efficiencies.</div>
+                  <div class="scen-logic-grid">
+                    <span class="logic-tag">Actors: Lemonade, Oscar Health</span>
+                  </div>
                 </div>
+              </summary>
+              <div style="padding:12px;">
+                <h4>Undisclosed AI Moat: Lemonade-Oscar Cross-Underwriting Synergy</h4>
+                <p><strong>Rationale:</strong> Joint research and predictive model development may boost ARR and predictive power; long-term R&amp;D focus.</p>
+                <p><strong>Priority:</strong> Low Priority · <strong>Timeline:</strong> LONG-TERM</p>
+                <p><strong>Confidence:</strong> 65</p>
+                <p><strong>Estimated Financials:</strong> Total synergies ≈ €20,000,000</p>
               </div>
-            </summary>
-            <div style="padding:10px;">
-              <h4>German Turf War: Allianz vs Generali for Ottonova-like Assets</h4>
-              <p><strong>Rationale:</strong> Giants contest regional German assets to secure local market control. Short-Term and high priority for dominance of German SME health verticals.</p>
-              <p><strong>Confidence:</strong> 80</p>
-              <p><strong>Deal breaker:</strong> Regulatory nationality caps.</p>
-              <p><strong>Priority:</strong> High Priority &nbsp; <strong>Timeline:</strong> SHORT-TERM</p>
-            </div>
-          </details>
+            </details>
 
-        </div>
+            <!-- Group 11 -->
+            <h4>💣 THREATENED FORTRESSES (VULNERABLE ASSETS)</h4>
 
-        <div class="img-col">
-          <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-d8be29d2cace1fd176f218cf8fa34189-awehzhc2.jpg" alt="Strategic scenarios map" class="sticky-img" />
+            <details>
+              <summary>
+                <div style="flex:1;">
+                  <div class="scen-summary-text">Risk Point: Coya - Low cash and commoditization make Coya vulnerable to hunting/acquisition by larger incumbents.</div>
+                  <div class="scen-logic-grid">
+                    <span class="logic-tag">Actors: Coya</span>
+                    <span class="logic-tag">Attackers: AXA</span>
+                  </div>
+                </div>
+              </summary>
+              <div style="padding:12px;">
+                <h4>Low-Cash Siege: AXA Targets Vulnerable Coya Fortress</h4>
+                <p><strong>Rationale:</strong> Coya's declining cash balance and low differentiation present opportunistic acquisition targets for Hunters.</p>
+                <p><strong>Priority:</strong> Medium Priority · <strong>Timeline:</strong> SHORT-TERM</p>
+                <p><strong>Confidence:</strong> 75</p>
+              </div>
+            </details>
+
+          </div>
+
+          <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-1e8fdc2fd0ac7caaf8b20149a358a5d5-3uielu7o.jpg" alt="Scenarios map" />
+          </div>
         </div>
       </section>
 
       <!-- STEP 8: SYNERGIES -->
-      <section id="synergies" class="split-container">
-        <div class="text-col">
-          <h3>Synergy legend</h3>
-          <p>
-            Synergies are classified between hard cost savings (R&amp;D or integration avoidance) and soft revenue uplift (cross-sell, distribution access). We capture both immediate integration savings and medium-term revenue acceleration from bundled offerings and distribution channels.
-          </p>
+      <section id="synergies">
+        <h3>Synergy detailed table</h3>
 
-          <h3>Synergy detailed table</h3>
-          <div class="table-container" style="overflow:auto;">
-            <table class="synergies-table" role="table" aria-label="Synergy table">
-              <thead>
-                <tr>
-                  <th class="col-summary">Summary</th>
-                  <th class="col-normal">Actors</th>
-                  <th class="col-normal">Synergy (excerpt)</th>
-                  <th class="col-normal">Type</th>
-                  <th class="col-normal">Priority</th>
-                  <th class="col-normal">Timeline</th>
-                  <th class="col-normal">Confidence</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td class="col-summary">Hunter Bidding War: AXA vs Allianz for Alan's Stage 3 AI Platform — acquiring Alan's underwriting IP to secure Stage 3 dominance.</td>
-                  <td>AXA; Allianz; Alan</td>
-                  <td>HARD COST: rules engine saves €500M+ R&amp;D; SOFT REVENUE: €1B+ ARR via bundling</td>
-                  <td>HARD / SOFT</td>
-                  <td>High</td>
-                  <td>Mid-Term</td>
-                  <td>55</td>
-                </tr>
+        <div class="table-container">
+          <table class="synergies-table" role="table" aria-label="Synergies detailed table">
+            <thead>
+              <tr>
+                <th class="col-normal">Group Header</th>
+                <th class="col-summary">Summary</th>
+                <th class="col-normal">Actors</th>
+                <th class="col-normal">Target</th>
+                <th class="col-normal">Solution</th>
+                <th class="col-normal">Threatened</th>
+                <th class="col-normal">Attackers</th>
+                <th class="col-normal">Targets</th>
+                <th class="col-normal">Controlling Actor</th>
+                <th class="col-normal">Vulnerable Actors</th>
+                <th class="col-normal">Contested Resource</th>
+                <th class="col-normal">Response Move</th>
+                <th class="col-normal">Soft Revenue</th>
+                <th class="col-normal">Hard Cost</th>
+                <th class="col-normal">Scenario Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>⚔️ ACQUISITION BATTLES (HIGH CONFLICT)</td>
+                <td>Target: Alan - AXA and Allianz are in a bidding war for Alan's Policy Administration &amp; Underwriting AI platform...</td>
+                <td>AXA, Allianz</td>
+                <td>Alan</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>1,000,000,000</td>
+                <td>500,000,000</td>
+                <td>1,500,000,000</td>
+              </tr>
 
-                <tr>
-                  <td class="col-summary">Gap Closure: AXA Acquires Alan to fix legacy innovation in SME underwriting — immediate vertical integration benefits.</td>
-                  <td>AXA; Alan</td>
-                  <td>HARD COST: bypass internal build (~$300M+) ; SOFT: SME ARPU uplift</td>
-                  <td>HARD / SOFT</td>
-                  <td>High</td>
-                  <td>Short-Term</td>
-                  <td>30</td>
-                </tr>
+              <tr>
+                <td>🕳️ MISSED OPPORTUNITIES (GAPS)</td>
+                <td>Actor: AXA - AXA is acquiring Alan to address gaps in its legacy innovation within SME underwriting...</td>
+                <td>AXA</td>
+                <td></td>
+                <td>Alan</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>50,000,000</td>
+                <td>300,000,000</td>
+                <td>350,000,000</td>
+              </tr>
 
-                <tr>
-                  <td class="col-summary">German Health Play Race: Generali vs AXA for Ottonova — regional consolidation for German market leadership.</td>
-                  <td>Generali; AXA; Ottonova</td>
-                  <td>SOFT REVENUE: market share lock-in; HARD COST: discounted pre-break-even acquisition</td>
-                  <td>HARD / SOFT</td>
-                  <td>High</td>
-                  <td>Mid-Term</td>
-                  <td>65</td>
-                </tr>
+              <tr>
+                <td>🤝 INEVITABLE ALLIANCES (HIGH SYNERGY)</td>
+                <td>Alliance: Lemonade and Oscar Health forming AI underwriting partnership (US health expansion; preventive care).</td>
+                <td>Lemonade, Alan</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>100,000,000</td>
+                <td>30,000,000</td>
+                <td>130,000,000</td>
+              </tr>
 
-                <tr>
-                  <td class="col-summary">Cross-Atlantic Tech Share: Lemonade-Allianz partnership to share AI underwriting models for Europe entry.</td>
-                  <td>Lemonade; Allianz</td>
-                  <td>SOFT REVENUE: shared actuarial IP enabling entry; HARD COST: 30% R&amp;D reduction</td>
-                  <td>SOFT / HARD</td>
-                  <td>Medium</td>
-                  <td>Mid-Term</td>
-                  <td>65</td>
-                </tr>
+              <tr>
+                <td>🌀 PLATFORM STRATEGIES (CONTROLLED ECOSYSTEMS)</td>
+                <td>Actor: AXA building SME super-platform through acquisitions (Alan + Luko) to control ecosystem.</td>
+                <td>AXA</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>0</td>
+                <td>100,000,000</td>
+                <td>100,000,000</td>
+              </tr>
 
-                <tr>
-                  <td class="col-summary">US Fortress Alliance: Oscar-Lemonade shared AI for health expansion — joint tech reduces dev costs.</td>
-                  <td>Oscar Health; Lemonade</td>
-                  <td>HARD COST: joint R&amp;D halves dev costs</td>
-                  <td>HARD</td>
-                  <td>Medium</td>
-                  <td>Long-Term</td>
-                  <td>90</td>
-                </tr>
+              <tr>
+                <td>🗜️ SQUEEZE THREATS (REMOVING INTERMEDIARIES)</td>
+                <td>Threatened: Wefox - AXA and Getsafe circling Wefox assets due to distress and asset sales.</td>
+                <td>AXA, Getsafe</td>
+                <td></td>
+                <td></td>
+                <td>Wefox</td>
+                <td>AXA, Getsafe</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>0</td>
+                <td>50,000,000</td>
+                <td>50,000,000</td>
+              </tr>
 
-                <tr>
-                  <td class="col-summary">Distressed Fire-Sale Squeeze: AXA and Getsafe circling Wefox assets to consolidate MGA and distribution assets.</td>
-                  <td>AXA; Getsafe; Wefox</td>
-                  <td>HARD COST: consolidate operations saving €50M+</td>
-                  <td>HARD</td>
-                  <td>High</td>
-                  <td>Short-Term</td>
-                  <td>65</td>
-                </tr>
+              <tr>
+                <td>⚔️ ACQUISITION BATTLES (HIGH CONFLICT)</td>
+                <td>Target: Ottonova-like Assets - Allianz and Generali engaged in a resource war over German assets.</td>
+                <td>Allianz, Generali</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>German SME Health Platforms</td>
+                <td></td>
+                <td>50,000,000</td>
+                <td>0</td>
+                <td>50,000,000</td>
+              </tr>
 
-                <tr>
-                  <td class="col-summary">Stage 6 Squeeze: Plum pressured on YuLife by Generali — supplier dependency risk constraining bundling options.</td>
-                  <td>Plum; YuLife; Generali</td>
-                  <td>Risk: blocked wellness bundling; minimal direct synergy</td>
-                  <td>Risk</td>
-                  <td>Low</td>
-                  <td>Mid-Term</td>
-                  <td>55</td>
-                </tr>
+              <tr>
+                <td>🤝 INEVITABLE ALLIANCES (HIGH SYNERGY)</td>
+                <td>Alliance: Lemonade and Oscar Health forming AI underwriting partnership (duplicate row for Oscar-Lemonade pairing).</td>
+                <td>Oscar Health, Lemonade</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>0</td>
+                <td>50,000,000</td>
+                <td>50,000,000</td>
+              </tr>
 
-                <tr>
-                  <td class="col-summary">ScaleUp Roll-Up: Getsafe consolidating distressed Europe insurtech assets to build scale via portfolio integration.</td>
-                  <td>Getsafe; Wefox; Luko</td>
-                  <td>HARD COST: portfolio synergies improve margins</td>
-                  <td>HARD</td>
-                  <td>Medium</td>
-                  <td>Mid-Term</td>
-                  <td>65</td>
-                </tr>
+              <tr>
+                <td>🧩 MARKET CONSOLIDATION (BUYING SMALLER PLAYERS)</td>
+                <td>Actor: Getsafe - consolidating distressed Europe insurtech assets, targeting Wefox and Luko.</td>
+                <td>Getsafe</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>Wefox, Luko</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>0</td>
+                <td>25,000,000</td>
+                <td>25,000,000</td>
+              </tr>
 
-                <tr>
-                  <td class="col-summary">Low-Cash Siege: AXA targets vulnerable Coya — opportunistic asset capture from distressed players.</td>
-                  <td>AXA; Coya</td>
-                  <td>Defensive acquisition potential; low direct synergy disclosure</td>
-                  <td>HARD</td>
-                  <td>Medium</td>
-                  <td>Short-Term</td>
-                  <td>75</td>
-                </tr>
+              <tr>
+                <td>🕳️ MISSED OPPORTUNITIES (GAPS)</td>
+                <td>Actor: Allianz acquiring Hedvig to plug digital engagement gaps; Hedvig as a Nordic bolt-on.</td>
+                <td>Allianz</td>
+                <td></td>
+                <td>Hedvig</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>20,000,000</td>
+                <td>0</td>
+                <td>20,000,000</td>
+              </tr>
 
-                <tr>
-                  <td class="col-summary">SME Super-Platform: AXA builds via Alan + Luko acquisitions — vertical stack to capture SME ARPU.</td>
-                  <td>AXA; Alan; Luko</td>
-                  <td>HARD COST: fixed-cost scaling to 85% margins; SOFT REVENUE: $10k–100k ARPU per large client</td>
-                  <td>HARD / SOFT</td>
-                  <td>High</td>
-                  <td>Mid-Term</td>
-                  <td>55</td>
-                </tr>
+              <tr>
+                <td>⚡ HIDDEN SYNERGIES</td>
+                <td>Lemonade and Oscar Health exploring undisclosed cross-underwriting synergies in Stage 3.</td>
+                <td>Lemonade, Oscar Health</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>20,000,000</td>
+                <td>0</td>
+                <td>20,000,000</td>
+              </tr>
 
-                <tr>
-                  <td class="col-summary">Consolidation Domino: AXA-Alan deal forces Getsafe to pursue Wefox assets defensively, accelerating market restructuring.</td>
-                  <td>AXA; Alan; Getsafe; Wefox</td>
-                  <td>HARD COST: defensive asset consolidation</td>
-                  <td>HARD</td>
-                  <td>Medium</td>
-                  <td>Short-Term</td>
-                  <td>60</td>
-                </tr>
+              <tr>
+                <td>⚔️ ACQUISITION BATTLES (HIGH CONFLICT)</td>
+                <td>Target: Ottonova - Generali and AXA competing for Ottonova.</td>
+                <td>Generali, AXA</td>
+                <td>Ottonova</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>0</td>
+                <td>10,000,000</td>
+                <td>10,000,000</td>
+              </tr>
 
-                <tr>
-                  <td class="col-summary">Stage 3 Bottleneck Risk: Alan controls displacement of commoditized players, creating systemic market fragility.</td>
-                  <td>Alan; Luko; Coya</td>
-                  <td>Risk of systemic displacement; no direct synergy</td>
-                  <td>Risk</td>
-                  <td>High</td>
-                  <td>Long-Term</td>
-                  <td>75</td>
-                </tr>
+              <tr>
+                <td>📉 CHAIN REACTIONS (PREDICTED COUNTER-MOVES)</td>
+                <td>Threatened Actor: Wefox - AXA-Alan deal may force Getsafe to acquire Wefox, triggering chain responses.</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>Wefox</td>
+                <td>Acquisition of Wefox</td>
+                <td></td>
+                <td>0</td>
+                <td>10,000,000</td>
+                <td>10,000,000</td>
+              </tr>
 
-                <tr>
-                  <td class="col-summary">German Turf War: Allianz vs Generali for Ottonova-like assets to secure regional dominance.</td>
-                  <td>Allianz; Generali; Ottonova</td>
-                  <td>SOFT REVENUE: market share lock-in</td>
-                  <td>SOFT</td>
-                  <td>High</td>
-                  <td>Short-Term</td>
-                  <td>80</td>
-                </tr>
+              <tr>
+                <td>⛓️ DEPENDENCY RISKS (RELIANCE ON SUPPLIERS)</td>
+                <td>Dependent: YuLife - Plum depends on YuLife and faces Generali pressure (risk row).</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>0</td>
+                <td>0</td>
+                <td>0</td>
+              </tr>
 
-              </tbody>
-            </table>
-          </div>
+              <tr>
+                <td>⚠️ SYSTEMIC RISKS (MARKET FRAGILITY)</td>
+                <td>Risk Point: Coya - Alan's Stage 3 dominance could displace commoditized players like Coya and Luko.</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>Alan</td>
+                <td>Luko, Coya</td>
+                <td></td>
+                <td></td>
+                <td>0</td>
+                <td>0</td>
+                <td>0</td>
+              </tr>
+
+              <tr>
+                <td>💣 THREATENED FORTRESSES (VULNERABLE ASSETS)</td>
+                <td>Risk Point: Coya - Low cash and commoditization make Coya vulnerable to Hunter acquisition.</td>
+                <td>Coya</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>AXA</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>0</td>
+                <td>0</td>
+                <td>0</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
-        <div class="img-col">
-          <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-ca35d784daee1ba7254b9298478ceec1-wlmou3yh.jpg" alt="Synergies image" class="sticky-img" />
+        <h3>Synergy legend</h3>
+        <div class="split-container">
+          <div class="text-col synergies-legend">
+            <p><strong>Strategic Impact Summary</strong></p>
+            <p>This table provides a comprehensive overview of strategic scenarios, grouped by theme and quantified by potential financial synergies. Each row maps scenario summaries to actors, roles (Target, Attacker), and estimated soft revenue / hard cost synergies. Values are conservatively estimated and sorted by scenario total.</p>
+
+            <p><strong>Visual methodology</strong></p>
+            <ul>
+              <li>Players segmented by potential acquirers (Hunters) vs targets; scenarios emphasize Stage 3 (Policy Admin) scarcity and Stage 6 engagement opportunities.</li>
+              <li>Financial columns present conservative synergies: Soft revenue (upsell/recurring ARR) and Hard cost (R&amp;D / integration savings).</li>
+            </ul>
+
+            <p><strong>Scenarios involving Alan (examples)</strong></p>
+            <ul>
+              <li>Alan as Target in bidding war (AXA vs Allianz).</li>
+              <li>Alan as Solution for AXA's legacy gap.</li>
+              <li>Alan as trigger for consolidation chain reactions (e.g., Getsafe and Wefox dynamics).</li>
+            </ul>
+          </div>
+
+          <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-8fe707d39801393cd5b70e0fdf2581c2-4fnkqcws.jpg" alt="Synergies image" />
+          </div>
         </div>
       </section>
 
       <!-- STEP 9: COMPANY ANALYSIS -->
-      <section id="company-analysis" class="split-container">
-        <div class="text-col">
-          <h3 id="value-proposition">Value Proposition</h3>
-          <p>Alan positions itself as a comprehensive health partner that prevents, ensures, and supports daily health needs. It offers a single point of contact solution for health insurance, provident fund and prevention services, simplifying health management for businesses and individuals. Alan aims to improve employee well-being and reduce HR friction.</p>
+      <section id="company-analysis">
+        <div class="split-container">
+          <div class="text-col">
+            <h3 id="value-prop">Value Proposition</h3>
+            <p>Alan positions itself as a comprehensive health partner that prevents, ensures, and supports daily health needs. It offers a single point of contact for health insurance, provident fund, and prevention services to simplify health management for businesses and individuals.</p>
 
-          <h4 id="product">Product</h4>
-          <p>Core solution: integrated health insurance, provident fund and prevention delivered via an employer interface and member mobile app. Feature set includes automated management of insurance and provident fund, employer HR workflows, Alan Play prevention challenges, wellness rewards, Alan Clinic teleconsultations, access to health professionals, content library, 24/7 clinical access, photo-based reimbursements with <24h processing, meditation and therapist access, and optical ordering integrations.</p>
+            <h4 id="product">Product</h4>
+            <p>Core solution: Integrated health insurance, provident fund management, and prevention delivered through an employer interface and member mobile app. Features include automated HR workflows, Alan Play prevention challenges, Alan Clinic teleconsultations, fast reimbursements, meditation and mental health resources, and a rewards program.</p>
 
-          <h4 id="business-model">Business model</h4>
-          <p>SaaS subscription model targeting companies and individuals, with insurance-backed offerings for retirees, non-salaried workers and public sector agents. Revenue streams are insurance premiums, subscription fees and value-added services. Pricing details and granular ARPU were not disclosed in sources.</p>
+            <h4 id="business-model">Business model</h4>
+            <p>Primarily a SaaS + insurance model: subscription-based contracts with employers (per-employee pricing and premium insurance components), combined with insurance premia and add-on preventive services. Public plan and individual offerings exist.</p>
 
-          <h4 id="team">Team</h4>
-          <p>Company culture emphasizes efficiency, pedagogy, clarity and kindness. Public signals indicate a team size of 700+ employees, though detailed headcount by function is not publicly available.</p>
+            <h4 id="team">Team</h4>
+            <p>Company culture emphasizes efficiency, clarity, and customer-centric service. Public materials indicate a ~700-headcount organization with product, engineering, and operations teams supporting multi-country deployments.</p>
 
-          <h4 id="ceo">CEO</h4>
-          <p>Executive assessment: Jean-Charles Samuelian-Werve is a product-led founder with engineering and business pedigree (École des Ponts and MBA). He has led Alan for over a decade with prior startup experience (Expliseat) and board advisory ties (Mistral AI), indicating founder-market fit and product-driven leadership.</p>
+            <h4 id="ceo">CEO — Jean-Charles Samuelian-Werve</h4>
+            <p>Founder archetype: product-led founder with engineering and management background. Tenure: over 10 years at Alan; prior co-founder at Expliseat. Academic background: École nationale des ponts et chaussées and Collège des Ingénieurs (MBA). Advisory role at Mistral AI suggests engagement with frontier technology.</p>
 
-          <h4 id="company-summary">Company summary</h4>
-          <p>Alan is an integrated digital health insurance SaaS provider focused on SMEs, self-employed and retirees in Europe, combining policy administration, underwriting, member engagement and prevention into a vertical platform. It raised €173M in Series F (Sep 2024) with a reported valuation near €4–4.5B and targets profitability by 2026 while scaling across Europe.</p>
-        </div>
+            <h4 id="company-summary">Company summary</h4>
+            <p>Alan is a vertically integrated digital health insurer and benefits platform with strong product differentiation (Alan Clinic, Mo AI assistant), regulatory licensing in Europe, and enterprise-level wins including public sector contracts. Funding: €173M Series F (Sep 2024) supporting international expansion and product development.</p>
+          </div>
 
-        <div class="img-col">
-          <img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-898537e53270a1ab473a7c817f81dac7-wbbdzqvc.jpg" alt="Company image" class="sticky-img" />
+          <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-e75049ec54335ccdc10f771337fc764d-2uocczqj.jpg" alt="Company image" />
+          </div>
         </div>
       </section>
 
       <!-- STEP 10: SWOT & ACTION PLAN -->
-      <section id="swot" style="margin-bottom:40px;">
-        <h3>SWOT</h3>
-        <div class="swot-grid-small" style="margin-bottom:20px;">
+      <section id="swot">
+        <h3>SWOT analysis</h3>
+        <div class="swot-grid-small">
           <div class="sg-box s-green">
-            <h4 style="font-size:1em;margin-top:0.2em;">Strengths</h4>
+            <h4>Strengths</h4>
             <ul>
-              <li>Elite founder DNA and product-led engineering leadership.</li>
-              <li>Vertically integrated prevention-first platform with telehealth and app features.</li>
-              <li>Proven traction: 700+ team, €60–70M ARR, €173M Series F funding.</li>
-              <li>Strong positioning in Policy Admin/Underwriting (Stage 3).</li>
+              <li>Elite founder DNA; product-led engineering background and long tenure.</li>
+              <li>Vertically integrated platform: underwriting, care delivery, member engagement.</li>
+              <li>Significant traction and scale: €60–70M ARR, 700+ employees, €173M Series F.</li>
             </ul>
           </div>
           <div class="sg-box s-red">
-            <h4 style="font-size:1em;margin-top:0.2em;">Weaknesses</h4>
+            <h4>Weaknesses</h4>
             <ul>
-              <li>Currently unprofitable with ongoing losses into 2026 target.</li>
-              <li>Opaque unit economics and ARPU disclosure.</li>
-              <li>France-heavy operations and nascent data moat.</li>
-              <li>CEO-dominant structure with limited public bench visibility.</li>
+              <li>Unprofitable to planned 2026 target; opaque unit economics and ARPU.</li>
+              <li>Europe-heavy concentration and nascent data moat.</li>
             </ul>
           </div>
           <div class="sg-box s-blue">
-            <h4 style="font-size:1em;margin-top:0.2em;">Opportunities</h4>
+            <h4>Opportunities</h4>
             <ul>
-              <li>Exploit €8.75B Europe SAM via SME/public sector tenders.</li>
-              <li>AI partnerships (Mistral) to improve underwriting and personalization.</li>
-              <li>Vertical expansion into a wellness super-app and provider networks.</li>
-              <li>M&amp;A runway to acquire provider networks and accelerate scale.</li>
+              <li>Exploit €8.75B Europe SAM via SME, self-employed, retiree and public sector tenders.</li>
+              <li>AI underwriting and personalization (Mistral tie-ins) and expansion across EU.</li>
             </ul>
           </div>
           <div class="sg-box s-yellow">
-            <h4 style="font-size:1em;margin-top:0.2em;">Threats</h4>
+            <h4>Threats</h4>
             <ul>
-              <li>Incumbent hunters (AXA/Allianz/Generali) targeting Stage 3 leaders.</li>
-              <li>Regulatory risk (GDPR and public contracts) and macro downturns affecting SME budgets.</li>
-              <li>Big Tech entrants commoditizing engagement layers.</li>
-              <li>Talent wars for AI and healthtech expertise.</li>
+              <li>Incumbent hunting (AXA/Allianz/Generali), regulatory shifts, macro downturn affecting SME spend.</li>
+              <li>Big Tech entrants and talent competition.</li>
             </ul>
           </div>
         </div>
 
         <h3 id="action-plan">Action plan</h3>
         <ul>
-          <li><strong>Defense:</strong> Fortify European regulatory moat and app stickiness (24h claims, zero-paper optics) while preserving cash runway to withstand macro downturns and buy time to build the data flywheel.</li>
-          <li><strong>Offense:</strong> Leverage founder-led product and AI (Mistral ties) to vertically integrate prevention and underwriting, target 3%+ SOM (€262M) through SME/public tenders and scale ARR 10x by 2028.</li>
-          <li><strong>Kill shot (risk):</strong> Public/regulatory clampdown or missed profitability targets could trigger down-rounds and incumbent tech sieges, eroding founder control.</li>
-          <li><strong>Remediation:</strong> Achieve profitability pre-2026 via claims AI hedging and ARPU transparency; focus on enterprise trust-building to reduce dilution and strengthen international expansion.</li>
+          <li><strong>Defense:</strong> Fortify European regulatory moat and product stickiness (24h claims, zero-paper optical), extend cash runway for macro resilience and data flywheel development.</li>
+          <li><strong>Offense:</strong> Accelerate AI-driven underwriting and prevention to capture 3%+ SOM (~€262M) via SME and public sector GTM; use Series F capital for provider network M&amp;A.</li>
+          <li><strong>Kill shot:</strong> Maintain profitability trajectory; avoid regulatory clampdowns and maintain founder control to prevent down-round dilution.</li>
+          <li><strong>Remediation:</strong> Improve unit-economics transparency, deploy claims AI hedging, and prove ARPU/FCL improvement pre-2026.</li>
         </ul>
       </section>
 
       <!-- STEP 11: CONVICTION, SOURCES & FOOTER -->
       <section id="conviction">
         <h3>Conviction</h3>
-        <p>
-          Alan addresses a crowded but underserved European health insurance market by building a vertically integrated operating system for health. Timing benefits from regulatory and digital adoption trends; the company's regulatory moat and stack integration create differentiation; founder-market fit is strong and thesis alignment is high.
-        </p>
+        <p>Proplace GP view: High conviction in market timing and strategic fit. Alan exhibits a strong thesis fit via founder-market alignment, vertical integration, and a defensible regulatory/data moat. Timing is now — regulatory tailwinds and SME digital adoption create a window for a dominant platform.</p>
       </section>
 
       <section id="sources">
         <h3>Sources &amp; Data Quality</h3>
 
-        <h4>Value Chain sources</h4>
-        <p class="source-list">
-          Value chain full responses and stage definitions provided in input (full response texts). Sources referenced in value chain:
-          <a href="https://cfoproanalytics.com/cfo-wiki/saas/gross-margin-targets-for-saas-companies/?utm_source=openai" target="_blank">CFO Pro Analytics — SaaS margins</a>,
-          <a href="https://www.cognitivemarketresearch.com/healthcare-saas-market-report?utm_source=openai" target="_blank">Cognitive Market Research — Healthcare SaaS</a>,
-          <a href="https://market.us/report/digital-health-insurance-market/?utm_source=openai" target="_blank">Market.us — Digital Health Insurance</a>,
-          <a href="https://www.mordorintelligence.com/industry-reports/digital-insurance-platform-market?utm_source=openai" target="_blank">Mordor Intelligence — Digital Insurance Platform</a>
-        </p>
+        <h4>Value Chain Sources</h4>
+        <div class="source-list">
+          <p><strong>SOURCES BIBLIOGRAPHY — Integrated Digital Health Insurance SaaS Value Chain Analysis</strong></p>
+          <ol>
+            <li><a href="https://www.cognitivemarketresearch.com/healthcare-saas-market-report?utm_source=openai" target="_blank">Cognitive Market Research - Healthcare SaaS</a></li>
+            <li><a href="https://www.statista.com/outlook/hmo/digital-health/europe?utm_source=openai" target="_blank">Statista - Digital Health Europe</a></li>
+            <li><a href="https://www.mordorintelligence.com/industry-reports/digital-insurance-platform-market?utm_source=openai" target="_blank">Mordor Intelligence - Digital Insurance Platform</a></li>
+            <li><a href="https://www.marketgrowthreports.com/market-reports/health-insurance-platforms-market-119217?utm_source=openai" target="_blank">Market Growth Reports - Health Insurance Platforms</a></li>
+            <li><a href="https://cfoproanalytics.com/cfo-wiki/saas/gross-margin-targets-for-saas-companies/?utm_source=openai" target="_blank">CFO Pro Analytics - SaaS Margins</a></li>
+            <li><a href="https://www.gartner.com/en/documents/4012603?utm_source=openai" target="_blank">Gartner - Healthcare SaaS Pricing</a></li>
+            <li><a href="https://fastercapital.com/content/Unit-economics-for-healthtech-operation--Healthy-Margins--How-Unit-Economics-Drive-HealthTech-Success.html?utm_source=openai" target="_blank">FasterCapital - Unit Economics</a></li>
+            <li><a href="https://msg-insurance-suite.com/blog/rethinking-insurance/usage-based-pricing-for-saas-solutions/?utm_source=openai" target="_blank">MSG - Usage-based Pricing</a></li>
+            <li><a href="https://www.wiseguyreports.com/reports/health-insurance-software-market?utm_source=openai" target="_blank">WiseGuy - Health Insurance Software</a></li>
+            <li><a href="https://www.datainsightsconsultancy.com/reports/health-insurance-technology-market/?utm_source=openai" target="_blank">Data Insights Consultancy</a></li>
+            <li><a href="https://en.wikipedia.org/wiki/CompuGroup_Medical?utm_source=openai" target="_blank">Wikipedia - CompuGroup Medical</a></li>
+            <li><a href="https://en.wikipedia.org/wiki/Benefitalign?utm_source=openai" target="_blank">Wikipedia - Benefitalign</a></li>
+            <li><a href="https://getlatka.com/companies/industries/i-health-insurance-software?utm_source=openai" target="_blank">GetLatka - Health Insurance Software</a></li>
+            <li><a href="https://www.businessinsider.com/zelis-healthcare-hires-goldman-sachs-jpmorgan-early-2026-ipo-2025-10?utm_source=openai" target="_blank">Business Insider - Zelis</a></li>
+            <li><a href="https://persivia.com/2026/01/07/top-8-value-based-care-platforms-in-2026-compared/?utm_source=openai" target="_blank">Persivia - Value-Based Care</a></li>
+            <li><a href="https://en.wikipedia.org/wiki/Plum_%28company%29?utm_source=openai" target="_blank">Wikipedia - Plum</a></li>
+            <li>Value chain queries and defensibility analysis (internal / full response texts).</li>
+            <li>Defensibility query full response texts.</li>
+            <li>Customer segmentation and TAM/pricing/margins queries (full response texts).</li>
+            <li>Additional market & company reference material referenced in the dossier.</li>
+          </ol>
+          <p><em>Total Sources cited for value chain: 20</em></p>
+        </div>
 
         <h4>Market sources</h4>
-        <p class="source-list">
-          <a href="https://www.mordorintelligence.com/industry-reports/digital-insurance-platform-market?utm_source=openai" target="_blank">Mordor Intelligence — Digital Insurance Platform</a> |
-          <a href="https://www.cognitivemarketresearch.com/healthcare-saas-market-report?utm_source=openai" target="_blank">Cognitive Market Research — Healthcare SaaS</a> |
-          <a href="https://market.us/report/digital-health-insurance-market/?utm_source=openai" target="_blank">Market.us — Digital Health Insurance</a> |
-          <a href="https://cfoproanalytics.com/cfo-wiki/saas/gross-margin-targets-for-saas-companies/?utm_source=openai" target="_blank">CFO Pro Analytics — SaaS margins</a> |
-          <a href="https://fastercapital.com/content/Unit-economics-for-healthtech-operation--Healthy-Margins--How-Unit-Economics-Drive-HealthTech-Success.html?utm_source=openai" target="_blank">FasterCapital — Unit Economics</a> |
-          <a href="https://www.statista.com/outlook/hmo/digital-health/europe?utm_source=openai" target="_blank">Statista — Digital Health Europe</a>
-        </p>
+        <div class="source-list">
+          <p>Key market sources used across top-down, bottom-up and trends:</p>
+          <ul>
+            <li><a href="https://www.mordorintelligence.com/industry-reports/digital-insurance-platform-market?utm_source=openai" target="_blank">Mordor Intelligence - Digital Insurance Platform Market</a></li>
+            <li><a href="https://www.cognitivemarketresearch.com/healthcare-saas-market-report?utm_source=openai" target="_blank">Cognitive Market Research - Healthcare SaaS</a></li>
+            <li><a href="https://market.us/report/digital-health-insurance-market/?utm_source=openai" target="_blank">Market.us - Digital Health Insurance Market</a></li>
+            <li><a href="https://fastercapital.com/content/Unit-economics-for-healthtech-operation--Healthy-Margins--How-Unit-Economics-Drive-HealthTech-Success.html?utm_source=openai" target="_blank">FasterCapital - Unit Economics</a></li>
+            <li><a href="https://www.statista.com/outlook/hmo/digital-health/europe?utm_source=openai" target="_blank">Statista - Digital Health Europe</a></li>
+            <li><a href="https://www.marketgrowthreports.com/market-reports/health-insurance-platforms-market-119217?utm_source=openai" target="_blank">Market Growth Reports</a></li>
+            <li><a href="https://cfoproanalytics.com/cfo-wiki/saas/gross-margin-targets-for-saas-companies/?utm_source=openai" target="_blank">CFO Pro Analytics - SaaS Margins</a></li>
+            <li><a href="https://msg-insurance-suite.com/blog/rethinking-insurance/usage-based-pricing-for-saas-solutions/?utm_source=openai" target="_blank">MSG - Usage Pricing</a></li>
+            <li><a href="https://www.wiseguyreports.com/reports/health-insurance-software-market?utm_source=openai" target="_blank">WiseGuy</a></li>
+          </ul>
+        </div>
 
         <h4>Company sources</h4>
-        <p class="source-list">
-          Alan company dossier sources:
-          <a href="https://alan.com" target="_blank">alan.com</a> |
-          <a href="https://techcrunch.com/2024/09/20/health-insurance-startup-alan-reaches-45-billion-valuation-with-new-funding-round/?utm_source=openai" target="_blank">TechCrunch (Alan Series F)</a> |
-          <a href="https://www.finsmes.com/2024/09/alan-raises-e173m-in-series-f-funding.html" target="_blank">Finsmes — Alan funding</a> |
-          <a href="https://www.lemonde.fr/economie/article/2024/06/06/le-neo-assureur-alan-remporte-la-couverture-sante-d-au-moins-60-000-fonctionnaires_6237738_3234.html" target="_blank">Le Monde — Alan public sector wins</a> |
-          <a href="https://techcrunch.com/2025/01/29/health-insurance-startup-alan-keeps-growing-at-a-rapid-pace/" target="_blank">TechCrunch — Alan growth</a> |
-          <a href="https://fastercapital.com/content/Unit-economics-for-healthtech-operation--Healthy-Margins--How-Unit-Economics-Drive-HealthTech-Success.html?utm_source=openai" target="_blank">FasterCapital — Unit economics</a>
+        <div class="source-list">
+          <p>Key company evidence used for the dossier (selected links):</p>
+          <ul>
+            <li><a href="https://linkedin.com/in/jcsamuelian" target="_blank">Jean-Charles Samuelian-Werve — LinkedIn</a></li>
+            <li><a href="https://www.finsmes.com/2024/09/alan-raises-e173m-in-series-f-funding.html" target="_blank">Alan Series F fundraise coverage</a></li>
+            <li><a href="https://alan.com" target="_blank">Alan official website</a></li>
+            <li><a href="https://techcrunch.com/2024/09/20/health-insurance-startup-alan-reaches-45-billion-valuation-with-new-funding-round/?utm_source=openai" target="_blank">TechCrunch coverage</a></li>
+            <li><a href="https://techcrunch.com/2024/11/05/alan-unveils-ai-based-health-assistant-to-complement-its-health-insurance/" target="_blank">Alan AI assistant coverage</a></li>
+            <li><a href="https://www.lemonde.fr/economie/article/2024/06/06/le-neo-assureur-alan-remporte-la-couverture-sante-d-au-moins-60-000-fonctionnaires_6237738_3234.html" target="_blank">Le Monde — public sector win</a></li>
+            <li><a href="https://techcrunch.com/2025/01/29/health-insurance-startup-alan-keeps-growing-at-a-rapid-pace/" target="_blank">TechCrunch — expansion coverage</a></li>
+            <li>Additional company-level evidence and internal research notes (17 URLs located / 20 searched; data completeness ~85%).</li>
+          </ul>
+        </div>
+
+        <p class="final-footer" style="text-align:left;">
+          Generated by <a href="https://www.proplace.co" target="_blank">Proplace</a> for Investment Criteria - alexandre@proplace.co (last update: 01.02.2026 07:08)
         </p>
       </section>
-
-      <div class="final-footer">
-        Generated by <a href="https://www.proplace.co" target="_blank">Proplace</a> for Investment Criteria - alexandre@proplace.co (last update: 01.02.2026 05:53)
-      </div>
 
     </main>
   </div>
