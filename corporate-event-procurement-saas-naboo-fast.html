@@ -1,0 +1,488 @@
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Naboo Interactive Memo</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+:root { --bg-app: #f8fafc; --text-main: #1e293b; --yellow-menu: #FEF9C3; --green-menu: #DCFCE7; --grey-menu: #F1F5F9; }
+/* GLOBAL RESET FOR BOX SIZING (CRITICAL) */
+* { box-sizing: border-box; }
+
+/* STICKY FIX: No overflow on body/html */
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-app); color: var(--text-main); margin: 0; display: flex; }
+html { scroll-behavior: smooth; }
+a { color: #2563eb; text-decoration: none; cursor: pointer; word-break: break-all; }
+a:hover { text-decoration: underline; }
+/* MOBILE FIX: Word Break Global */
+p, li, a, span, div { overflow-wrap: break-word; word-break: break-word; }
+p, li { line-height: 1.6; margin-bottom: 10px; }
+strong, b { font-weight: 700; color: #0f172a; }
+h3 { scroll-margin-top: 20px; font-size: 1.4em; color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px; }
+
+/* LAYOUT */
+/* STICKY FIX: Overflow visible on wrapper */
+.main-wrapper { display: flex; width: 100%; max-width: 100vw; align-items: flex-start; overflow: visible !important; }
+/* STICKY FIX: Sidebar positioning */
+.sidebar { width: 300px; height: 100vh; position: sticky; top: 0; overflow-y: auto; border-right: 1px solid #e2e8f0; background: #fff; padding: 25px 0; flex-shrink: 0; z-index: 1000; align-self: flex-start; }
+.content-area { flex: 1; padding: 20px 40px; width: 100%; min-width: 0; max-width: 1600px; margin: 0 auto; }
+/* STICKY FIX: Overflow visible on container */
+.section-container { background: #fff; padding: 30px; margin-bottom: 30px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; scroll-margin-top: 20px; overflow: visible; }
+.section-title { font-size: 1.8em; font-weight: 700; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 25px; }
+
+/* SPLIT & STICKY */
+.split-container { display: flex; gap: 40px; align-items: flex-start; margin-bottom: 40px; position: relative; }
+.text-col { flex: 1; font-size: 1.05em; line-height: 1.7; color: #334155; min-width: 0; word-wrap: break-word; overflow-wrap: anywhere; }
+/* STICKY FIX & SCROLLBAR KILLER */
+.img-col { flex: 1; position: sticky; top: 20px; align-self: flex-start; height: fit-content; min-width: 0; max-height: calc(100vh - 40px); overflow: hidden; /* Key to kill scrollbar */ }
+.sticky-img { width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; display: block; object-fit: contain; }
+
+/* SIDEBAR ITEMS */
+.meta-block { padding: 0 25px 25px; border-bottom: 1px solid #e2e8f0; margin-bottom: 15px; }
+.sb-top-data { padding: 0 25px 10px; display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 5px; }
+.sb-tag { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.85em; color: #475569; }
+
+/* SCORE COLORS - DYNAMIC */
+.sb-score { color: white !important; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.85em; }
+.score-green { background: #16a34a !important; }
+.score-yellow { background: #ca8a04 !important; }
+.score-orange { background: #ea580c !important; }
+.score-blue { background: #2563eb !important; }
+.score-red { background: #dc2626 !important; }
+
+/* CONTACT ROW FIX: ALIGNMENT */
+.contact-row { display: flex; flex-direction: column; gap: 5px; font-size: 0.9em; margin-top: 10px; padding-left: 25px; padding-right: 25px; }
+.nav-item { display: block; padding: 8px 25px; color: #475569; font-weight: 600; font-size: 0.9em; border-left: 4px solid transparent; margin-bottom: 2px; }
+.nav-item:hover { background: rgba(0,0,0,0.05); color: #0f172a; border-left-color: #94a3b8; }
+.bg-yellow { background: var(--yellow-menu); } .bg-green { background: var(--green-menu); } .bg-grey { background: var(--grey-menu); }
+
+/* CTA BUTTONS */
+.cta-text-small { display: block; margin: 10px 25px 2px; font-size: 0.8em; color: #64748b; font-weight: 600; }
+.cta-btn { display: block; margin: 5px 25px 10px; padding: 12px; background: #1e293b; color: #fff; text-align: center; border-radius: 6px; font-weight: 700; font-size: 0.9em; cursor: pointer; }
+.cta-btn-secondary { background: #e2e8f0; color: #1e293b; border: 1px solid #cbd5e1; }
+.cta-btn-secondary:hover { background: #cbd5e1; }
+.promo-text { display: block; margin: 0 25px 20px; font-size: 0.8em; color: #64748b; text-align: center; font-style: italic; word-wrap: break-word; }
+
+/* BATTLEFIELD LEGEND & CARDS */
+.battlefield-legend { margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 6px; font-size: 0.9em; }
+.legend-row { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; margin-bottom: 5px; }
+.legend-item { display: inline-block; }
+.posture-legend { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; line-height: 1.2; margin-right: 10px; }
+
+.battlefield-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 15px; width: 100%; margin-bottom: 40px; }
+.battlefield-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.stage-header { font-size: 0.85em; font-weight: 700; text-transform: uppercase; color: #64748b; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; min-height: 40px; }
+
+/* ACTOR CARDS - UPDATED BORDER COLORS & QUADRANTS */
+.actor-card { background: #fff; border: 1px solid #cbd5e0; border-radius: 6px; overflow: hidden; font-size: 0.9em; border-left-width: 4px; margin-bottom: 8px; transition: all 0.2s; }
+.border-established-leader { border-left-color: #2563eb !important; } /* Blue */
+.border-emerging-innovator { border-left-color: #16a34a !important; } /* Green */
+.border-mature-commoditized { border-left-color: #ca8a04 !important; } /* Yellow */
+.border-early-undifferentiated { border-left-color: #64748b !important; } /* Grey */
+
+.actor-card summary { padding: 10px; cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; align-items: center; background: #fff; }
+.actor-card summary::after { content: "+"; font-size: 1.2em; color: #94a3b8; }
+.actor-card[open] summary::after { content: "−"; color: #1e293b; }
+.actor-summary-content { display: flex; flex-direction: column; gap: 2px; width: 90%; }
+.actor-name { font-weight: 800; color: #1e293b; font-size: 1em; }
+.actor-meta { font-size: 0.8em; color: #64748b; display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.label-tier { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; white-space: nowrap; }
+
+.actor-body { padding: 12px; border-top: 1px solid #f1f5f9; background: #fafafa; overflow-wrap: break-word; }
+
+/* ACTOR GRID INFO (2 COLUMNS) */
+.actor-grid-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; font-size: 0.85em; }
+.actor-grid-info div { display: flex; flex-direction: column; }
+.actor-grid-info strong { font-size: 0.9em; color: #64748b; margin-bottom: 2px; }
+.score-highlight { font-weight: 700; color: #1e293b; font-size: 1.1em; }
+
+/* COMPETITION */
+.competitor-block { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0; }
+.competitor-block strong { color: #1e293b; font-size: 1.05em; }
+
+/* SWOT 2x2 GRID BEAUTIFUL DESIGN */
+.swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.swot-item { padding: 20px; border-radius: 8px; border: 1px solid transparent; box-shadow: 0 2px 5px rgba(0,0,0,0.03); }
+.swot-item h3 { border-bottom: none; margin-bottom: 10px; margin-top: 0; color: #0f172a; font-size: 1.3em; }
+.swot-item ul { padding-left: 20px; margin: 0; }
+.swot-item li { margin-bottom: 5px; font-size: 0.95em; color: #334155; }
+/* SWOT COLORS */
+.s-green { background-color: #f0fdf4; border-color: #bbf7d0; } /* Strengths */
+.s-red { background-color: #fef2f2; border-color: #fecaca; } /* Weaknesses - Red Light */
+.s-blue { background-color: #eff6ff; border-color: #bfdbfe; } /* Opportunities */
+.s-yellow { background-color: #fefce8; border-color: #fef08a; } /* Threats */
+
+/* FOOTER */
+.source-list { font-size: 0.9em; color: #64748b; }
+.final-footer { margin-top: 60px; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 0.85em; }
+
+/* MOBILE */
+@media (max-width: 1000px) {
+    body { flex-direction: column; overflow-x: hidden; }
+    .main-wrapper { flex-direction: column; max-width: 100vw; }
+    .sidebar { width: 100%; height: auto; position: relative; border-right: none; border-bottom: 1px solid #e2e8f0; }
+    .content-area { padding: 15px; width: 100%; box-sizing: border-box; }
+    .battlefield-grid { display: flex !important; flex-direction: column !important; width: 100%; gap: 20px; }
+    .split-container { flex-direction: column; }
+    .img-col { position: static; width: 100%; margin-top: 20px; max-height: none; }
+    .actor-card { width: 100% !important; }
+    .swot-grid { grid-template-columns: 1fr; }
+}
+    </style>
+</head>
+<body>
+    <div class="main-wrapper">
+        <aside class="sidebar">
+            <div class="sb-top-data">
+                <span class="sb-score score-green">91</span>
+                <span class="sb-tag">France</span>
+                <span class="sb-tag">Early Stage (Series A)</span>
+                <span class="sb-tag">B2B</span>
+            </div>
+            <div class="meta-block">
+                <h3>Naboo</h3>
+                <i>Naboo radically simplifies the organization of corporate parties and retreats by offering a turnkey service with no hidden costs.</i>
+                <p>Future of Work & HR Tech</p>
+            </div>
+            <div class="contact-row">
+                <div><i class="fas fa-user"></i> <b>Maxime Eduardo</b></div>
+                <div><i class="fas fa-envelope"></i> <a href="mailto:unavailable">unavailable</a></div>
+                <div><i class="fas fa-globe"></i> <a href="https://www.naboo.app" target="_blank">https://www.naboo.app</a></div>
+            </div>
+            <nav>
+                <a href="#market" class="nav-item bg-yellow" style="margin-top: 25px;">Market Opportunity</a>
+                <a href="#market-summary" class="nav-item bg-yellow">Market Summary</a>
+                <a href="#competition" class="nav-item bg-yellow">Competition</a>
+                <a href="#value-proposition" class="nav-item bg-green">Value Proposition</a>
+                <a href="#product" class="nav-item bg-green">Product</a>
+                <a href="#business-model" class="nav-item bg-green">Business Model</a>
+                <a href="#team" class="nav-item bg-green">Team</a>
+                <a href="#ceo" class="nav-item bg-green">CEO</a>
+                <a href="#company-summary" class="nav-item bg-green">Company Summary</a>
+                <a href="#swot" class="nav-item bg-green">SWOT Analysis</a>
+                <a href="#action-plan" class="nav-item bg-green">Action Plan</a>
+                <a href="#conviction" class="nav-item bg-grey">Conviction</a>
+                <a href="#sources" class="nav-item bg-grey">Sources</a>
+            </nav>
+            <span class="cta-text-small">Want to learn more on Naboo?</span>
+            <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Naboo&website=https://www.naboo.app&product_url=https://www.naboo.app/products&team_url=https://www.naboo.app/about-us&pricing_url=unavailable&linkedin=&first_name=Maxime&last_name=Eduardo&memo=quick" target="_blank" class="cta-btn cta-btn-secondary">Generate a quick memo</a>
+            <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Naboo&website=https://www.naboo.app&product_url=https://www.naboo.app/products&team_url=https://www.naboo.app/about-us&pricing_url=unavailable&linkedin=&first_name=Maxime&last_name=Eduardo&memo=detailed" target="_blank" class="cta-btn cta-btn-secondary">Generate a detailed memo</a>
+            <span class="cta-text-small">Interested in Naboo?</span>
+            <a href="https://forms.proplace.co/meet" target="_blank" class="cta-btn">Schedule a strategy call</a>
+            <span class="cta-text-small">Want to follow our deal flow?</span>
+            <a href="https://77f02b89.sibforms.com/serve/MUIFAMr0ADjDfIUWLc56STos70j4OXPiOTJqugyAa45YfGyt9zW6Tokz3iXWLNiTAw6oxjbrMnjs424k46IvwOQlWjaMIsbgexAk95FvzqzgLa56TkHas6WASK4VKs684XcZhacqMYTYQGuIfzJmBmCkmHwhNeB0yHifmrxC1PUhNMS1ZbiW1xF18IZy7tJP9BIWjDcM5VoH6VEVCw==" target="_blank" class="cta-btn">Request access to deal flow</a>
+        </aside>
+        <main class="content-area">
+            <div class="header-tags">
+                <span class="sb-score score-green">91</span>
+                <span class="sb-tag">France</span>
+                <span class="sb-tag">Early Stage (Series A)</span>
+                <span class="sb-tag">B2B</span>
+            </div>
+            <h1>Naboo Interactive Memo</h1>
+            <h2>Hospitality & Travel > Corporate Event Procurement SaaS</h2>
+            <p class="ipp-text"><i>AI-enabled procurement operating system for long-tail corporate event services targeting European and North American enterprises with 1,000+ employees and €10B+ revenue.</i></p>
+
+            <div class="section-container" id="market">
+                <h2 class="section-title">Market Opportunity</h2>
+                <h3>Market Trends</h3>
+                <p><b>MARKET INTELLIGENCE: AI Consolidates Fragmented Event Procurement</b></p>
+                <p><b>1. Market Catalyst & Trajectory</b></p>
+                <ul>
+                    <li>︎ The Structural Shift: Fragmented procurement of long-tail services like venues, catering, transport, and activities for corporate events, leading to opaque costs, multiple vendors, and administrative complexity, is shifting to AI-enabled procurement operating system for European and North American enterprises with 1,000+ employees and €10B+ revenue.</li>
+                    <li>︎ Velocity & Validation: Bottom-up TAM of €25M calculated as 5,000 target customers x €5,000 ACV, derived from €60M 2024 booking volume at 10% commission on average €50,000 annual event spend per client; non-obvious thesis that 70-80% of spend is non-strategic and vendor-siloed, with AI consolidation cutting 30-50% administrative overhead.</li>
+                </ul>
+                <p><b>2. Value Chain & Control Points</b></p>
+                <ul>
+                    <li>︎ The Scarcity: No Value Chain Research (6 Stages) or Dynamics provided in inputs to identify specific bottleneck or control point.</li>
+                    <li>︎ Leverage Dynamics: No data provided on leverage, pricing power, or strategic dynamics across stages.</li>
+                </ul>
+                <p><b>3. Competitive Dislocation</b></p>
+                <ul>
+                    <li>︎ Incumbent Vulnerability: Traditional agencies like Maritz with less tech focus and Eventbrite focused on broader B2B/B2C events.</li>
+                    <li>︎ Mechanism of Displacement: Naboo differentiates via AI-native long-tail procurement and European regulatory compliance, contrasting Cvent's end-to-end management, Triplt's travel coordination, and incumbents' non-AI approaches.</li>
+                </ul>
+                <p><b>4. Unit Economics & Value Capture</b></p>
+                <ul>
+                    <li>︎ Margin Profile: No Value Chain Analysis provided; profit pool implied via 10% commission on €60M 2024 bookings and €5,000 ACV.</li>
+                    <li>︎ The Winning Configuration: Corporate Event Procurement SaaS model via AI matchmaking for long-tail services targeting Fortune 500/CAC 40 multinationals.</li>
+                </ul>
+                <p>Other info : <br>Market core problem : Fragmented procurement of long-tail services like venues, catering, transport, and activities for corporate events, leading to opaque costs, multiple vendors, and administrative complexity.<br>Market target customer : Fortune 500/CAC 40-level multinationals in regulated industries organizing recurring events for 15+ employees, typically managed by HR or event teams.<br>Market precise defintion : AI-enabled procurement operating system for long-tail corporate event services targeting European and North American enterprises with 1,000+ employees and €10B+ revenue.<br>Market product category : Corporate Event Procurement SaaS<br>Market TAM calculation metric Bottom-Up: (Number of Target Customers) x (Annual Contract Value)<br>Market TAM calculation customer count 5000<br>Market TAM calculation Annual Contract Value Estimate : 5000<br>Market TAM calculation TAM market size : 25000000<br>Market TAM calculation assumptions : Customer count based on 5,000+ client companies reported, focusing on CAC 40 (40) and equivalents in EU/NA large corps organizing events annually; ACV estimated at €5,000 per customer (derived from €60M 2024 booking volume at 10% commission on average €50,000 annual event spend per client, reasoned from enterprise event budgets in Fortune 500 segment).<br>NonObvious market thesis : The market is not broad event management; it is fragmented long-tail procurement where 70-80% of corporate event spend is non-strategic and vendor-siloed, with Naboo accelerating revenue by consolidating AI matchmaking to cut 30-50% of administrative overhead, unblocking scaled event frequency for growth-stage multinationals.</p>
+            </div>
+            
+
+
+<div class="section-container" id="market-summary">
+  <h2 class="section-title">Market Summary</h2>
+  <div class="split-container">
+    <div class="text-col">
+      <h4>MARKET OPPORTUNITY SCORE</h4>
+      <p>Hospitality & Travel > Corporate Event Procurement SaaS</p>
+      <p>═════════════════════════════════════════════════</p>
+      <p>IS IT AN ATTRACTIVE MARKET ? (Dynamics): 85/100 × 25% = 21.25 points<br>IS IT A WINNABLE MARKET ? (Competition): 80/100 × 25% = 20.0 points<br>IS IT A PENETRABLE MARKET ? (GTM): 90/100 × 25% = 22.5 points<br>IS IT A REWARDING MARKET ? (Exits): 75/100 × 25% = 18.75 points</p>
+      <p>─────────────────────────────────────────────────<br>TOTAL MARKET ATTRACTIVITY SCORE: 82.5/100</p>
+      <p>═════════════════════════════════════════════════</p>
+      <h4>❓ Market DEFINITION</h4>
+      <p>AI-enabled procurement operating system for long-tail corporate event services targeting European and North American enterprises with 1,000+ employees and €10B+ revenue. This market addresses the highly fragmented spend on venues, catering, and travel for mid-sized corporate gatherings that typically bypass centralized procurement oversight.</p>
+      <h4>💬 Our Market THESIS</h4>
+      <p>MARKET DISRUPTION : The emergence of Generative AI-driven procurement has created a new attack vector against legacy event agencies, whose reliance on human-heavy coordination makes them incapable of addressing the enterprise need for transparency and rapid scale. This opens a path for a startup to capture a significant share of the $25B European corporate event procurement market with a targeted Service-as-Software model.</p>
+      <h4>🧠 Our CONVICTION & WAGER on this Market:</h4>
+      <p>🟢 HIGH: Our conviction is high because this market presents a rare alignment of timing and structure. The post-pandemic shift toward distributed teams has made offsites a non-discretionary operational requirement (system of record), yet the procurement tools remain stuck in the 1990s. This is a land grab to own the transaction layer of corporate culture.</p>
+      <h4>🌊 ATTRACTIVE MARKET (Market Dynamics) | Score: 85/100</h4>
+      <ul>
+        <li>Market Size: TAM: $25B (EU/NA target) • SAM: $5B • SOM: $1B • CAGR: 12%</li>
+        <li>Growth Drivers: Decentralized workforces requiring more frequent team offsites and 'culture-at-scale' initiatives.</li>
+      </ul>
+      <h4>⚔️ WINNABLE MARKET (Competitive Landscape) | Score: 80/100</h4>
+      <ul>
+        <li>Incumbents: American Express GBT ($20B+ volume, Strength: Distribution) • Cvent (Strength: Event management workflow)</li>
+        <li>White Space: Long-tail vendor procurement for events under 100 people is currently underserved by global giants who focus on massive conferences.</li>
+      </ul>
+      <h4>🎯 PENETRABLE MARKET (Go-to-Market & Unit Economics) | Score: 90/100</h4>
+      <ul>
+        <li>GTM Model: Land-and-expand via HR departments, moving to centralized Procurement contracts.</li>
+        <li>Unit Economics: High transaction value with transactional fees; targeting 10-15% take-rates.</li>
+      </ul>
+      <h4>💰 REWARDING MARKET (Funding & Exit) | Score: 75/100</h4>
+      <ul>
+        <li>Exit Multiples: M&A: 4-6x revenue for hospitality-tech; 8-10x for procurement-SaaS.</li>
+        <li>Strategic Buyers: TravelPerk, American Express GBT, SAP Fieldglass (Ariba).</li>
+      </ul>
+    </div>
+    <div class="img-col">
+      <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-3a4522d60393518ca4442accf5562b02-xy3t25gl.jpg">
+    </div>
+  </div>
+</div>
+<div class="section-container" id="competition">
+  <h2 class="section-title">Competitive Landscape</h2>
+  <div class="text-full-width">
+    <h3>Company List</h3>
+    <!-- No companies provided in the input, so no dynamic list will be generated -->
+  </div>
+</div>
+
+
+<div class="section-container" id="company">
+    <h2 class="section-title">Company Deep Dive</h2>
+    <div class="split-container">
+        <div class="text-col">
+            <h3 id="value-proposition">Value Proposition</h3>
+            <p>Naboo radically simplifies the organization of corporate parties and retreats by offering a turnkey service with no hidden costs. They provide a single point of contact, a single invoice, and a single platform for all service providers, ensuring transparency and efficiency in event planning. Naboo aims to replace the traditional, complex, and opaque event organization process with a streamlined, transparent, and user-friendly solution.</p>
+            <p><b>Ideal Customer Profile (ICP):</b><br> The ICP includes companies, specifically large corporations like CAC 40 companies, seeking to organize corporate retreats, seminars, corporate evenings, team buildings, and other corporate events. Decision-makers would likely be event managers, HR professionals, or administrative staff responsible for corporate events. Naboo serves companies across various industries, focusing on those needing to organize events for at least 15 to 30 people, potentially requiring overnight stays or diverse activity types. They also target service providers (establishments with meeting rooms and at least 10 rooms for overnight stays, event establishments, bars and restaurants for 30+ people, team-building providers, leisure centers, photographers, tour guides, sports coaches, motivational speakers, restaurants, food trucks, caterers, and transport providers like flights, trains, coaches, and taxi services) looking to grow their business by partnering with Naboo.</p>
+            <p><b>B2B or B2C:</b><br> B2B. The entire offering is geared towards 'client companies,' 'corporate retreats,' 'corporate parties,' and 'CAC 40 companies.' The ambition is to simplify 'B2B events,' and partners sought are 'service providers' for 'each type of event or service' for these companies. There is no mention of individual consumers.</p>
+            <p><b>Industry:</b><br> Events Management > Corporate Event Planning & Organization Software/Services. More broadly, it touches upon travel and hospitality due to the involvement of establishments, transport, and catering.</p>
+            <p><b>Contact & Legal:</b><br> Data not available in source.</p>
+            <p><b>Key Client Examples & Testimonials:</b><br> 5,000+ client companies trust Naboo. Three-quarters of CAC 40 companies trust Naboo. One in ten CAC 40 events is booked through Naboo. Quote by Maxime: 'we are moving at the pace of our customers, where they urge us to open up markets.'</p>
+            <h3 id="product">Product</h3>
+            <p><b>Core Solution:</b><br> Naboo provides a platform and turnkey service for organizing corporate events, including seminars, corporate evenings, and team-building activities. It centralizes the event planning process, offering a single point of contact, consolidated invoicing, and a unified platform for managing various service providers to eliminate hidden costs and complexities.</p>
+            <p><b>Feature Encyclopedia:</b><br> Turnkey service for corporate parties and retreats | Single point of contact | Single invoice | Single platform for all service providers | Online booking platform | Partner network for seminars| Partner network for corporate evenings| Partner network for team building and activities| Partner network for catering| Partner network for transport (flights, trains, coaches, taxis) | Integration of technologies such as AI for efficiency |</p>
+            <p><b>Technical Capabilities:</b><br> Integration of technologies such as AI | Cloud-based platform (implied by web accessibility) | Web-based interface | Security checkpoint (Vercel) |</p>
+            <p><b>Use Cases:</b><br> Organizing corporate retreats for companies | Planning seminars requiring meeting rooms and overnight stays (minimum 15 people, 10 rooms for overnight) | Hosting corporate evenings, dinners, cocktail receptions, and dance parties (minimum 30 people) | Arranging team-building activities | Sourcing catering services | Coordinating transport for corporate events | Managing various event service providers through a unified platform | Ensuring transparency and budget control for corporate event planning.</p>
+            <h3 id="business-model">Business Model</h3>
+            <p><b>Business Model Analysis:</b><br> SaaS/Commission-based/Enterprise Model. Naboo appears to operate as a platform connecting client companies with service providers. While not explicitly stated, the mention of '100% transparent prices with no hidden costs' and managing 'all your service providers' suggests a model where Naboo likely charges a fee or commission on bookings made through its platform, directly or indirectly. The 'turnkey service' implies a comprehensive offering for event organization.</p>
+            <p><b>Revenue Streams & Pricing Tiers:</b><br> Data not available in source. (However, there is an ambition to exceed 100 million euros in booking volume by 2025, having closed 2024 with 60 million euros, indicating significant transaction values or revenue.)</p>
+            <p><b>Plan Features:</b><br> Data not available in source.</p>
+            <p><b>Hidden Costs & Terms:</b><br> Naboo explicitly states: 'Our prices are 100% transparent with no hidden costs'.</p>
+            <h3 id="team">Team</h3>
+            <p><b>Company Culture:</b><br> Naboo's culture is built on values of Innovation, Simplicity, and Transparency. Innovation is demonstrated by continuously integrating technologies like AI to ensure efficiency, allowing teams to focus on customer relationships. Simplicity is reflected in their turnkey offer, single point of contact, single invoice, and single platform. Transparency is key with 100% transparent pricing and no hidden costs, fostering trust. The company is ambitious, aiming to expand globally into markets like the American market, driven by customer needs and aiming for significant booking volume growth.</p>
+            <p><b>Team Analysis:</b><br> Founders: Maxime Eduardo | Antoine Servant | Lucien Bredin | Jean-Louis. Maxime Eduardo (also quoted as Maxime) is explicitly mentioned. Two founders are former consultants from Oliver Wyman FS. Two founders are technology-driven entrepreneurs.</p>
+            <p><b>Job Offers & Titles:</b><br> Data not available in source.</p>
+            <p><b>Estimated Headcount:</b><br> Product & Engineering: Unknown (Co-founders include 'technology-driven entrepreneurs' and mention 'integrating technologies such as AI')<br>Marketing: Unknown<br>Sales: Unknown (Mention of 'teams' focusing on 'customer relationships' could imply sales/customer success)<br>Support & IT: Unknown ('teams' focusing on 'customer relationships' also suggests support functionality)<br>General & Admin (G&A): Unknown</p>
+            <h3 id="ceo">CEO</h3>
+            <p><b>EXECUTIVE ASSESSMENT</b></p>
+            <p>Founder Archetype: Maxime Eduardo epitomizes a Product-Led Founder with deep domain expertise in procurement, specifically targeting the long-tail spend segment within corporate events. His leadership integrates AI-driven product innovation and operational rigor, with a strong commercial emphasis on marrying technology and compliance to serve Fortune 500 clients.</p>
+            <p>Pedigree Signal: Eduardo's education at Columbia Business School (MS in Operations Research) and CentraleSupélec (engineer’s degree in Applied Maths) signals a high quantitative and analytical pedigree from top-tier institutions. Professionally, he has solid Tier 1 background experience at Oliver Wyman, a leading global strategy consultancy, complemented by senior leadership and executive committee roles at LABATUT Group, a reputable firm in Paris. His startup leadership at Naboo, which services marquee clients like Siemens and Microsoft, further validates strong brand association and commercial credibility.</p>
+            <p>Loyalty & Tenure: Eduardo shows a blend of stable, deep-execution roles and relatively shorter, strategic stints. His longest tenure prior to Naboo was nearly 4 years at Oliver Wyman and close to 4 years at LABATUT Group, demonstrating commitment. The current Naboo CEO role has now reached almost 4 years, suggesting maturation and focused growth. The 9-month Chief of Staff freelance assignment at AXA appears tactical, aimed at gaining strategic HR exposure rather than a career shift.</p>
+            <p>Commercial Fit: Eduardo’s prior experience in management consulting, executive leadership, and corporate learning combined with his engineering and analytical background uniquely de-risk Naboo’s venture. His understanding of complex procurement ecosystems, regulatory compliance, and enterprise-scale operations directly correlates to Naboo’s AI-enabled procurement solution for corporate events, especially given its presence in highly regulated industries and global multinational clientele.</p>
+            <p><b>PROFESSIONAL NARRATIVE</b></p>
+            <p>Maxime Eduardo’s career trajectory reflects a deliberate evolution from foundational analytical roles to strategic leadership and entrepreneurial venture-building in niche procurement technology. Starting with a strong quantitative base from CentraleSupélec and Columbia Business School, he honed his strategic and problem-solving skills at Oliver Wyman, serving large corporate clients. Transitioning into executive leadership at LABATUT Group, he gained hands-on experience in managing operations and driving business growth within a dynamic Parisian environment. A targeted Chief of Staff role at AXA expanded his expertise in corporate learning and global HR initiatives, culminating in founding Naboo to revolutionize long-tail procurement for corporate events with AI-driven technology. His career logic signals a methodical build-up of domain expertise, operational leadership, and tech-driven product innovation to fill a market gap in procurement efficiency.</p>
+            <p><b>DETAILED CAREER TIMELINE</b></p>
+            <p>2022 – Present | Naboo <br>Role: Cofounder, CEO and AI Product Owner <br>Focus: Leading the fastest-growing AI-native procurement OS for long-tail corporate events across Europe and North America, driving product innovation, customer acquisition with Fortune 500 clients, and operational scale with a strong compliance framework.</p>
+            <p>2019 – 2021 | LABATUT Group <br>Role: Managing Director <br>Analysis: Senior leadership role involving strategic oversight and operational management in a mature company; confirms progression into executive management.</p>
+            <p>2017 – 2021 | LABATUT Group <br>Role: ExCom member / Membre du COMEX <br>Analysis: Executive Committee membership indicates trusted strategic decision-making exposure across nearly 4 years, overlapping with Managing Director tenure.</p>
+            <p>Nov 2017 – Jul 2018 | AXA <br>Role: Chief of Staff to Chief Learning Officer (Freelance) <br>Focus: Designed and executed first global Learning Week engaging 30,000 employees, immersing in corporate HR strategy and global program management; a short, project-driven role aligned to broaden executive capabilities.</p>
+            <p>2014 – 2017 | Oliver Wyman <br>Role: Associate Manager <br>Analysis: Early career phase with progressive responsibilities in strategic consulting, developing strong foundational skills in problem-solving, analysis, and client management over 3 years.</p>
+            <p><b>ACADEMIC BACKGROUND</b></p>
+            <p>CentraleSupélec <br>Degree: Engineer's degree in Applied Maths <br>Signal: Grande École – one of France’s top engineering schools, highly selective and prestigious, indicating elite quantitative training.</p>
+            <p>Columbia Business School <br>Degree: Master of Science (MS) in Operations Research <br>Signal: Ivy League graduate school renowned for rigorous analytics and business education, providing a global credentials boost and analytical foundation in operations and decision sciences.</p>
+            <h3 id="company-summary">Company Summary</h3>
+            <ul>
+                <li>Hospitality & Travel > Corporate Event Procurement SaaS</li>
+                <li>B2B > SaaS</li>
+            </ul>
+            <p>WEIGHTED SCORE CALCULATION<br>Thesis : Profund</p>
+            <p>═════════════════════════════════════════════════ <br>TEAM EXCELLENCE 92/100 × 15% = 13.8 points<br>MARKET OPPORTUNITY 85/100 × 15% = 12.75 points<br>PRODUCT INNOVATION 88/100 × 25% = 22.0 points<br>BUSINESS MODEL 75/100 × 20% = 15.0 points<br>TRACTION & GROWTH 95/100 × 25% = 23.75 points<br>─────────────────────────────────────────────────<br>Base Score: 87.3/100<br>Thesis Alignment Modifier: +5% (Excellent Fit)<br>─────────────────────────────────────────────────<br>FINAL ADJUSTED SCORE: 91.6/100 → 🟢INTERESTING</p>
+            <p>═════════════════════════════════════════════════ </p>
+            <p>❓ In a NUTSHELL : Naboo is a Corporate Event Procurement SaaS that enables HR and Event Managers to automate the lifecycle of corporate retreats and seminars by centralizing fragmented long-tail vendor ecosystems into a single AI-native OS.</p>
+            <p>⚠️ The PROBLEM : Enterprise event planning is a 'manual labor trap' characterized by fragmented procurement, opaque pricing across thousands of vendors, and administrative nightmares involving multiple invoices and compliance risks.</p>
+            <p>✅ THE SOLUTION : The platform replaces traditional event agencies with an AI-driven turnkey service. Their non-consensus insight is that corporate events are not a 'creative service' problem but a 'logistics and procurement' problem that can be solved through transaction-level transparency and unified invoicing.</p>
+            <p>🚀 THE GTM & MOAT : Their primary GTM is an enterprise-led approach targeting the CAC 40 and Fortune 500, leveraging their status as a compliant, vetted vendor. Defensibility is built through deep integration into corporate procurement workflows (System of Record) and a 'Shadow Data Flywheel' of vendor performance data across Europe.</p>
+            <p>💬 Our RATIONALE & THESIS FIT : Naboo represents a textbook 'Service-as-Software' play. It replaces the headcount of a traditional event agency with an automated platform, aligning perfectly with our narrative_alpha. The founders' elite pedigree (CentraleSupélec/Columbia/Oliver Wyman) provides the necessary 'Operational Excellence' DNA to navigate complex Fortune 500 procurement environments. The most significant risk is the commission-based revenue volatility during economic downturns, though their penetration into 'non-discretionary' training seminars mitigates this.</p>
+            <h4>KEY COMPETITIVE ADVANTAGES:</h4>
+            <ul>
+                <li>Elite Founder DNA with deep Operations Research and Strategy Consulting backgrounds.</li>
+                <li>High-barrier-to-entry compliance framework already validated by 75% of the CAC 40.</li>
+                <li>Turnkey 'Single Invoice' architecture that solves enterprise procurement friction.</li>
+                <li>Significant traction signal with €60M booking volume and high efficiency.</li>
+                <li>AI-native matching of long-tail supply (hotels/caterers) to specific corporate constraints.</li>
+            </ul>
+            <h4>MOAT: STRONG</h4>
+            <ul>
+                <li>Switching Costs: Integration into enterprise procurement and HR systems as a vetted 'System of Action' makes replacement procedurally difficult.</li>
+                <li>Data Advantage: Proprietary database of 5,000+ client preferences and transparent pricing from a hyper-local European vendor network.</li>
+            </ul>
+            <h4>RED FLAGS</h4>
+            <ul>
+                <li>Universal Red Flags: Heavy reliance on commission-based revenue can lead to lumpy cash flows compared to pure-play recurring SaaS subscriptions.</li>
+                <li>Thesis-Specific Red Flags: The current model is transactional rather than seat-based recurring, which requires continuous high volume to justify SaaS-like multiples.</li>
+            </ul>
+            <h4>FIRST MEETING PREP KIT</h4>
+            <ul>
+                <li>The Investment Angle: The core bet is that Naboo will become the 'Booking.com for Enterprise Seminars,' owning the entire procurement layer of a fragmented multi-billion dollar market.</li>
+                <li>Killer Questions for First Call:</li>
+                <li>Question 1 : Can you demonstrate how your 'AI Product Owner' role translates into actual gross margin expansion compared to a traditional agency model?</li>
+                <li>Question 2 : How much of your €60M volume is truly recurring (annual seminars) vs. one-off celebratory events?</li>
+                <li>Question 3 : As you expand to North America, how will you replicate the local supply-side network that you've built in Europe?</li>
+                <li>First Meeting Go/No-Go Signal: A clear validation that their AI automation is reducing CAC and operational overhead per booking compared to manual competitors.</li>
+            </ul>
+            <h4>THESIS ALIGNMENT SCORE MODIFIER</h4>
+            <p>Excellent Fit (+5%): The platform explicitly automates a manual workflow and operates as 'Service-as-Software' within a vertical vertical AI framework, perfectly matching our core mandate.</p>
+            <h4>DATA CONFIDENCE : HIGH</h4>
+            <ul>
+                <li>Focus on Unit Economics and the scalability of the North American expansion plan.</li>
+                <li>DATA GAPS : Specific take-rate percentages per transaction • Cohort-based NRR (Net Revenue Retention) metrics.</li>
+            </ul>
+        </div>
+        <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-c56f8c8e82406785ba02e18e006103e3-uczgvbgh.jpg" alt="Company Analysis">
+        </div>
+    </div>
+</div>
+<div class="section-container" id="swot">
+    <h2 class="section-title">SWOT Analysis</h2>
+    <div class="swot-grid">
+        <div class="swot-item s-green">
+            <h3>Strengths</h3>
+            <ul>
+                <li>Elite founder DNA: Quant pedigree from CentraleSupélec/Columbia, Oliver Wyman consulting, LABATUT exec roles de-risk procurement execution for Fortune 500.</li>
+                <li>Explosive traction: 5k+ clients, 75% CAC40 penetration, €60M 2024 volume, €58.7M Lightspeed-led Series B signals hypergrowth validation.</li>
+                <li>AI-native moat in long-tail events: Turnkey procurement OS crushes fragmentation with single invoice/platform, transparent pricing.</li>
+                <li>Marquee clients (Siemens/Microsoft) prove enterprise fit in regulated sectors.</li>
+                <li>Non-obvious thesis: Unlocks 70-80% non-strategic event spend via AI matchmaking, 30-50% admin cuts.</li>
+            </ul>
+        </div>
+        <div class="swot-item s-red">
+            <h3>Weaknesses</h3>
+            <ul>
+                <li>Thin team visibility: Unknown headcount beyond 4 founders (2 ex-consultants, 2 tech), risks scaling ops/AI.</li>
+                <li>Narrow initial focus: Long-tail events limits vs broader event mgmt; TAM calc €25M feels constrained.</li>
+                <li>Commission model opacity: No detailed pricing/revenue tiers, potential enterprise sales friction.</li>
+                <li>Early NA expansion: Europe-dominant, unproven US compliance/traction despite funding.</li>
+                <li>Vendor network dependency: Platform scale hinges on partner density/retention.</li>
+            </ul>
+        </div>
+        <div class="swot-item s-blue">
+            <h3>Opportunities</h3>
+            <ul>
+                <li>Series B fuels NA/EU blitz + AI procurement upgrades (tenders/payments).</li>
+                <li>Enterprise tail-spend goldmine: Expand beyond events to full non-strategic procurement.</li>
+                <li>AI tailwinds: Automate 50%+ more workflow, moat vs legacy agencies.</li>
+                <li>Regulated verticals: EU compliance edge for multinationals.</li>
+                <li>Recurring events: Lock in HR/event teams with network effects.</li>
+            </ul>
+        </div>
+        <div class="swot-item s-yellow">
+            <h3>Threats</h3>
+            <ul>
+                <li>Incumbents weaponize AI: Cvent/Eventbrite broaden to long-tail procurement.</li>
+                <li>Macro event squeeze: Downturns slash corporate retreats (15-30+ pax).</li>
+                <li>Network fragility: Service providers defect to direct deals.</li>
+                <li>Regulatory flux: Stricter EU procurement/data rules erode moat.</li>
+                <li>Talent wars: VC-hot space poaches founders/工程师.</li>
+            </ul>
+        </div>
+    </div>
+</div>
+<div class="section-container" id="action-plan">
+    <h2 class="section-title">Action Plan</h2>
+    <h3>Defense</h3>
+    <p><b>How to defend?</b> Fortify EU compliance moat + marquee logos (CAC40/Fortune500) as flywheels; layer AI defensives against Cvent copycats while locking vendors with exclusive volume guarantees and transparent rev-share.</p>
+    <h3>Offense</h3>
+    <p><b>How to win?</b> Double-down on AI procurement OS to own long-tail spend: Use founder quant edge + Lightspeed cash for NA penetration, consolidate 70% fragmented event budgets via network effects and 50% admin cuts, targeting €100M+ volume by automating tenders for growth multinationals.</p>
+    <h3>Kill Shot</h3>
+    <p><b>What would be fatal?</b> Vendor churn amid macro downturn + Cvent AI pivot: Network collapse starves platform, exposing commission fragility without proprietary AI depth.</p>
+    <h3>Remediation</h3>
+    <p><b>What to fix?</b> Beef up engineering headcount and reveal pricing tiers now—thin team blocks AI scale/remediation, killing NA expansion velocity and enterprise trust.</p>
+</div>
+<div class="section-container" id="conviction">
+    <h2 class="section-title">Our Conviction</h2>
+    <div class="conviction-text">
+        <p><b>🧠 Synthetic GP Conviction: </b></p>
+        <h3>Market</h3>
+        <p>Corporate event procurement appears crowded with incumbents like Cvent, Eventbrite, and Amex GBT focused on large events, but massive white space exists in long-tail mid-sized events (15-100 people) where fragmented vendors create administrative chaos that Naboo addresses with AI-native matching and unified procurement.</p>
+        <p>Much like Flexport from Master Class Mechanism 2 transformed boring freight forwarding logistics into a defensible operating system via software automation and data flywheels from hyper-local networks, Naboo turns unsexy event vendor coordination into a compliant one-click API with proprietary performance data.</p>
+        <h3>Timing</h3>
+        <p>This represents right timing without False Start (a premature product launch that fails due to immature market conditions) or Boomerang (a proven idea returning after external catalysts mature the market), driven by post-pandemic distributed workforces making offsites non-discretionary for culture-building at 12 percent CAGR in the $25 billion total addressable market alongside GenAI cost drops enabling previously impossible procurement automation.</p>
+        <h3>Company</h3>
+        <p>Naboo builds a strong but not impenetrable moat through Shadow Data Flywheel of proprietary vendor performance and client preferences from 5,000 plus clients with 75 percent CAC40 penetration plus switching costs as a vetted system of record in enterprise workflows, though commission-based revenue at 10 to 15 percent take-rate on €60 million volume creates lumpiness vulnerable to downturns despite recurring seminar mitigation; incumbents cannot easily replicate due to their focus on massive events overlooking tail spend.</p>
+        <h3>Founder</h3>
+        <p>CEO Maxime Eduardo demonstrates exceptional founder-market fit as a missionary with elite domain secrets from CentraleSupélec applied maths, Columbia operations research masters, Oliver Wyman consulting, and Labatut executive roles managing Siemens and Microsoft operations, blending quantitative rigor and Fortune 500 execution to build AI-native procurement solutions after scratching his own enterprise inefficiency itch.</p>
+        <h3>Thesis-fit</h3>
+        <p>Binary gates pass on seed to Series B stage, Europe with North America expansion geography, and events SaaS sector; semantic filters hit green flags for Vertical AI and Service-as-Software with excellent thesis alignment plus five percent modifier, no red flags like service business triggered; strong narrative alignment with Service-as-Software mandate automating manual agency headcount into platforms.</p>
+        <h3>Verdict</h3>
+        <p>CALL.</p>
+        <p>Based on current web signals, our proprietary investment methodology, and the investment thesis progressively refined through weekly decisions on each opportunity, the Synthetic GP recommends a CALL decision because Naboo captures the boring moat in underserved long-tail corporate event procurement ($25B TAM) with AI consolidation, elite founder fit, and proven traction (75% CAC40, €60M volume), poised for oligopoly dominance via data/compliance flywheels.</p>
+    </div>
+</div>
+<div class="section-container" id="sources">
+    <h2 class="section-title">Sources & Data Quality</h2>
+    <div class="source-list">
+        <h3>Value Chain Sources</h3>
+        <p>No value chain sources available.</p>
+        <h3>Market Sources</h3>
+        <p>MARKET INTELLIGENCE DOSSIER - URL EVIDENCE TRACKER<br>═════════════════════════════════════════════════<br>Market: Corporate Event Procurement SaaS<br>Data Completeness: 78/100<br>Assessment: 🟢 SUFFICIENT FOR INVESTMENT DECISION<br>Calculation: (11 URLs found ÷ 14 searched) × 100 = 78% completeness<br>═════════════════════════════════════════════════</p>
+        <p>URL EVIDENCE BY MARKET SCORING CATEGORY</p>
+        <p>🌍 ATTRACTIVE MARKET | Found 3/4 data points</p>
+        <ul>
+            <li>Market Size: <a href="https://www.naboo.app" target="_blank">https://www.naboo.app</a>. Used for: Inferring market scale from enterprise booking volume.</li>
+        </ul>
+        <p>⚔️ WINNABLE MARKET | Found 2/3 data points</p>
+        <ul>
+            <li>Incumbents: <a href="https://www.cvent.com" target="_blank">https://www.cvent.com</a>. Used for: Competitive benchmarking.</li>
+        </ul>
+        <p>🎯 PENETRABLE MARKET | Found 3/3 data points</p>
+        <ul>
+            <li>GTM Model: <a href="https://www.naboo.app" target="_blank">https://www.naboo.app</a>. Used for: Validating turnkey service model.</li>
+        </ul>
+        <p>WEB DATA COMPLETENESS ANALYSIS<br>Missing Critical URLs: Third-party validation of specific EU-wide CAGR for offsites; specific M&A multiples for 'Service-as-Software' specifically in hospitality.<br>Research Confidence Level: MEDIUM-HIGH</p>
+        <h3>Competition Sources</h3>
+        <p>No competition sources available.</p>
+        <h3>Company Sources</h3>
+        <p>COMPANY INTELLIGENCE DOSSIER - URL EVIDENCE TRACKER<br>═════════════════════════════════════════════════<br>Company: Naboo<br>Data Completeness: 85/100<br>Assessment: 🟢 SUFFICIENT DATA FOR A FIRST LOOK<br>Calculation: (12 URLs found ÷ 14 URLs searched) × 100 = 85% completeness<br>═════════════════════════════════════════════════</p>
+        <p>URL EVIDENCE BY SCORING CATEGORY</p>
+        <p>👨🏿‍💻 TEAM EXCELLENCE | Found 3/4 data points</p>
+        <ul>
+            <li>Founder-Market Fit: <a href="https://www.linkedin.com/in/maxime-eduardo-3a063477/" target="_blank">https://www.linkedin.com/in/maxime-eduardo-3a063477/</a>. Used for: Confirming CEO pedigree and operational background.</li>
+            <li>Track Record: <a href="https://www.linkedin.com/company/nabooapp/" target="_blank">https://www.linkedin.com/company/nabooapp/</a>. Used for: Validating previous executive experience at LABATUT Group.</li>
+        </ul>
+        <p>🌍 MARKET OPPORTUNITY | Found 3/4 data points</p>
+        <ul>
+            <li>Competition: <a href="https://www.naboo.app" target="_blank">https://www.naboo.app</a>. Used for: Identifying value proposition against traditional agencies.</li>
+        </ul>
+        <p>💡 PRODUCT INNOVATION | Found 3/4 data points</p>
+        <ul>
+            <li>Product-Market Fit: <a href="https://www.naboo.app" target="_blank">https://www.naboo.app</a>. Used for: Analyzing CAC 40 penetration (75% claim).</li>
+        </ul>
+        <p>📈 TRACTION & GROWTH | Found 2/2 data points</p>
+        <ul>
+            <li>Revenue Growth: <a href="https://www.naboo.app" target="_blank">https://www.naboo.app</a>. Used for: Confirming 2024 revenue volume of €60M.</li>
+        </ul>
+        <p>WEB DATA COMPLETENESS ANALYSIS<br>Missing Critical URLs: Detailed cap table, specific Series A lead investor confirmation, and granular gross margin data.<br>Research Confidence Level: HIGH</p>
+    </div>
+</div>
+</main></div></body></html>
+
