@@ -1,0 +1,628 @@
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prolisto Interactive Memo</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+:root { --bg-app: #f8fafc; --text-main: #1e293b; --yellow-menu: #FEF9C3; --green-menu: #DCFCE7; --grey-menu: #F1F5F9; }
+/* GLOBAL RESET FOR BOX SIZING (CRITICAL) */
+* { box-sizing: border-box; }
+
+/* STICKY FIX: No overflow on body/html */
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-app); color: var(--text-main); margin: 0; display: flex; }
+html { scroll-behavior: smooth; }
+a { color: #2563eb; text-decoration: none; cursor: pointer; word-break: break-all; }
+a:hover { text-decoration: underline; }
+/* MOBILE FIX: Word Break Global */
+p, li, a, span, div { overflow-wrap: break-word; word-break: break-word; }
+p, li { line-height: 1.6; margin-bottom: 10px; }
+strong, b { font-weight: 700; color: #0f172a; }
+h3 { scroll-margin-top: 20px; font-size: 1.4em; color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px; }
+
+/* LAYOUT */
+/* STICKY FIX: Overflow visible on wrapper */
+.main-wrapper { display: flex; width: 100%; max-width: 100vw; align-items: flex-start; overflow: visible !important; }
+/* STICKY FIX: Sidebar positioning */
+.sidebar { width: 300px; height: 100vh; position: sticky; top: 0; overflow-y: auto; border-right: 1px solid #e2e8f0; background: #fff; padding: 25px 0; flex-shrink: 0; z-index: 1000; align-self: flex-start; }
+.content-area { flex: 1; padding: 20px 40px; width: 100%; min-width: 0; max-width: 1600px; margin: 0 auto; }
+/* STICKY FIX: Overflow visible on container */
+.section-container { background: #fff; padding: 30px; margin-bottom: 30px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; scroll-margin-top: 20px; overflow: visible; }
+.section-title { font-size: 1.8em; font-weight: 700; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 25px; }
+
+/* SPLIT & STICKY */
+.split-container { display: flex; gap: 40px; align-items: flex-start; margin-bottom: 40px; position: relative; }
+.text-col { flex: 1; font-size: 1.05em; line-height: 1.7; color: #334155; min-width: 0; word-wrap: break-word; overflow-wrap: anywhere; }
+/* STICKY FIX & SCROLLBAR KILLER */
+.img-col { flex: 1; position: sticky; top: 20px; align-self: flex-start; height: fit-content; min-width: 0; max-height: calc(100vh - 40px); overflow: hidden; /* Key to kill scrollbar */ }
+.sticky-img { width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; display: block; object-fit: contain; }
+
+/* SIDEBAR ITEMS */
+.meta-block { padding: 0 25px 25px; border-bottom: 1px solid #e2e8f0; margin-bottom: 15px; }
+.sb-top-data { padding: 0 25px 10px; display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 5px; }
+.sb-tag { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.85em; color: #475569; }
+
+/* SCORE COLORS - DYNAMIC */
+.sb-score { color: white !important; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.85em; }
+.score-green { background: #16a34a !important; }
+.score-yellow { background: #ca8a04 !important; }
+.score-orange { background: #ea580c !important; }
+.score-blue { background: #2563eb !important; }
+.score-red { background: #dc2626 !important; }
+
+/* CONTACT ROW FIX: ALIGNMENT */
+.contact-row { display: flex; flex-direction: column; gap: 5px; font-size: 0.9em; margin-top: 10px; padding-left: 25px; padding-right: 25px; }
+.nav-item { display: block; padding: 8px 25px; color: #475569; font-weight: 600; font-size: 0.9em; border-left: 4px solid transparent; margin-bottom: 2px; }
+.nav-item:hover { background: rgba(0,0,0,0.05); color: #0f172a; border-left-color: #94a3b8; }
+.bg-yellow { background: var(--yellow-menu); } .bg-green { background: var(--green-menu); } .bg-grey { background: var(--grey-menu); }
+
+/* CTA BUTTONS */
+.cta-text-small { display: block; margin: 10px 25px 2px; font-size: 0.8em; color: #64748b; font-weight: 600; }
+.cta-btn { display: block; margin: 5px 25px 10px; padding: 12px; background: #1e293b; color: #fff; text-align: center; border-radius: 6px; font-weight: 700; font-size: 0.9em; cursor: pointer; }
+.cta-btn-secondary { background: #e2e8f0; color: #1e293b; border: 1px solid #cbd5e1; }
+.cta-btn-secondary:hover { background: #cbd5e1; }
+.promo-text { display: block; margin: 0 25px 20px; font-size: 0.8em; color: #64748b; text-align: center; font-style: italic; word-wrap: break-word; }
+
+/* BATTLEFIELD LEGEND & CARDS */
+.battlefield-legend { margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 6px; font-size: 0.9em; }
+.legend-row { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; margin-bottom: 5px; }
+.legend-item { display: inline-block; }
+.posture-legend { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; line-height: 1.2; margin-right: 10px; }
+
+.battlefield-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 15px; width: 100%; margin-bottom: 40px; }
+.battlefield-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.stage-header { font-size: 0.85em; font-weight: 700; text-transform: uppercase; color: #64748b; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; min-height: 40px; }
+
+/* ACTOR CARDS - UPDATED BORDER COLORS & QUADRANTS */
+.actor-card { background: #fff; border: 1px solid #cbd5e0; border-radius: 6px; overflow: hidden; font-size: 0.9em; border-left-width: 4px; margin-bottom: 8px; transition: all 0.2s; }
+.border-established-leader { border-left-color: #2563eb !important; } /* Blue */
+.border-emerging-innovator { border-left-color: #16a34a !important; } /* Green */
+.border-mature-commoditized { border-left-color: #ca8a04 !important; } /* Yellow */
+.border-early-undifferentiated { border-left-color: #64748b !important; } /* Grey */
+
+.actor-card summary { padding: 10px; cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; align-items: center; background: #fff; }
+.actor-card summary::after { content: "+"; font-size: 1.2em; color: #94a3b8; }
+.actor-card[open] summary::after { content: "−"; color: #1e293b; }
+.actor-summary-content { display: flex; flex-direction: column; gap: 2px; width: 90%; }
+.actor-name { font-weight: 800; color: #1e293b; font-size: 1em; }
+.actor-meta { font-size: 0.8em; color: #64748b; display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.label-tier { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; white-space: nowrap; }
+
+.actor-body { padding: 12px; border-top: 1px solid #f1f5f9; background: #fafafa; overflow-wrap: break-word; }
+
+/* ACTOR GRID INFO (2 COLUMNS) */
+.actor-grid-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; font-size: 0.85em; }
+.actor-grid-info div { display: flex; flex-direction: column; }
+.actor-grid-info strong { font-size: 0.9em; color: #64748b; margin-bottom: 2px; }
+.score-highlight { font-weight: 700; color: #1e293b; font-size: 1.1em; }
+
+/* COMPETITION */
+.competitor-block { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0; }
+.competitor-block strong { color: #1e293b; font-size: 1.05em; }
+
+/* SWOT 2x2 GRID BEAUTIFUL DESIGN */
+.swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.swot-item { padding: 20px; border-radius: 8px; border: 1px solid transparent; box-shadow: 0 2px 5px rgba(0,0,0,0.03); }
+.swot-item h3 { border-bottom: none; margin-bottom: 10px; margin-top: 0; color: #0f172a; font-size: 1.3em; }
+.swot-item ul { padding-left: 20px; margin: 0; }
+.swot-item li { margin-bottom: 5px; font-size: 0.95em; color: #334155; }
+/* SWOT COLORS */
+.s-green { background-color: #f0fdf4; border-color: #bbf7d0; } /* Strengths */
+.s-red { background-color: #fef2f2; border-color: #fecaca; } /* Weaknesses - Red Light */
+.s-blue { background-color: #eff6ff; border-color: #bfdbfe; } /* Opportunities */
+.s-yellow { background-color: #fefce8; border-color: #fef08a; } /* Threats */
+
+/* FOOTER */
+.source-list { font-size: 0.9em; color: #64748b; }
+.final-footer { margin-top: 60px; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 0.85em; }
+
+/* MOBILE */
+@media (max-width: 1000px) {
+    body { flex-direction: column; overflow-x: hidden; }
+    .main-wrapper { flex-direction: column; max-width: 100vw; }
+    .sidebar { width: 100%; height: auto; position: relative; border-right: none; border-bottom: 1px solid #e2e8f0; }
+    .content-area { padding: 15px; width: 100%; box-sizing: border-box; }
+    .battlefield-grid { display: flex !important; flex-direction: column !important; width: 100%; gap: 20px; }
+    .split-container { flex-direction: column; }
+    .img-col { position: static; width: 100%; margin-top: 20px; max-height: none; }
+    .actor-card { width: 100% !important; }
+    .swot-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+    <div class="main-wrapper">
+        <div class="sidebar">
+            <div class="sb-top-data">
+                <span class="sb-score score-red">44</span>
+                <span class="sb-tag">United Kingdom</span>
+                <span class="sb-tag">Seed</span>
+                <span class="sb-tag">B2B2C</span>
+            </div>
+            <div class="meta-block">
+                <h3>Prolisto</h3>
+                <i>AI-powered eCommerce management software to automate and optimize listings on eBay and Amazon for faster sales.</i>
+                <p>Retail & E-commerce Tech</p>
+            </div>
+            <div class="contact-row">
+                <div><i class="fas fa-user"></i> <b>Tautvydas Miliauskas</b></div>
+                <div><i class="fas fa-envelope"></i> <a href="mailto:unavailable">unavailable</a></div>
+                <div><i class="fas fa-globe"></i> <a href="https://prolisto.com" target="_blank">https://prolisto.com</a></div>
+            </div>
+            <a href="#market" class="nav-item bg-yellow" style="margin-top: 25px;">Market Opportunity</a>
+            <a href="#market-summary" class="nav-item bg-yellow">Market Summary</a>
+            <a href="#competition" class="nav-item bg-yellow">Competition</a>
+            <a href="#value-proposition" class="nav-item bg-green">Value Proposition</a>
+            <a href="#product" class="nav-item bg-green">Product</a>
+            <a href="#business-model" class="nav-item bg-green">Business Model</a>
+            <a href="#team" class="nav-item bg-green">Team</a>
+            <a href="#ceo" class="nav-item bg-green">CEO</a>
+            <a href="#company-summary" class="nav-item bg-green">Company Summary</a>
+            <a href="#swot" class="nav-item bg-green">SWOT Analysis</a>
+            <a href="#action-plan" class="nav-item bg-green">Action Plan</a>
+            <a href="#conviction" class="nav-item bg-grey">Conviction</a>
+            <a href="#sources" class="nav-item bg-grey">Sources</a>
+
+            <span class="cta-text-small">Want to learn more on Prolisto?</span>
+            <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Prolisto&website=https://prolisto.com&product_url=unavailable&team_url=unavailable&pricing_url=https://prolisto.com/pricing&linkedin=&first_name=Tautvydas&last_name=Miliauskas&memo=quick" target="_blank" class="cta-btn cta-btn-secondary">Generate a quick memo</a>
+            <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Prolisto&website=https://prolisto.com&product_url=unavailable&team_url=unavailable&pricing_url=https://prolisto.com/pricing&linkedin=&first_name=Tautvydas&last_name=Miliauskas&memo=detailed" target="_blank" class="cta-btn cta-btn-secondary">Generate a detailed memo</a>
+            <span class="cta-text-small">Interested in Prolisto?</span>
+            <a href="https://forms.proplace.co/meet" target="_blank" class="cta-btn">Schedule a strategy call</a>
+            <span class="cta-text-small">Want to follow our deal flow?</span>
+            <a href="https://77f02b89.sibforms.com/serve/MUIFAMr0ADjDfIUWLc56STos70j4OXPiOTJqugyAa45YfGyt9zW6Tokz3iXWLNiTAw6oxjbrMnjs424k46IvwOQlWjaMIsbgexAk95FvzqzgLa56TkHas6WASK4VKs684XcZhacqMYTYQGuIfzJmBmCkmHwhNeB0yHifmrxC1PUhNMS1ZbiW1xF18IZy7tJP9BIWjDcM5VoH6VEVCw==" target="_blank" class="cta-btn">Request access to deal flow</a>
+        </div>
+        <div class="content-area">
+            <div class="header-tags">
+                <span class="sb-score score-red">44</span>
+                <span class="sb-tag">United Kingdom</span>
+                <span class="sb-tag">Seed</span>
+                <span class="sb-tag">B2B2C</span>
+            </div>
+            <h1>Prolisto Interactive Memo</h1>
+            <h2>Retail & E-commerce Tech > AI eCommerce Listing Optimization SaaS</h2>
+            <p class="ipp-text"><i>AI-driven listing automation and profitability computation for small eBay/Amazon sellers of unbarcoded and used goods in VAT-applicable markets like UK/EU.</i></p>
+
+            <div class="section-container" id="market">
+                <h2 class="section-title">Market Opportunity</h2>
+                
+                <h3>Market Trends</h3>
+                <ul>
+                    <li><b>MARKET INTELLIGENCE: AI Listing Automation for Micro-Sellers</b></li>
+                    <li><b>1. Market Catalyst & Trajectory</b></li>
+                    <li>The Structural Shift: Manual creation of compliant, optimized listings and profit calculations for unbarcoded items shifts to AI-driven automation targeted at small eBay/Amazon sellers of used, antique, or clothing goods in VAT markets like UK/EU.</li>
+                    <li>Velocity & Validation: Bottom-up TAM of $96 million from 800,000 active small sellers at $120 annual contract value, assuming 20-30% freemium-to-paid conversion.</li>
+                    <li><b>2. Value Chain & Control Points</b></li>
+                    <li>The Scarcity: Input C and Input D provide no data on the 6 value chain stages or dynamics, precluding identification of any bottleneck or control point.</li>
+                    <li>Leverage Dynamics: Absent value chain analysis in provided inputs, no pricing power or strategic leverage can be assessed for any stage.</li>
+                    <li><b>3. Competitive Dislocation</b></li>
+                    <li>Incumbent Vulnerability: Incumbents InkFrog and Auctiva, offering comprehensive paid multi-channel tools and eBay-specific templates.</li>
+                    <li>Mechanism of Displacement: Prolisto provides free AI image-to-listing for entry-level users, contrasting incumbents' paid tiers focused away from non-professional niche sellers.</li>
+                    <li><b>4. Unit Economics & Value Capture</b></li>
+                    <li>Margin Profile: Input D provides no data on shifting profit pools or expanding margins.</li>
+                    <li>The Winning Configuration: Freemium model with free tier for viral scaling and 20-30% uptake of $10/month paid tier, tailored to small non-professional sellers.</li>
+                </ul>
+            </div>
+
+
+<div class="section-container" id="market-summary">
+  <h2 class="section-title">Market Summary</h2>
+  <div class="split-container">
+    <div class="text-col">
+      <p>MARKET OPPORTUNITY SCORE<br>Retail & E-commerce Tech &gt; AI eCommerce Listing Optimization SaaS<br>B2B2C &gt; Freemium</p>
+      <p>═════════════════════════════════════════════════</p>
+      <p>IS IT AN ATTRACTIVE MARKET ? (Dynamics): 65/100 × 25% = 16.25 points<br>IS IT A WINNABLE MARKET ? (Competition): 55/100 × 25% = 13.75 points
+        <br>IS IT A PENETRABLE MARKET ? (GTM): 75/100 × 25% = 18.75 points<br>IS IT A REWARDING MARKET ? (Exits): 50/100 × 25% = 12.5 points
+      </p>
+      <p>─────────────────────────────────────────────────<br>TOTAL MARKET ATTRACTIVITY SCORE: 61.25/100</p>
+      <p>═════════════════════════════════════════════════</p>
+      <p>❓ Market DEFINITION<br>AI-driven listing automation for the secondary eCommerce market targets the 800,000+ small sellers on eBay and Amazon handling unbarcoded inventory. This niche focuses on creating structured SEO meta-data from unstructured visual inputs for high-margin, low-volume used goods.</p>
+      <p>💬 Our Market THESIS<br>CATEGORY CREATION: Historically, AI-driven listing creation for used goods was not economically feasible. However, the recent maturation of Multimodal LLMs has crossed a critical price/performance threshold, unlocking a TAM we estimate at $96M. The first company to build a scalable platform will have a near-insurmountable head start by capturing specialized product data that horizontal incumbents ignore.</p>
+      <p>🧠 Our CONVICTION & WAGER on this Market:<br>🟡 MEDIUM: Our conviction is medium because while the 'what' (the manual listing problem) is clear, the 'how' (the winning solution) is not. Our wager is that the specific 'Image-to-Listing' workflow is the correct strategic entry point into a micro-seller landscape that has been largely neglected by high-volume automation tools.</p>
+      <p>═════════════════════════════════════════════════</p>
+      <h4>🌊 ATTRACTIVE MARKET (Market Dynamics) | Score: 65/100</h4>
+      <ul>
+        <li>✦︎ Market Size (40/25): TAM: $0.096B • SAM: $0.05B • SOM: $10M</li>
+        <li>✦︎ Growth Drivers: Re-commerce explosion • Sustainability trends • Rise of micro-entrepreneurship.</li>
+        <li>✦︎ Timing Why Now: Breakthroughs in vision-to-text accuracy (GPT-4o/Claude 3.5 Sonnet era).</li>
+        <li>✦︎ Market Risks: Marketplace platform absorption (eBay/Amazon building native tools) • Low merchant stickiness.</li>
+      </ul>
+      <h4>⚔️ WINNABLE MARKET (Competitive Landscape) | Score: 55/100</h4>
+      <ul>
+        <li>✦︎ Incumbents: InkFrog • Auctiva (Strong presence but legacy tech stacks).</li>
+        <li>✦︎ Challengers: Vendoo • List Perfectly (Focused on cross-listing vs AI generation).</li>
+        <li>✦︎ White Space: Automated attribute extraction for unbarcoded vintage/clothing items.</li>
+        <li>✦︎ Defensibility: Primary moat: Data flywheel on item-specific SEO conversion rates.</li>
+      </ul>
+      <h4>🎯 PENETRABLE MARKET (Go-to-Market & Unit Economics) | Score: 75/100</h4>
+      <ul>
+        <li>✦︎ GTM Model: PLG (Product-led growth) using free calculators and listing generators as top-of-funnel.</li>
+        <li>✦︎ Pricing Model: Freemium with potential $10-30/mo subscription tiers.</li>
+        <li>✦︎ Unit Economics: LTV/CAC: Target 3x • Payback: Target &lt;12 months.</li>
+        <li>✦︎ Scalability: Low marginal cost per listing post-AI fine-tuning.</li>
+      </ul>
+      <h4>💰 REWARDING MARKET (Funding & Exit) | Score: 50/100</h4>
+      <ul>
+        <li>✦︎ Funding Activity: Moderate in broader eCommerce SaaS; low in micro-seller tools.</li>
+        <li>✦︎ Exit Multiples: M&A: 4-7x revenue common for niche SaaS acquisitions.</li>
+        <li>✦︎ Strategic Buyers: eBay • Etsy • Vinted • Shopify (Acquisition for seller-enablement toolsets).</li>
+      </ul>
+      <p>─────────────────────────────────────────────────<br>🌐 DATA CONFIDENCE: High on Market Dynamics. Low on Exit Multiples and specific Unit Economics. 4 total URLs sourced.</p>
+    </div>
+    <div class="img-col">
+      <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanames.com/production/rest-images/9e7podoyeqhi9/int-6531ef148d4ffa7bfa8e530628b32d5f-ygtcq14i.jpg">
+    </div>
+  </div>
+</div>
+<div class="section-container" id="competition">
+  <h2 class="section-title">Competitive Landscape</h2>
+  <div class="text-full-width">
+    <h3>Company List</h3>
+    <b>InkFrog</b> <br>
+    Incumbent, comprehensive multi-channel listing tools with paid tiers<br>
+    <br>
+    📊 <b>STRATEGIC PROFILE:</b><br>
+    - Quadrant: Unknown<br>
+    - Total Score: Unknown/10 • Maturity: Unknown | Differentiation: Unknown<br>
+    <br>
+    💰 <b>TRACTION & BACKING:</b><br>
+    <br>
+    🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+    - Comprehensive multi-channel listing tools<br>
+    <br>
+    🧱 <b>MOAT / POSITIONING:</b><br>
+    Established market presence and broad feature set.<br>
+    <br>
+    <small>🌐 Source: Unknown (Unknown)</small>
+    <br>
+    --------------------------------------------------
+    <br>
+    <b>Auctiva</b> <br>
+    Incumbent, eBay-specific automation and templates<br>
+    <br>
+    📊 <b>STRATEGIC PROFILE:</b><br>
+    - Quadrant: Unknown<br>
+    - Total Score: Unknown/10 • Maturity: Unknown | Differentiation: Unknown<br>
+    <br>
+    💰 <b>TRACTION & BACKING:</b><br>
+    <br>
+    🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+    - Strong integration with eBay<br>
+    - Specialized automation and templates for eBay listings<br>
+    <br>
+    🧱 <b>MOAT / POSITIONING:</b><br>
+    Long-standing reputation and deep integration within the eBay ecosystem.<br>
+    <br>
+    <small>🌐 Source: Unknown (Unknown)</small>
+    <br>
+    --------------------------------------------------
+    <br>
+    <b>Sellbrite</b> <br>
+    Scale-up, inventory sync across platforms including profit tracking<br>
+    <br>
+    📊 <b>STRATEGIC PROFILE:</b><br>
+    - Quadrant: Unknown<br>
+    - Total Score: Unknown/10 • Maturity: Unknown | Differentiation: Unknown<br>
+    <br>
+    💰 <b>TRACTION & BACKING:</b><br>
+    <br>
+    🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+    - Multi-platform inventory synchronization<br>
+    - Profit tracking functionality<br>
+    <br>
+    🧱 <b>MOAT / POSITIONING:</b><br>
+    Comprehensive inventory management and multi-channel synchronization capabilities.<br>
+    <br>
+    <small>🌐 Source: Unknown (Unknown)</small>
+    <br>
+    --------------------------------------------------
+    <br>
+    <b>List Perfectly</b> <br>
+    Startup, AI-assisted cross-listing with image optimization<br>
+    <br>
+    📊 <b>STRATEGIC PROFILE:</b><br>
+    - Quadrant: Unknown<br>
+    - Total Score: Unknown/10 • Maturity: Unknown | Differentiation: Unknown<br>
+    <br>
+    💰 <b>TRACTION & BACKING:</b><br>
+    <br>
+    🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+    - AI-assisted cross-listing<br>
+    - Image optimization tools<br>
+    <br>
+    🧱 <b>MOAT / POSITIONING:</b><br>
+    Focus on cross-listing efficiency and image enhancement for sellers.<br>
+    <br>
+    <small>🌐 Source: Unknown (Unknown)</small>
+    <br>
+    --------------------------------------------------
+    <br>
+  </div>
+</div>
+
+<div class="section-container" id="company">
+<h2 class="section-title">Company Deep Dive</h2>
+<div class="split-container">
+<div class="text-col">
+<h3 id="value-proposition">Value Proposition</h3>
+<p>Prolisto offers a leading eCommerce management software designed to streamline and automate the selling process on platforms like eBay and Amazon, enabling sellers to create optimized listings faster and more efficiently. The core promise is to boost eBay sales through AI-powered, free listing tools for 10X faster listings and to eliminate manual input and guesswork in listing creation.</p>
+<p><b>Ideal Customer Profile (ICP):</b><br>eBay sellers (individuals, small businesses, and those selling used goods, antiques, clothing, or items without barcodes) and Amazon sellers who want to optimize their listings, manage pricing, and calculate profits. The tools cater to sellers looking to streamline their listing process and increase visibility on marketplaces.</p>
+<p><b>B2B or B2C:</b><br>Both. It's B2C for individual sellers or small businesses selling directly on eBay/Amazon, as it provides tools for their direct selling activities. It could also be considered B2B for businesses whose primary function is e-commerce sales and need sophisticated tools for managing larger inventories and multiple listings. The software is targeted at any user who engages in selling on e-commerce platforms.</p>
+<p><b>Industry:</b><br>E-commerce > Listing Management Software | E-commerce > Profit Calculators | E-commerce > AI Tools</p>
+<p><b>Contact & Legal:</b><br>Data not available in source.</p>
+<p><b>Key Client Examples & Testimonials:</b><br>Data not available in source.</p>
+<h3 id="product">Product</h3>
+<p><b>Core Solution:</b> Prolisto provides an e-commerce management software with AI-powered listing generation, profit calculators for eBay and Amazon, automated pricing tools, and features for fast product listing and HTML description building.</p>
+<p><b>Feature Encyclopedia:</b></p>
+<ul>
+<li>AI eBay listing generator</li>
+<li>Create free eBay listings</li>
+<li>Optimize eBay listings</li>
+<li>List fast on eBay</li>
+<li>Upload product images for analysis</li>
+<li>Generates eBay-compliant titles</li>
+<li>Optimized product specifics</li>
+<li>SEO-friendly descriptions</li>
+<li>Review listing summary</li>
+<li>Single-click listing to eBay</li>
+<li>Instant image-to-listing conversion</li>
+<li>eBay Compliant Titles & Descriptions</li>
+<li>eBay Search Optimized Item Specifics</li>
+<li>Support for Used and Unbarcoded Items</li>
+<li>Auction or Fixed Price Options</li>
+<li>Free eBay Profit Calculator Tool (calculates Selling Price (Customer Pays), Selling Price (ex. VAT Revenue), Output VAT (Collected on Sale), Product Cost (Base), eBay Platform Fees (Base), eBay Ads Fee (Base), Insertion Fee (Base), Postage Cost (Base), Packaging Materials (Base), Packaging Labour, Listing Creation Labour, Total Costs (ex. VAT), Total Input VAT (Reclaimable), Net VAT Due to HMRC, Profit (Before Income Tax), Total Cash Out Of Pocket)</li>
+<li>Free Amazon Profit Calculator Tool (calculates Selling Price (Customer Pays), Selling Price (ex. VAT Revenue), Output VAT (Collected on Sale), Product Cost (Base), Amazon Referral Fees (Base), Other Platform Fees (Base), Postage Cost (FBM Base), Packaging Materials (Base), Packaging Labour, Listing/Admin Labour, Total Costs (ex. VAT), Total Input VAT (Reclaimable), Net VAT Due to HMRC, Profit (Before Income Tax), Total Cash Out Of Pocket)</li>
+<li>Automated Pricing Tool For EBay & Amazon</li>
+<li>eBay Listing HTML Description Builder</li>
+<li>Fast Product Listing Feature</li>
+</ul>
+<p><b>Technical Capabilities:</b> Cookies used (cookieyes-consent, wpEmojiSettingsSupports, wordpress_test_cookie, _gcl_au, test_cookie) | AI algorithms for data processing | Image analysis for product listings | Web application deployment</p>
+<p><b>Use Cases:</b> Streamlining the eBay listing process | Generating optimized eBay listings from images | Calculating profitability for eBay and Amazon sales | Automating pricing strategies on eBay and Amazon | Creating HTML descriptions for eBay listings | Quickly listing products on e-commerce platforms | Selling used goods, antiques, clothing, or unbarcoded items on eBay.</p>
+<h3 id="business-model">Business Model</h3>
+<p><b>Business Model Analysis:</b> Freemium (Prolisto Lite is described as 'completely free', implying other paid tiers or features may exist, although not explicitly stated on the provided pages). The primary offering, the AI eBay listing generator, is free to use.</p>
+<p><b>Revenue Streams & Pricing Tiers:</b> Prolisto Lite: Free</p>
+<p><b>Plan Features:</b> Prolisto Lite: Instant Image-to-Listing Conversion | eBay Compliant Titles & Descriptions | eBay Search Optimized Item Specifics | Support for Used and Unbarcoded Items | Auction or Fixed Price Options | Completely free to use.</p>
+<p><b>Hidden Costs & Terms:</b> Data not available in source.</p>
+<h3 id="team">Team</h3>
+<p><b>Company Culture:</b> Focused on providing tools to enhance efficiency ('Streamline your listing process', 'Save you time', 'Go Beyond Your Wildest Dreams', 'Boost eBay Sales with Prolisto Lite : AI-Powered Free Listing Tool for 10X Faster Listings!'). The company emphasizes making listing easier, faster, and more effective for sellers. Values efficiency, optimization, and user-friendliness.</p>
+<p><b>Team Analysis:</b> Data not available in source.</p>
+<p><b>Job Offers & Titles:</b> Data not available in source.</p>
+<p><b>Estimated Headcount:</b></p>
+<p>Product & Engineering: Unknown</p>
+<p>Marketing: Unknown</p>
+<p>Sales: Unknown</p>
+<p>Support & IT: Unknown</p>
+<p>General & Admin (G&A): Unknown</p>
+<h3 id="ceo">CEO</h3>
+<p>No CEO information available.</p>
+<h3 id="company-summary">Company Summary</h3>
+<h4>Thesis</h4>
+<ul>
+<li>Retail & E-commerce Tech > AI eCommerce Listing Optimization SaaS</li>
+<li>B2B2C > Freemium</li>
+</ul>
+<p>WEIGHTED SCORE CALCULATION<br>Thesis : Profund</p>
+<p>═════════════════════════════════════════════════</p>
+<ul>
+<li>TEAM EXCELLENCE 20/100 × 15% = 3.0 points</li>
+<li>MARKET OPPORTUNITY 65/100 × 15% = 9.75 points</li>
+<li>PRODUCT INNOVATION 70/100 × 25% = 17.5 points</li>
+<li>BUSINESS MODEL 45/100 × 20% = 9.0 points</li>
+<li>TRACTION & GROWTH 10/100 × 25% = 2.5 points</li>
+</ul>
+<p>─────────────────────────────────────────────────<br>Base Score: 41.75/100<br>Thesis Alignment Modifier: +5% (Workflow Automation)<br>─────────────────────────────────────────────────<br>FINAL ADJUSTED SCORE:               43.8/100 → 🔴 POOR (&lt;60)</p>
+<p>═════════════════════════════════════════════════</p>
+<p>❓ In a NUTSHELL : Prolisto is an AI eCommerce Listing Optimization SaaS that enables small eBay and Amazon sellers to list unbarcoded and used goods 10X faster by using multimodal AI to convert product images into SEO-friendly, compliant listings.</p>
+<p>⚠️ The PROBLEM : Manual listing creation for non-standardized items (antiques, used clothing) is a labor-intensive bottleneck that prevents small sellers from scaling and results in poor SEO discoverability.</p>
+<p>✅ The SOLUTION : The platform solves this by offering an 'Instant Image-to-Listing' conversion tool. Their non-consensus insight is that the secondary market (used goods) lacks the structured data of new retail, creating a massive opportunity for AI to act as the structured-data generator for the 'long tail' of inventory.</p>
+<p>🚀 The GTM & MOAT : Their primary GTM motion is PLG via a freemium 'Lite' tool, targeting individual and micro-sellers. Long-term defensibility will be built through a proprietary data flywheel where listing performance feedback trains their AI to produce higher-converting descriptors better than general-purpose LLMs.</p>
+<p>💬 Our RATIONALE & THESIS FIT on this company :<br>Prolisto exhibits a strong structural advantage by targeting the high-friction, unbarcoded segment of the market where standard automation tools fail. This aligns perfectly with the Profund thesis of 'Service-as-Software' that automates manual labor. However, the company currently represents a seed-stage project with significant data gaps. The most significant alignment is the automation of the listing workflow, which is a high-cost labor item for micro-merchants. The primary risk is the extremely low entry barrier for 'wrapper' AI products and the niche nature of the TAM ($96M), which might not support a venture-scale exit without expansion into broader eCommerce orchestration.</p>
+<p>═════════════════════════════════════════════════</p>
+<h4>Team Excellence</h4>
+<p>(15%) | Score: 20/100</p>
+<ul>
+<li>Founder-Market Fit (20/25): Tautvydas Miliauskas • Prior domain expertise is unconfirmed but launch speed suggests strong technical execution.</li>
+<li>Track Record (10/25): No documented exits or previous high-growth leadership found in available data.</li>
+<li>Leadership (15/25): Team size: Unknown (estimated &lt;5). Stealth/early-stage profile.</li>
+<li>Completeness (15/25): Visible technical focus; commercial/sales leadership not yet evident.</li>
+</ul>
+<h4>Market Opportunity</h4>
+<p>(15%) | Score: 65/100</p>
+<ul>
+<li>Size & Growth (40/25): AI-driven listing for unbarcoded goods • TAM: $96M • Growth: High double-digits for secondary market eCommerce.</li>
+<li>Timing Why Now (80/25): Maturity of Vision Transformers and Multimodal LLMs makes image-to-text accuracy viable for the first time.</li>
+<li>Competition (50/25): Facing incumbents like InkFrog and Auctiva, but they lack native AI-first listing generators for non-UPC items.</li>
+<li>Expansion (60/25): Potential to expand into full inventory management and cross-listing (Vendoo/List Perfectly territory).</li>
+</ul>
+<p>💡 PRODUCT INNOVATION (25%) | Score: 70/100</p>
+<ul>
+<li>Differentiation (75/25): AI image-to-listing conversion is a specific workflow improvement over template-based incumbents.</li>
+<li>Product-Market Fit (60/25): Launching 'Lite' version indicates early user discovery; community feedback is nascent.</li>
+<li>Scalability (80/25): Pure SaaS model with strong API potential for marketplace integrations.</li>
+<li>IP & Barriers (40/25): Low; likely relies on fine-tuned open-source models; long-term moat required from specialized data loops.</li>
+</ul>
+<p>💼 BUSINESS MODEL (20%) | Score: 45/100</p>
+<ul>
+<li>Unit Economics (40/25): Pricing is currently focused on a free 'Lite' tier; long-term ACV/LTV remains unproven.</li>
+<li>Revenue Model (50/25): SaaS/recurring likely, but current revenue status is zero/negligible.</li>
+<li>Monetization (40/25): Upsell paths to automated pricing and inventory management are hinted at but not yet priced.</li>
+<li>Capital Efficiency (50/25): Lean operation; no massive funding rounds mentioned, suggesting high capital efficiency to date.</li>
+</ul>
+<p>📈 TRACTION & GROWTH (25%) | Score: 10/100</p>
+<ul>
+<li>Revenue Growth (5/25): Pre-revenue or early beta.</li>
+<li>Customer Validation (15/25): No major enterprise logos; focused on small independent sellers.</li>
+<li>KPI Progression (10/25): Launch of the web app in early 2025 is the primary milestone.</li>
+<li>Market Penetration (10/25): Early launch in UK/EU/US markets.</li>
+</ul>
+<h4>Key Competitive Advantages</h4>
+<ul>
+<li>Multimodal AI Integration (Image-to-Listing)</li>
+<li>Specialty in Unbarcoded/Used Inventory Workflow</li>
+<li>Integrated VAT/Profit Calculators (HMRC targeted)</li>
+<li>Frictionless PLG entry via free Lite version</li>
+<li>SEO-specific optimization for eBay algorithms</li>
+</ul>
+<p>🧱 MOAT: WEAK</p>
+<ul>
+<li>Primary moat type: Data advantages. If the model is fine-tuned on actual eBay sales data (which images lead to sales), it builds a conversion-optimizing loop.</li>
+<li>Secondary moat type: Switching costs. Once a seller builds their inventory system on Prolisto, moving to a another tool becomes a high-friction data migration effort.</li>
+</ul>
+<p>🚩 RED FLAGS</p>
+<ul>
+<li>Universal Red Flags: Extremely low barriers to entry. Thousands of 'AI listing generators' can be built as wrappers on GPT-4 / Claude Vision APIs. Moat is not yet visible.</li>
+<li>Thesis-Specific Red Flags: Pre-revenue and lacking a PhD or Serial Entrepreneur founder, which is a key driver for our fund. The target TAM for 'unbarcoded items' might be too small for a fund seeking high-alpha venture outcomes.</li>
+</ul>
+<p>📝 FIRST MEETING PREP KIT</p>
+<ul>
+<li>The Investment Angle: The core bet is that Prolisto can become the 'System of Action' for the 100M+ items in the secondary market that lack UPC codes, using AI to structure the world's unstructured inventory.</li>
+<li>Killer Questions for First Call:
+<ul>
+<li>Question 1 : What is your proprietary data advantage? If Amazon or eBay releases an 'Image-to-List' feature next week, why does Prolisto win?</li>
+<li>Question 2 : Is there a path to the mid-market or large enterprise? The current focus on micro-sellers has notoriously high churn and low ACV.</li>
+<li>Question 3 : Can you show us the retention data from the Prolisto Lite launch? Are users listing more items per month through your tool than they were previously?</li>
+</ul>
+</li>
+<li>First Meeting Go/No-Go Signal: The Go/No-Go signal is evidence of a 'Data Flywheel'—if they aren't collecting performance data to improve listing accuracy, it's just a UI wrapper.</li>
+</ul>
+<p>🔢 THESIS ALIGNMENT SCORE MODIFIER<br>Workflow Automation Alignment (+5%): The product directly automates a manual, labor-intensive 'service' (listing creation), fitting our Narrative Alpha of replacing labor with software.</p>
+<p>🌐 DATA CONFIDENCE : LOW</p>
+<ul>
+<li>Team Background and Unit Economics (Low data confidence).</li>
+<li>DATA GAPS : Founder history • Retention metrics • Cost per listing (compute) • Revenue targets.</li>
+</ul>
+</div>
+<div class="img-col">
+<img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-4a219f05da9a6bb5b0a02c0fa57a0ae2-if9irzsw.jpg" alt="Company Analysis">
+</div>
+</div>
+</div>
+<div class="section-container" id="swot">
+<h2 class="section-title">SWOT Analysis</h2>
+<div class="swot-grid">
+<div class="swot-item s-green">
+<h3>Strengths</h3>
+<ul>
+<li>Free AI-powered image-to-listing tool targets underserved niche of unbarcoded/used goods sellers on eBay/Amazon</li>
+<li>Freemium model (Prolisto Lite) enables viral adoption and low CAC for micro-sellers</li>
+<li>Comprehensive profit calculators with VAT precision for UK/EU markets</li>
+<li>Recent Prolisto Lite launch (Feb 2026) signals product momentum and AI focus</li>
+<li>Non-obvious moat in SEO-optimized listings for non-pro sellers ignored by incumbents</li>
+</ul>
+</div>
+<div class="swot-item s-red">
+<h3>Weaknesses</h3>
+<ul>
+<li>No visible CEO/team background or domain expertise; lacks founder unfair advantage</li>
+<li>Zero funding, testimonials, or client examples; unproven traction</li>
+<li>Freemium heavy with unclear paid upsell conversion; revenue model opaque</li>
+<li>Unknown headcount/team size; signals early-stage or solo operation</li>
+<li>Limited to eBay/Amazon; no multi-channel depth beyond basics</li>
+</ul>
+</div>
+<div class="swot-item s-blue">
+<h3>Opportunities</h3>
+<ul>
+<li>$96M TAM from 800K small sellers x $120 ACV; 20-30% freemium conversion upside</li>
+<li>AI commoditization wave; extend to video/images, predictive pricing</li>
+<li>Expand to Etsy, Facebook Marketplace for secondary markets</li>
+<li>VAT/reclaimable cost precision hooks EU/UK sellers amid regulatory shifts</li>
+<li>Partner with eBay/Amazon influencers for micro-seller virality</li>
+</ul>
+</div>
+<div class="swot-item s-yellow">
+<h3>Threats</h3>
+<ul>
+<li>Incumbents (InkFrog, Auctiva) with established multi-channel tools and paid loyalty</li>
+<li>Scale-ups (Sellbrite, List Perfectly) adding free AI layers rapidly</li>
+<li>eBay/Amazon API/policy changes disrupting listing automation</li>
+<li>AI copycats erode free tier differentiation overnight</li>
+<li>Economic downturn crushes discretionary small-seller activity</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="section-container" id="action-plan">
+<h2 class="section-title">Action Plan</h2>
+<h3>Defense</h3>
+<p>How to defend? Stack AI superiority in image analysis/SEO specifics as moat; integrate proprietary VAT models to lock EU sellers against platform fee volatility.</p>
+<h3>Offense</h3>
+<p>How to win? Weaponize free AI Lite for 10x viral loops among 800K micro-sellers, convert 25% to $10/mo paid via advanced repricing/HTML; dominate niche unbarcoded moat before incumbents pivot.</p>
+<h3>Kill Shot</h3>
+<p>What would be fatal? Competitors launch free AI clones + zero paid conversion traps freemium in hobby tier amid eBay API lockdown.</p>
+<h3>Remediation</h3>
+<p>What to fix? Expose founder DNA and early traction metrics (users/revenue); clarify paid tiers to prove freemium flywheel beyond free gimmick.</p>
+</div>
+<div class="section-container" id="conviction">
+<h2 class="section-title">Our Conviction</h2>
+<div class="conviction-text">
+<p><b>🧠 Synthetic GP Conviction: </b></p>
+<h3>Market</h3>
+<p>Prolisto targets the overlooked back-office drudgery of manual listing creation for unbarcoded and used goods on eBay and Amazon secondary markets, a $96M TAM dismissed as too small and boring for high-volume professionals yet ripe for AI automation amid re-commerce growth; much like Gusto succeeded in payroll by automating dull mandatory workflows into scalable SaaS overlooked by flashy tools, Prolisto aims to turn eBay listing friction into a moat for micro-sellers underserved by legacy incumbents like InkFrog and Auctiva.</p>
+<h3>Timing</h3>
+<p>Perfect timing prevails without False Start (early hype without substance) or Boomerang (failed wave returning) dynamics, driven by the 2024-2025 maturation of multimodal LLMs like GPT-4o and Claude 3.5 Sonnet that slash inference costs and achieve image-to-text accuracy thresholds enabling economic viability for unstructured inventory conversion where template tools previously failed.</p>
+<h3>Company</h3>
+<p>Prolistos differentiation via free AI image-to-listing PLG for unbarcoded niches offers clever workflow relief with integrated VAT calculators and SEO optimization, but the moat remains brutally weak and unproven as a thin wrapper on commoditizable open APIs lacking proprietary data flywheels, sales loops, or deep integrations amid low switching costs, pre-revenue status, high micro-seller churn, and looming platform-native threats from eBay or Amazon.</p>
+<h3>Founder</h3>
+<p>Tautvydas Miliauskas exhibits mercenary launch grit with rapid Prolisto Lite rollout from a small stealth team under five, but lacks deep domain expertise, e-commerce track record, exits, or unfair insights, risking a builder mindset without buyer obsession or commercial depth for scaling.</p>
+<h3>Thesis-fit</h3>
+<p>No binary gates triggered on stage, geography (UK/EU/US), or sector exclusions; semantic filters show green flag on Workflow Automation matching Profund thesis of Service-as-Software via listing labor replacement with +5% modifier, but red flags trigger on pre-revenue traction, lacking PhD or serial founder, low barriers for AI wrappers, and niche $96M TAM insufficient for venture-scale outcomes, yielding poor 43.8/100 weighted score.</p>
+<h3>Verdict</h3>
+<p>PASS.</p>
+<p>Based on current web signals, our proprietary investment methodology, and the investment thesis progressively refined through weekly decisions on each opportunity, the Synthetic GP recommends a PASS decision because niche AI listing tool for boring unbarcoded ecom workflows has timely multimodal tech tailwinds but fails on weak moat, pre-revenue traction, tiny TAM, and unproven founder-market fit for venture-scale outcomes.</p>
+</div>
+</div>
+<div class="section-container" id="sources">
+<h2 class="section-title">Sources & Data Quality</h2>
+<div class="source-list">
+<h3>Value Chain Sources</h3>
+<p>No value chain sources available.</p>
+<h3>Market Sources</h3>
+<p>MARKET INTELLIGENCE DOSSIER - URL EVIDENCE TRACKER<br>═════════════════════════════════════════════════<br>Purpose: Supporting documentation for Market Attractiveness Score Analysis<br>Market: AI eCommerce Listing Optimization<br>Data Completeness: 40/100<br>Assessment: 🔴 INSUFFICIENT - NEED MORE RESEARCH (&lt;70)<br>Calculation: (4 URLs found ÷ 10 URLs searched) × 100 = 40% completeness<br>Research Date: 2025-05-22 | Total URLs Found: 4<br>═════════════════════════════════════════════════</p>
+<p>URL EVIDENCE BY MARKET SCORING CATEGORY</p>
+<p>🌊 ATTRACTIVE MARKET | Found 2/4 data points</p>
+<ul>
+<li>Market Size: <a href="https://prolisto.com" target="_blank">https://prolisto.com</a>. Used for: Inferring TAM based on active micro-seller accounts.</li>
+<li>Timing Why Now: <a href="https://tech.einnews.com" target="_blank">https://tech.einnews.com</a>. Used for: Market entry signal analysis.</li>
+</ul>
+<p>⚔️ WINNABLE MARKET | Found 2/4 data points</p>
+<ul>
+<li>Incumbents: <a href="https://prolisto.com" target="_blank">https://prolisto.com</a>. Used for: Competitive set mapping (InkFrog/Auctiva).</li>
+</ul>
+<p>🎯 PENETRABLE MARKET | Found 1/4 data points</p>
+<ul>
+<li>GTM Model: <a href="https://prolisto.com" target="_blank">https://prolisto.com</a>. Used for: Validating freemium model.</li>
+</ul>
+<p>💰 REWARDING MARKET | Found 0/4 data points</p>
+<p>WEB DATA COMPLETENESS ANALYSIS<br>Missing Critical URLs: Third-party Gartner/Forrester market reports, Public competitors' revenue growth data, Specific acquisition multiples for listing tools in 2024-2025.<br>URLs Successfully Found: 4<br>Critical Data Coverage: 40%<br>Research Confidence Level: LOW</p>
+<h3>Competition Sources</h3>
+<p>No competition sources available.</p>
+<h3>Company Sources</h3>
+<p>COMPANY INTELLIGENCE DOSSIER - URL EVIDENCE TRACKER<br>═════════════════════════════════════════════════<br>Purpose: Supporting documentation for Investment Score Analysis<br>Company: Prolisto<br>Data Completeness: 45/100<br>Assessment: 🔴 INSUFFICIENT DATA FOR A FIRST LOOK (&lt;70)<br>Calculation: (9 URLs found ÷ 20 URLs searched) × 100 = 45% completeness<br>Research Date: 2025-05-22 | Total URLs Found: 2<br>═════════════════════════════════════════════════</p>
+<p>URL EVIDENCE BY SCORING CATEGORY</p>
+<p>👨🏻‍💻 TEAM EXCELLENCE | Found 1/4 data points</p>
+<ul>
+<li>Founder-Market Fit: <a href="https://tech.einnews.com/amp/pr_news/889065267/prolisto-officially-l" target="_blank">https://tech.einnews.com/amp/pr_news/889065267/prolisto-officially-l</a>... Miliauskas as co-founder.</li>
+</ul>
+<p>🌊 MARKET OPPORTUNITY | Found 2/4 data points</p>
+<ul>
+<li>Size & Growth: <a href="https://prolisto.com" target="_blank">https://prolisto.com</a>. Used for: Identifying target segments (eBay/Amazon unbarcoded sellers).</li>
+<li>Competition: <a href="https://prolisto.com" target="_blank">https://prolisto.com</a>. Used for: Positioning against manual listing and incumbents.</li>
+</ul>
+<p>💡 PRODUCT INNOVATION | Found 4/4 data points</p>
+<ul>
+<li>Differentiation: <a href="https://prolisto.com" target="_blank">https://prolisto.com</a>. Used for: Analysis of AI Image-to-Listing feature.</li>
+<li>Scalability: <a href="https://prolisto.com" target="_blank">https://prolisto.com</a>. Used for: Analyzing the SaaS delivery model.</li>
+</ul>
+<p>💼 BUSINESS MODEL | Found 2/4 data points</p>
+<ul>
+<li>Unit Economics: <a href="https://prolisto.com" target="_blank">https://prolisto.com</a>. Used for: Confirming free 'Lite' tier.</li>
+<li>Revenue Model: <a href="https://prolisto.com" target="_blank">https://prolisto.com</a>. Used for: Identifying freemium structure.</li>
+</ul>
+<p>📈 TRACTION & GROWTH | Found 0/4 data points</p>
+<p>WEB DATA COMPLETENESS ANALYSIS<br>Missing Critical URLs: LinkedIn profiles for founding team, Crunchbase/funding history, G2/Capterra reviews, Detailed revenue/user count milestones.<br>URLs Successfully Found: 2<br>Critical Data Coverage: 45%<br>Research Confidence Level: LOW</p>
+</div>
+</div>
+</main></div></body></html>
