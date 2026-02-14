@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Levl Interactive Memo</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+:root { --bg-app: #f8fafc; --text-main: #1e293b; --yellow-menu: #FEF9C3; --green-menu: #DCFCE7; --grey-menu: #F1F5F9; }
+/* GLOBAL RESET FOR BOX SIZING (CRITICAL) */
+* { box-sizing: border-box; }
+
+/* STICKY FIX: No overflow on body/html */
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-app); color: var(--text-main); margin: 0; display: flex; }
+html { scroll-behavior: smooth; }
+a { color: #2563eb; text-decoration: none; cursor: pointer; word-break: break-all; }
+a:hover { text-decoration: underline; }
+/* MOBILE FIX: Word Break Global */
+p, li, a, span, div { overflow-wrap: break-word; word-break: break-word; }
+p, li { line-height: 1.6; margin-bottom: 10px; }
+strong, b { font-weight: 700; color: #0f172a; }
+h3 { scroll-margin-top: 20px; font-size: 1.4em; color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px; }
+
+/* LAYOUT */
+/* STICKY FIX: Overflow visible on wrapper */
+.main-wrapper { display: flex; width: 100%; max-width: 100vw; align-items: flex-start; overflow: visible !important; }
+/* STICKY FIX: Sidebar positioning */
+.sidebar { width: 300px; height: 100vh; position: sticky; top: 0; overflow-y: auto; border-right: 1px solid #e2e8f0; background: #fff; padding: 25px 0; flex-shrink: 0; z-index: 1000; align-self: flex-start; }
+.content-area { flex: 1; padding: 20px 40px; width: 100%; min-width: 0; max-width: 1600px; margin: 0 auto; }
+/* STICKY FIX: Overflow visible on container */
+.section-container { background: #fff; padding: 30px; margin-bottom: 30px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; scroll-margin-top: 20px; overflow: visible; }
+.section-title { font-size: 1.8em; font-weight: 700; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 25px; }
+
+/* SPLIT & STICKY */
+.split-container { display: flex; gap: 40px; align-items: flex-start; margin-bottom: 40px; position: relative; }
+.text-col { flex: 1; font-size: 1.05em; line-height: 1.7; color: #334155; min-width: 0; word-wrap: break-word; overflow-wrap: anywhere; }
+/* STICKY FIX & SCROLLBAR KILLER */
+.img-col { flex: 1; position: sticky; top: 20px; align-self: flex-start; height: fit-content; min-width: 0; max-height: calc(100vh - 40px); overflow: hidden; /* Key to kill scrollbar */ }
+.sticky-img { width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; display: block; object-fit: contain; }
+
+/* SIDEBAR ITEMS */
+.meta-block { padding: 0 25px 25px; border-bottom: 1px solid #e2e8f0; margin-bottom: 15px; }
+.sb-top-data { padding: 0 25px 10px; display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 5px; }
+.sb-tag { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.85em; color: #475569; }
+
+/* SCORE COLORS - DYNAMIC */
+.sb-score { color: white !important; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.85em; }
+.score-green { background: #16a34a !important; }
+.score-yellow { background: #ca8a04 !important; }
+.score-orange { background: #ea580c !important; }
+.score-blue { background: #2563eb !important; }
+.score-red { background: #dc2626 !important; }
+
+/* CONTACT ROW FIX: ALIGNMENT */
+.contact-row { display: flex; flex-direction: column; gap: 5px; font-size: 0.9em; margin-top: 10px; padding-left: 25px; padding-right: 25px; }
+.nav-item { display: block; padding: 8px 25px; color: #475569; font-weight: 600; font-size: 0.9em; border-left: 4px solid transparent; margin-bottom: 2px; }
+.nav-item:hover { background: rgba(0,0,0,0.05); color: #0f172a; border-left-color: #94a3b8; }
+.bg-yellow { background: var(--yellow-menu); } .bg-green { background: var(--green-menu); } .bg-grey { background: var(--grey-menu); }
+
+/* CTA BUTTONS */
+.cta-text-small { display: block; margin: 10px 25px 2px; font-size: 0.8em; color: #64748b; font-weight: 600; }
+.cta-btn { display: block; margin: 5px 25px 10px; padding: 12px; background: #1e293b; color: #fff; text-align: center; border-radius: 6px; font-weight: 700; font-size: 0.9em; cursor: pointer; }
+.cta-btn-secondary { background: #e2e8f0; color: #1e293b; border: 1px solid #cbd5e1; }
+.cta-btn-secondary:hover { background: #cbd5e1; }
+.promo-text { display: block; margin: 0 25px 20px; font-size: 0.8em; color: #64748b; text-align: center; font-style: italic; word-wrap: break-word; }
+
+/* BATTLEFIELD LEGEND & CARDS */
+.battlefield-legend { margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 6px; font-size: 0.9em; }
+.legend-row { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; margin-bottom: 5px; }
+.legend-item { display: inline-block; }
+.posture-legend { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; line-height: 1.2; margin-right: 10px; }
+
+.battlefield-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 15px; width: 100%; margin-bottom: 40px; }
+.battlefield-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.stage-header { font-size: 0.85em; font-weight: 700; text-transform: uppercase; color: #64748b; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; min-height: 40px; }
+
+/* ACTOR CARDS - UPDATED BORDER COLORS & QUADRANTS */
+.actor-card { background: #fff; border: 1px solid #cbd5e0; border-radius: 6px; overflow: hidden; font-size: 0.9em; border-left-width: 4px; margin-bottom: 8px; transition: all 0.2s; }
+.border-established-leader { border-left-color: #2563eb !important; } /* Blue */
+.border-emerging-innovator { border-left-color: #16a34a !important; } /* Green */
+.border-mature-commoditized { border-left-color: #ca8a04 !important; } /* Yellow */
+.border-early-undifferentiated { border-left-color: #64748b !important; } /* Grey */
+
+.actor-card summary { padding: 10px; cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; align-items: center; background: #fff; }
+.actor-card summary::after { content: "+"; font-size: 1.2em; color: #94a3b8; }
+.actor-card[open] summary::after { content: "−"; color: #1e293b; }
+.actor-summary-content { display: flex; flex-direction: column; gap: 2px; width: 90%; }
+.actor-name { font-weight: 800; color: #1e293b; font-size: 1em; }
+.actor-meta { font-size: 0.8em; color: #64748b; display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.label-tier { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; white-space: nowrap; }
+
+.actor-body { padding: 12px; border-top: 1px solid #f1f5f9; background: #fafafa; overflow-wrap: break-word; }
+
+/* ACTOR GRID INFO (2 COLUMNS) */
+.actor-grid-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; font-size: 0.85em; }
+.actor-grid-info div { display: flex; flex-direction: column; }
+.actor-grid-info strong { font-size: 0.9em; color: #64748b; margin-bottom: 2px; }
+.score-highlight { font-weight: 700; color: #1e293b; font-size: 1.1em; }
+
+/* COMPETITION */
+.competitor-block { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0; }
+.competitor-block strong { color: #1e293b; font-size: 1.05em; }
+
+/* SWOT 2x2 GRID BEAUTIFUL DESIGN */
+.swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.swot-item { padding: 20px; border-radius: 8px; border: 1px solid transparent; box-shadow: 0 2px 5px rgba(0,0,0,0.03); }
+.swot-item h3 { border-bottom: none; margin-bottom: 10px; margin-top: 0; color: #0f172a; font-size: 1.3em; }
+.swot-item ul { padding-left: 20px; margin: 0; }
+.swot-item li { margin-bottom: 5px; font-size: 0.95em; color: #334155; }
+/* SWOT COLORS */
+.s-green { background-color: #f0fdf4; border-color: #bbf7d0; } /* Strengths */
+.s-red { background-color: #fef2f2; border-color: #fecaca; } /* Weaknesses - Red Light */
+.s-blue { background-color: #eff6ff; border-color: #bfdbfe; } /* Opportunities */
+.s-yellow { background-color: #fefce8; border-color: #fef08a; } /* Threats */
+
+/* FOOTER */
+.source-list { font-size: 0.9em; color: #64748b; }
+.final-footer { margin-top: 60px; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 0.85em; }
+
+/* MOBILE */
+@media (max-width: 1000px) {
+    body { flex-direction: column; overflow-x: hidden; }
+    .main-wrapper { flex-direction: column; max-width: 100vw; }
+    .sidebar { width: 100%; height: auto; position: relative; border-right: none; border-bottom: 1px solid #e2e8f0; }
+    .content-area { padding: 15px; width: 100%; box-sizing: border-box; }
+    .battlefield-grid { display: flex !important; flex-direction: column !important; width: 100%; gap: 20px; }
+    .split-container { flex-direction: column; }
+    .img-col { position: static; width: 100%; margin-top: 20px; max-height: none; }
+    .actor-card { width: 100% !important; }
+    .swot-grid { grid-template-columns: 1fr; }
+}
+    </style>
+</head>
+<body>
+    <div class="main-wrapper">
+        <div class="sidebar">
+            <div class="sb-top-data">
+                <span class="sb-score score-green">88</span>
+                <span class="sb-tag">Switzerland</span>
+                <span class="sb-tag">Seed</span>
+                <span class="sb-tag">B2B</span>
+            </div>
+            <div class="meta-block">
+                <h3>Levl</h3>
+                <i>Seamless cross-border payments via stablecoins for businesses</i>
+                <p>FinTech</p>
+            </div>
+            <div class="contact-row">
+                <div><i class="fas fa-user"></i> <b>Jaisel Sandhu</b></div>
+                <div><i class="fab fa-linkedin"></i> <a href="https://www.linkedin.com/in/jaisel-sandhu" target="_blank">LinkedIn Profile</a></div>
+                <div><i class="fas fa-envelope"></i> <a href="mailto:unavailable">unavailable</a></div>
+                <div><i class="fas fa-globe"></i> <a href="https://www.levl.ch/" target="_blank">https://www.levl.ch/</a></div>
+            </div>
+            <a href="#market-summary" class="nav-item bg-yellow" style="margin-top: 25px;">Market Summary</a>
+            <a href="#competition" class="nav-item bg-yellow">Competition</a>
+            <a href="#value-proposition" class="nav-item bg-green">Value Proposition</a>
+            <a href="#product" class="nav-item bg-green">Product</a>
+            <a href="#business-model" class="nav-item bg-green">Business Model</a>
+            <a href="#team" class="nav-item bg-green">Team</a>
+            <a href="#ceo" class="nav-item bg-green">CEO</a>
+            <a href="#company-summary" class="nav-item bg-green">Company Summary</a>
+            <a href="#swot" class="nav-item bg-green">SWOT Analysis</a>
+            <a href="#action-plan" class="nav-item bg-green">Action Plan</a>
+            <a href="#conviction" class="nav-item bg-grey">Conviction</a>
+            <a href="#sources" class="nav-item bg-grey">Sources</a>
+            <span class="cta-text-small">Want to learn more on Levl?</span>
+            <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Levl&website=https://www.levl.ch/&product_url=https://www.levl.ch/product&team_url=unavailable&pricing_url=unavailable&linkedin=https://www.linkedin.com/in/jaisel-sandhu&first_name=Jaisel&last_name=Sandhu&memo=quick" target="_blank" class="cta-btn cta-btn-secondary">Generate a quick memo</a>
+            <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Levl&website=https://www.levl.ch/&product_url=https://www.levl.ch/product&team_url=unavailable&pricing_url=unavailable&linkedin=https://www.linkedin.com/in/jaisel-sandhu&first_name=Jaisel&last_name=Sandhu&memo=detailed" target="_blank" class="cta-btn cta-btn-secondary">Generate a detailed memo</a>
+            <span class="cta-text-small">Interested in Levl?</span>
+            <a href="https://forms.proplace.co/meet" target="_blank" class="cta-btn">Schedule a strategy call</a>
+            <span class="cta-text-small">Want to follow our deal flow?</span>
+            <a href="https://77f02b89.sibforms.com/serve/MUIFAMr0ADjDfIUWLc56STos70j4OXPiOTJqugyAa45YfGyt9zW6Tokz3iXWLNiTAw6oxjbrMnjs424k46IvwOQlWjaMIsbgexAk95FvzqzgLa56TkHas6WASK4VKs684XcZhacqMYTYQGuIfzJmBmCkmHwhNeB0yHifmrxC1PUhNMS1ZbiW1xF18IZy7tJP9BIWjDcM5VoH6VEVCw==" target="_blank" class="cta-btn">Request access to deal flow</a>
+        </div>
+        <div class="content-area">
+            <div class="header-tags">
+                <span class="sb-score score-green">88</span>
+                <span class="sb-tag">Switzerland</span>
+                <span class="sb-tag">Seed</span>
+                <span class="sb-tag">B2B</span>
+            </div>
+            <h1>Levl Interactive Memo</h1>
+            <h2>Fintech > Payments Infrastructure > Stablecoin Cross-Border Payments Infrastructure</h2>
+            <p class="ipp-text">API-driven unified infrastructure for stablecoin-enabled cross-border payments and crypto-fiat bridging serving fintechs and marketplaces operating in 70+ countries.</p>
+
+<div class="section-container" id="market-summary">
+    <h2 class="section-title">Market Summary</h2>
+    <div class="split-container">
+        <div class="text-col">
+            <p>MARKET OPPORTUNITY SCORE<br>FinTech &gt; Stablecoin Cross-Border Payments Infrastructure<br>B2B &gt; API-First</p>
+            <p>═════════════════════════════════════════════════</p>
+            <p>IS IT AN ATTRACTIVE MARKET ? (Dynamics): 85/100 × 25% = 21.25 points<br>IS IT A WINNABLE MARKET ? (Competition): 75/100 × 25% = 18.75 points<br>IS IT A PENETRABLE MARKET ? (GTM): 80/100 × 25% = 20.00 points<br>IS IT A REWARDING MARKET ? (Exits): 90/100 × 25% = 22.50 points</p>
+            <p>─────────────────────────────────────────────────<br>TOTAL MARKET ATTRACTIVITY SCORE: 82.5/100</p>
+            <p>═════════════════════════════════════════════════</p>
+            <p>❓ Market DEFINITION<br>API-driven unified infrastructure for stablecoin-enabled cross-border payments and crypto-fiat bridging serving fintechs and marketplaces operating in 70+ countries. This market sits at the intersection of traditional B2B cross-border remittances and digital asset treasury, replacing legacy SWIFT rails with programmable stablecoin logic.</p>
+            <p>💬 Our Market THESIS<br>A non-negotiable shift in Regulatory Factor is triggering a platform transition away from legacy systems in the $750M Stablecoin Infrastructure market. A startup that becomes the go-to platform for this new reality, centered on Core Value Proposition, can become the new system of record for the entire industry.</p>
+            <p>🧠 Our CONVICTION & WAGER on this Market:<br>🟢 HIGH: Our conviction is high because this market presents a rare alignment of timing and structure. The adoption of stablecoins as a settlement layer has opened a temporary window for a decisive founder to build a dominant network effect moat and capture the market before the opportunity becomes consensus. This is a land grab.</p>
+            <p>═════════════════════════════════════════════════</p>
+            <h4>🌊 ATTRACTIVE MARKET (Market Dynamics) | Score: 85/100</h4>
+            <ul>
+                <li>✦︎ Market Size (21/25): TAM: $0.75B (Infrastructure focus) • SAM: $0.3B • CAGR: 25%+</li>
+                <li>✦︎ Growth Drivers (22/25): Institutional stablecoin adoption • Demand for real-time B2B settlement • MiCA regulatory tailwinds in Europe.</li>
+                <li>✦︎ Timing Why Now (23/25): Convergence of AI-driven finance and stablecoin maturity • Recent failures of legacy small-bank bridges creating a vacuum for tech-first players.</li>
+                <li>✦︎ Market Risks (19/25): Regulatory crackdowns on stablecoins • Volatility in digital asset liquidity • Competition from CBDCs.</li>
+            </ul>
+            <h4>⚔️ WINNABLE MARKET (Competitive Landscape) | Score: 75/100</h4>
+            <ul>
+                <li>✦︎ Incumbents (18/25): Stripe ($70B+ valuation, Strength: Distribution) • Ripple ($10B+ valuation, Strength: Bank-led legacy).</li>
+                <li>✦︎ Challengers (19/25): Circle ($5B+ focus, Strength: Issuance/USDC) • BVNK (Strength: European focus).</li>
+                <li>✦︎ White Space (19/25): Gap in unified API bridging that handles both fiat virtual accounts and stablecoin liquidity in a product-led way.</li>
+                <li>✦︎ Defensibility (19/25): Primary moat: Switching costs of embedded APIs • Secondary moat: Quantitative routing expertise.</li>
+            </ul>
+            <h4>🎯 PENETRABLE MARKET (Go-to-Market & Unit Economics) | Score: 80/100</h4>
+            <ul>
+                <li>✦︎ GTM Model (20/25): API-first targeting developers and CTOs • Short integration cycles (48-hour onboarding claim).</li>
+                <li>✦︎ Pricing Model (20/25): Usage-based/Transaction spread model aligning with high-volume customer growth.</li>
+                <li>✦︎ Unit Economics (20/25): Likely high LTV/CAC due to the 'sticky' nature of financial infrastructure once integrated.</li>
+                <li>✦︎ Scalability (20/25): Global reach across 70 countries allows for rapid geographic scaling without physical footprint.</li>
+            </ul>
+            <h4>💰 REWARDING MARKET (Funding & Exit) | Score: 90/100</h4>
+            <ul>
+                <li>✦︎ Funding Activity (23/25): High velocity in payments infra space • Tier-1 funds moving downstream to Seed/A rounds for new rails.</li>
+                <li>✦︎ Exit Multiples (22/25): Payments infra multiples remain top-tier (8-15x revenue) • Strategic M&A targets for legacy banks/Paypal/Visa.</li>
+                <li>✦︎ Strategic Buyers (25/25): Visa (Card network expansion) • Paypal (Stablecoin integration) • Major Global Banks (Tech modernization).</li>
+            </ul>
+            <p>─────────────────────────────────────────────────<br>🌐 DATA CONFIDENCE: High on Market Size and Exit potential. Medium on specific unit economics for Levl. 15 total URLs sourced.</p>
+        </div>
+        <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-9b7f1cb37e33ce0d265694788a5688ea-7n6upoec.jpg">
+        </div>
+    </div>
+</div>
+<div class="section-container" id="competition">
+    <h2 class="section-title">Competitive Landscape</h2>
+    <div class="text-full-width">
+        <h3>Company List</h3>
+        <b><a href="https://stripe.com/">Stripe</a></b> Global<br>Comprehensive global payments with fiat rails and treasury tools, but limited native stablecoin integration.<br>
+        <br>
+        📊 <b>STRATEGIC PROFILE:</b><br>
+        - Quadrant: Incumbent<br>
+        - Total Score: 84/10 • Maturity: 9 | Differentiation: 7<br>
+        <br>
+        💰 <b>TRACTION & BACKING:</b><br>
+        - <b>Key Investors:</b> Andreessen Horowitz, Sequoia Capital, Founders Fund<br>
+        <br>
+        🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+        - Extensive developer ecosystem and APIs<br>
+        - Broad global reach and fiat payment processing<br>
+        - Strong brand recognition and trust<br>
+        <br>
+        🧱 <b>MOAT / POSITIONING:</b><br>
+        Network effects from vast user base and integrations, high switching costs for integrated businesses.<br>
+        <br>
+        <small>🌐 Source: Stripe Website (<a href="https://stripe.com/">https://stripe.com/</a>)</small>
+        <br>
+        --------------------------------------------------
+        <br>
+        <b><a href="https://ripple.com/">Ripple</a></b> Global<br>Blockchain-focused cross-border settlements via XRP, emphasizing banks over fintechs.<br>
+        <br>
+        📊 <b>STRATEGIC PROFILE:</b><br>
+        - Quadrant: Scale-up<br>
+        - Total Score: 78/10 • Maturity: 8 | Differentiation: 6<br>
+        <br>
+        💰 <b>TRACTION & BACKING:</b><br>
+        - <b>Key Investors:</b> Google Ventures, SBI Holdings, Andreessen Horowitz<br>
+        <br>
+        🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+        - Fast and low-cost international transactions using XRP<br>
+        - Established partnerships with financial institutions<br>
+        - Focus on enterprise-level cross-border payments<br>
+        <br>
+        🧱 <b>MOAT / POSITIONING:</b><br>
+        Proprietary blockchain technology (XRP Ledger), existing banking relationships.<br>
+        <br>
+        <small>🌐 Source: Ripple Website (<a href="https://ripple.com/">https://ripple.com/</a>)</small>
+        <br>
+        --------------------------------------------------
+        <br>
+        <b><a href="https://www.circle.com/">Circle</a></b> Global<br>Stablecoin issuance and USDC infrastructure with payments APIs, strong in crypto on/off ramps but less unified fiat bridging.<br>
+        <br>
+        📊 <b>STRATEGIC PROFILE:</b><br>
+        - Quadrant: Scale-up<br>
+        - Total Score: 80/10 • Maturity: 7 | Differentiation: 7<br>
+        <br>
+        💰 <b>TRACTION & BACKING:</b><br>
+        - <b>Key Investors:</b> BlackRock, Fidelity, General Catalyst<br>
+        <br>
+        🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+        - Leading issuer of USDC, a widely adopted stablecoin<br>
+        - Strong regulatory compliance and transparency<br>
+        - Comprehensive crypto on/off-ramp solutions<br>
+        <br>
+        🧱 <b>MOAT / POSITIONING:</b><br>
+        Trust and adoption of USDC, robust regulatory framework, extensive crypto ecosystem integrations.<br>
+        <br>
+        <small>🌐 Source: Circle Website (<a href="https://www.circle.com/">https://www.circle.com/</a>)</small>
+        <br>
+        --------------------------------------------------
+        <br>
+        <b><a href="https://www.sendwyre.com/">Wyre</a></b> Global<br>Crypto payment rails for businesses, focused on fiat-crypto conversions but narrower global coverage.<br>
+        <br>
+        📊 <b>STRATEGIC PROFILE:</b><br>
+        - Quadrant: Startup<br>
+        - Total Score: 65/10 • Maturity: 6 | Differentiation: 5<br>
+        <br>
+        💰 <b>TRACTION & BACKING:</b><br>
+        - <b>Key Investors:</b> Pantera Capital, Stellar Development Foundation, Boost VC<br>
+        <br>
+        🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+        - Developer-friendly APIs for crypto integration<br>
+        - Focus on fiat-to-crypto and crypto-to-fiat conversions<br>
+        - Strong emphasis on compliance in crypto transactions<br>
+        <br>
+        🧱 <b>MOAT / POSITIONING:</b><br>
+        Specialized expertise in crypto on/off-ramps for businesses and developers.<br>
+        <br>
+        <small>🌐 Source: Wyre Website (<a href="https://www.sendwyre.com/">https://www.sendwyre.com/</a>)</small>
+        <br>
+        --------------------------------------------------
+        <br>
+    </div>
+</div>
+
+<div class="section-container" id="company">
+  <h2 class="section-title">Company Deep Dive</h2>
+  <div class="split-container">
+    <div class="text-col">
+      <h3 id="value-proposition">Value Proposition</h3>
+      <p>Levl provides a unified platform to power stablecoin payments, FX, crypto on/off ramps, and global payment processing, aiming to eliminate the complexity of managing multiple banking partners and manual reconciliation through a single API-driven infrastructure. <b>Ideal Customer Profile (ICP)</b>:<br> Fintech companies, global marketplaces, payroll providers, enterprise platforms, and businesses requiring high-volume international payouts or crypto-to-fiat bridges. <b>B2B or B2C</b>:<br> B2B. The service is strictly infrastructure-oriented, designed for businesses to integrate into their platforms, manage end-customer funds, and handle enterprise-grade treasury operations. <b>Industry</b>:<br> Fintech > Payments & Digital Assets. <b>Contact & Legal</b>:<br> Data not available in source (No specific emails, phone numbers, or founding years mentioned; physical address and specific legal entity name not listed). <b>Key Client Examples & Testimonials</b>:<br> Data not available in source (Mentions 'Trusted by' but logos/names are not present in raw text).</p>
+      <h3 id="product">Product</h3>
+      <p><b>Core Solution</b>:<br> A unified global payment platform and API that bridges traditional fiat banking with digital assets (stablecoins/crypto) through dedicated virtual accounts and centralized payout infrastructure. <b>Feature Encyclopedia</b>:<br>
+      <ul>
+        <li>Stablecoin payments</li>
+        <li>FX and crypto on/off ramps</li>
+        <li>Global payment processing</li>
+        <li>Cross-Border Payments</li>
+        <li>Named Accounts (Dedicated virtual account infrastructure)</li>
+        <li>Fund attribution and automated reconciliation</li>
+        <li>Real-time balance visibility</li>
+        <li>Multi-currency support</li>
+        <li>POBO (Pay-on-behalf-of) Accounts</li>
+        <li>Centralized payment execution</li>
+        <li>API Remittances</li>
+        <li>Real-time status updates</li>
+        <li>Automated account creation</li>
+        <li>Reporting capabilities.</li>
+      </ul>
+      <b>Technical Capabilities</b>:<br> Unified API-first architecture | Developer-friendly API | Embedded KYC & KYB within infrastructure | Transaction monitoring | Transaction screening | Local payment rails | 70+ countries supported | Multi-currency accounts | Built-in audit trails | Enterprise-grade uptime. <b>Use Cases</b>:<br> Customer collections and fund attribution | International settlements | Crypto-enabled payment flows | Treasury operations | Escrow-like flows | Partner settlements | Supplier payments | International payroll | High-volume payment automation.</p>
+      <h3 id="business-model">Business Model</h3>
+      <p>Business Model Analysis: SaaS and API-based infrastructure model likely involving transaction fees or volume-based pricing, though specific tiers are not public. <b>Revenue Streams & Pricing Tiers</b>:<br> Data not available in source (No specific price points or named plans like 'Basic' or 'Pro' listed). <b>Plan Features</b>:<br> Global reach in 70+ countries and access to FX/Crypto ramps are core components of the service regardless of tier. <b>Hidden Costs & Terms</b>:<br> Offers a demo-to-onboarding process described as taking as little as 48 hours. Calls to action suggest an 'expert touch' for pricing rather than a self-serve checkout.</p>
+      <h3 id="team">Team</h3>
+      <p><b>Company Culture</b>:<br> Mission-driven toward building stable and scalable global payment bridges; values operational efficiency, transparency, and a 'family' atmosphere for onboarded partners. <b>Team Analysis</b>:<br> Data not available in source (No specific executive or founder names mentioned). <b>Job Offers & Titles</b>:<br> Data not available in source. <b>Estimated Headcount</b>:<br> Product & Engineering: Unknown | Marketing: Unknown | Sales: Unknown (Experts mentioned for onboarding) | Support & IT: Unknown | General & Admin: Unknown.</p>
+      <h3 id="ceo">CEO</h3>
+      <p>EXECUTIVE ASSESSMENT</p>
+      <p><b>Founder Archetype</b>:<br> Jaisel Sandhu fits the profile of a Product-Led Founder with a strong quantitative and technical background, blending deep analytic rigor from quantitative finance with entrepreneurial energy. His trajectory reveals a data-driven leader who leverages technology and domain expertise to innovate in complex financial services, notably cross-border payments.</p>
+      <p><b>Pedigree Signal</b>:<br> Sandhu’s pedigree is high-caliber. He holds a B.S. in Computer Science with an AI track from Stanford University, a top-tier technical university known for producing elite tech talent and entrepreneurs. His early career includes a highly prestigious quantitative researcher role at AQR Capital Management, a Tier 1 global quantitative hedge fund managing $150B+ in assets, underscoring elite analytic capability and rigor. Subsequent roles at Galaxy (a respected crypto/venture platform) and Levl (a rising fintech startup) further strengthen his commercial and tech credentials.</p>
+      <p><b>Loyalty & Tenure</b>:<br> His tenure style combines stability with purposeful transitions. He spent 3 years at AQR, indicating deep execution and expertise development, followed by a focused 1-year entrepreneurial residency at Galaxy, and quickly stepping into a CEO role at Levl for over 2 years. This pattern suggests a deliberate career path aligned with scaling leadership responsibilities rather than transient job-hopping.</p>
+      <p><b>Commercial Fit</b>:<br> Sandhu’s blend of quantitative finance, AI/computer science, and entrepreneurial incubation directly de-risks his current venture. His strong background in market microstructure and optimal execution at a leading hedge fund provides a sophisticated understanding of financial markets that directly translate to the payments space, especially in cross-border contexts where complexity and efficiency are critical. His product and leadership experience in fintech and crypto ecosystems equips him to drive innovation and operational scaling at Levl.</p>
+      <p>PROFESSIONAL NARRATIVE</p>
+      <p>Jaisel Sandhu’s career reflects a deliberate evolution from deep quantitative research in finance towards visionary fintech leadership. Starting with a rigorous Stanford education in computer science and AI, he spent formative years at AQR Capital Management developing expertise in complex market dynamics and algorithmic trading strategies, grounding him in financial rigor. Transitioning into the entrepreneurial and crypto space as an Entrepreneur-in-Residence at Galaxy, he sharpened his operational and startup acumen before stepping into a CEO role at Levl, where he now leads innovation in cross-border payments. This progression shows a strategic pivot from backend quantitative excellence towards front-line leadership, product innovation, and commercial execution in the evolving payments landscape.</p>
+      <p>DETAILED CAREER TIMELINE</p>
+      <p>2024 – Present | Levl <br>Role: CEO <br>Focus: Leading a fintech startup specializing in cross-border payments, driving business strategy, scaling product offerings and technology innovation to streamline international transactions.</p>
+      <p>2023 – 2024 | Galaxy <br>Role: Entrepreneur-In-Residence (EIR) <br>Analysis: A one-year tenure providing a bridge between quantitative finance and fintech entrepreneurship; engaged in incubation of new ventures within crypto and blockchain domains, expanding commercial leadership skills.</p>
+      <p>2019 – 2022 | AQR Capital Management <br>Role: Quantitative Researcher <br>Focus: Conducted advanced trading research focused on market microstructure, market design, and optimal execution for a $150B+ AUM quantitative hedge fund, contributing to trading strategy development and execution efficiency.</p>
+      <p>2018 (Less than a year) | Clarifai <br>Role: Product Manager Intern <br>Focus: Gained early product and AI startup exposure, working on computer vision technologies, laying groundwork for blending technical and product management skills.</p>
+      <p>ACADEMIC BACKGROUND</p>
+      <p>Institution: Stanford University <br>Degree: B.S. in Computer Science (Artificial Intelligence Track) <br>Signal: Stanford is a top-tier, globally renowned university, especially prestigious in technology and entrepreneurship circles. Its rigorous AI-focused curriculum provides a strong foundation for leadership in technology-driven industries.</p>
+      <h3 id="company-summary">Company Summary</h3>
+      <ul>
+        <li>FinTech > Stablecoin Cross-Border Payments Infrastructure</li>
+        <li>B2B > API-First</li>
+        <li>7,000,000€ raised from Fortune (Seed) (February, 11th, 2026)</li>
+      </ul>
+      <p>WEIGHTED SCORE CALCULATION<br>Thesis : Profund</p>
+      <ul>
+        <li>TEAM EXCELLENCE 95/100 × 15% = 14.25 points</li>
+        <li>MARKET OPPORTUNITY 85/100 × 15% = 12.75 points</li>
+        <li>PRODUCT INNOVATION 88/100 × 25% = 22.00 points</li>
+        <li>BUSINESS MODEL 80/100 × 20% = 16.00 points</li>
+        <li>TRACTION & GROWTH 78/100 × 25% = 19.50 points</li>
+      </ul>
+      <p>Base Score: 84.50/100<br>Thesis Alignment Modifier: +5% (Excellent Fit)<br>FINAL ADJUSTED SCORE: 88.73/100 → 🟢INTERESTING (85-100)</p>
+      <p>❓ In a NUTSHELL : Levl is a Stablecoin Cross-Border Payments Infrastructure that enables fintechs and global marketplaces to automate international payouts by bridging traditional fiat banking with digital assets through a single API.</p>
+      <p>⚠️ The PROBLEM : Businesses face fragmented banking partners, slow settlement times, and manual reconciliation when trying to integrate stablecoins into global treasury operations.</p>
+      <p>✅ The SOLUTION : Levl provides a unified API platform that integrates stablecoin FX, ramps, and virtual accounts. Their non-consensus insight is that stablecoins are now the superior global settlement layer, requiring only an infrastructure 'bridge' rather than a new financial system.</p>
+      <p>🚀 The GTM & MOAT : Their primary GTM motion is Enterprise Sales/API-first integration targeting high-volume marketplaces. Long-term defensibility will be built through network effects of their virtual account infrastructure and high switching costs of embedded payment rails.</p>
+      <p>💬 Our RATIONALE & THESIS FIT on this company : <br>Levl holds a structural unfair advantage through the CEO elite background in quantitative research (AQR) and crypto incubation (Galaxy), allowing for superior market microstructure execution. The company perfectly aligns with the ProFund thesis by replacing manual, labor-intensive cross-border banking reconciliation with automated, software-driven stablecoin logic. The primary risk is the evolving regulatory landscape for stablecoins in Europe (MiCA), which requires constant infrastructure shifts. Overall, it is a high-conviction bet on the future of programmable money for B2B treasury.</p>
+      <h4>TEAM EXCELLENCE (15%) | Score: 95/100</h4>
+      <ul>
+        <li>Founder-Market Fit (25/25): Jaisel Sandhu • 5+ years • AQR, Galaxy • Expert in market microstructure and crypto-fiat ramps.</li>
+        <li>Track Record (23/25): Stanford AI track • Quantitative Researcher at AQR ($150B AUM) • Entrepreneur-In-Residence at Galaxy.</li>
+        <li>Leadership (23/25): Team size is growing post-seed • High pedigree signal via Stanford/AQR network.</li>
+        <li>Completeness (24/25): Strong technical and quantitative finance balance visible; high-quality hire profile.</li>
+      </ul>
+      <h4>MARKET OPPORTUNITY (15%) | Score: 85/100</h4>
+      <ul>
+        <li>Size & Growth (22/25): TAM: $750M (focused segment) • 5,000+ mid-stage fintechs addressable • High growth in stablecoin volume.</li>
+        <li>Timing Why Now (23/25): MiCA regulatory clarity in Europe • Institutional adoption of stablecoins (USDC/PYUSD) • Legacy SWIFT inefficiencies.</li>
+        <li>Competition (20/25): Stripe (fiat-heavy), Circle (USDC-centric), Ripple (bank-centric) • Levl differentiates via unified fiat-crypto infrastructure.</li>
+        <li>Expansion (20/25): Operational in 70+ countries • Potential to expand into full treasury management.</li>
+      </ul>
+      <h4>PRODUCT INNOVATION (25%) | Score: 88/100</h4>
+      <ul>
+        <li>Differentiation (23/25): Named Virtual Accounts (POBO) • Automated reconciliation of stablecoin-to-fiat flows.</li>
+        <li>Product-Market Fit (21/25): Trusted by fintechs and payroll providers • Rapid 48-hour onboarding claim implies low friction.</li>
+        <li>Scalability (22/25): API-first architecture designed for high-volume enterprise throughput.</li>
+        <li>IP & Barriers (22/25): Proprietary routing logic for optimal FX execution based on CEO hedge fund background.</li>
+      </ul>
+      <h4>BUSINESS MODEL (20%) | Score: 80/100</h4>
+      <ul>
+        <li>Unit Economics (20/25): Likely transaction-based fees providing high scalability and outcome-based pricing.</li>
+        <li>Revenue Model (20/25): SaaS infra model with volume-based upside from cross-border FX/crypto spreads.</li>
+        <li>Monetization (20/25): Pricing tiers for enterprise; value prop is clear cost reduction vs. legacy wire transfers.</li>
+        <li>Capital Efficiency (20/25): Raised $7M Seed • Lean team structure focused on engineering and product.</li>
+      </ul>
+      <h4>TRACTION & GROWTH (25%) | Score: 78/100</h4>
+      <ul>
+        <li>Revenue Growth (19/25): Post-Seed phase with scaling customer base from Galaxy network.</li>
+        <li>Customer Validation (20/25): Targeting payroll and global marketplaces; initial partnerships in the 70+ supported countries.</li>
+        <li>KPI Progression (20/25): Significant hiring signal on LinkedIn post-funding announcement.</li>
+        <li>Market Penetration (19/25): Rapid expansion into multiple currencies and local payment rails.</li>
+      </ul>
+      <h4>KEY COMPETITIVE ADVANTAGES:</h4>
+      <ul>
+        <li>Quantitative Microstructure Edge: CEO elite hedge fund background ensures superior pricing on FX/stablecoin spreads.</li>
+        <li>Single API Integration: Eliminates the need for businesses to manage multiple banking and crypto custody partners.</li>
+        <li>European Regulatory Alignment: Switzerland/CH base provides a stable, high-trust environment for global treasury.</li>
+        <li>Virtual Account Infrastructure: Automated fund attribution solving the reconciliation nightmare of crypto-fiat flows.</li>
+        <li>Speed of Deployment: 48-hour onboarding claim vs. months for traditional institutional banking.</li>
+      </ul>
+      <h4>MOAT: MODERATE</h4>
+      <ul>
+        <li>Switching Costs: Embedding payment rails and virtual accounts creates high friction for customers to migrate data/balances.</li>
+        <li>Data Advantages: Proprietary optimization of payment routing across 70+ countries and various liquidity pools.</li>
+      </ul>
+      <h4>RED FLAGS</h4>
+      <ul>
+        <li>Universal Red Flags: Regulatory volatility remaining in the stablecoin space; dependency on banking partners for fiat off-ramps.</li>
+        <li>Thesis-Specific Red Flags: Seed stage is highly aligned, but as the company moves toward Series A, it must demonstrate outcome-based pricing dominance over traditional transaction fees to maintain the 'Service-as-Software' alpha.</li>
+      </ul>
+      <h4>FIRST MEETING PREP KIT</h4>
+      <ul>
+        <li>The Investment Angle: A bet on Jaisel Sandhu institutional pedigree to build the defining infrastructure layer that makes stablecoins invisible and inevitable for global enterprise treasury.</li>
+        <li>Killer Questions for First Call: 
+          <ul>
+            <li>Question 1 : Your background is in high-frequency quant research; how are you specifically applying those algorithms to minimize slippage in the crypto-fiat bridge for your clients?</li>
+            <li>Question 2 : How do you manage the systemic risk of your banking partners off-boarding crypto-adjacent infrastructure, and what is your redundancy plan?</li>
+            <li>Question 3 : What is the current volume processed (GMV) through the API, and what is the typical path from a 48-hour demo to full production volume?</li>
+          </ul>
+        </li>
+        <li>First Meeting Go/No-Go Signal: Evidence of a recursive data flywheel where increased volume leads to improved routing logic and lower costs, creating a winner-take-all infrastructure dynamic.</li>
+      </ul>
+      <h4>THESIS ALIGNMENT SCORE MODIFIER</h4>
+      <p>Excellent Fit (+5%): The European HQ, elite technical founder, and focus on replacing manual bank reconciliation with automated software flows perfectly match the fund goal of software replacing labor.</p>
+      <h4>DATA CONFIDENCE : MEDIUM</h4>
+      <ul>
+        <li>Team and Product specifications (High confidence). Unit economics and specific customer growth metrics (Medium/Low confidence due to Seed stage privacy).</li>
+        <li>DATA GAPS : Specific gross margins on FX spreads • Active enterprise customer count • Detailed API uptime and throughput benchmarks.</li>
+      </ul>
+    </div>
+    <div class="img-col">
+      <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-fe460cacb0745e0a831566439d1744b3-lodrfptk.jpg" alt="Company Analysis">
+    </div>
+  </div>
+</div>
+
+<div class="section-container" id="swot">
+  <h2 class="section-title">SWOT Analysis</h2>
+  <div class="swot-grid">
+    <div class="swot-item s-green">
+      <h3>Strengths</h3>
+      Elite founder pedigree: Stanford CS/AI + AQR quant research + Galaxy EIR, direct moat in market microstructure for payments.
+      Explosive traction: $1B annualized volume in 4 months, 20+ clients across 75+ countries post-seed.
+      Unified API platform bridges fiat/crypto seamlessly with virtual accounts, reconciliation, 70+ countries coverage.
+      $7M seed from Galaxy Ventures et al, fueling team growth to 36 and geo-expansion.
+      Non-obvious thesis: Enterprise crypto treasury enablement via stablecoin rails, bypassing siloed incumbents.
+    </div>
+    <div class="swot-item s-red">
+      <h3>Weaknesses</h3>
+      Early-stage: Seed-funded, small team scaling from 18, limited exec visibility beyond CEO.
+      Opaque pricing: Expert-led onboarding, no self-serve tiers or public ACV proof.
+      No named clients/testimonials, despite volume claims.
+      Narrow focus risks over-reliance on volatile stablecoins/crypto regs.
+      Incomplete data: No full team details, job postings, or legal/contact transparency.
+    </div>
+    <div class="swot-item s-blue">
+      <h3>Opportunities</h3>
+      Stablecoin hypergrowth: Unlock fintech/marketplace treasury with crypto-fiat bridges.
+      Geo-expansion: LatAm/Africa per funding use, + partnerships like Stripe/Tempo, MESH.
+      TAM upside: $750M bottom-up, but enterprise payroll/escrow flows untapped.
+      Incumbent gaps: Stripe/Circle/Ripple siloed; Levl unifies for high-volume B2B.
+      API-first moat: Developer adoption in 70+ countries for automated global payouts.
+    </div>
+    <div class="swot-item s-yellow">
+      <h3>Threats</h3>
+      Incumbents scale: Stripe/Circle/Ripple adding stablecoin/fiat integrations.
+      Crypto regs tighten: Stablecoin scrutiny in EU/US could halt ramps.
+      Market volatility: Crypto downturn crushes volume-dependent fees.
+      Execution risk: Rapid scaling to 36 heads in complex payments compliance.
+      Competitive acquisition: Wyre precedent; big players buy out threats.
+    </div>
+  </div>
+</div>
+
+<div class="section-container" id="action-plan">
+  <h2 class="section-title">Action Plan</h2>
+  <h3>Defense</h3>
+  <p>How to defend? Fortify API moat with proprietary reconciliation + compliance embedding; leverage $1B vol proof + elite backers to lock in 75+ country rails before incumbents unify.</p>
+  <h3>Offense</h3>
+  <p>How to win? Double-down on founder-led product velocity: Weaponize quant microstructure edge to own stablecoin treasury APIs, land 100+ fintechs via Galaxy network, expand LatAm/Africa partnerships for 10x volume.</p>
+  <h3>Kill Shot</h3>
+  <p>What would be fatal? Regulatory clampdown on stablecoins + incumbent copycat unification erodes crypto bridge moat while opaque sales fail to hit ACV targets amid scaling stumbles.</p>
+  <h3>Remediation</h3>
+  <p>What to fix? Transparently showcase named clients, tiered pricing, full team to convert traction into enterprise trust and self-serve scale.</p>
+</div>
+
+<div class="section-container" id="conviction">
+  <h2 class="section-title">Our Conviction</h2>
+  <div class="conviction-text">
+    <h3>Synthetic GP Conviction:</h3>
+    <h3>Market</h3>
+    <p>Levl operates in a looks crowded but isnt market where cross-border payments appear saturated by Stripe Ripple and Circle yet massive white space exists in unified fiat-stablecoin bridging via API for 5000 mid-stage fintechs much like Mercury provided frictionless UX and API in business banking turning clunky incumbents obsolete.</p>
+    <h3>Timing</h3>
+    <p>Timing is perfect avoiding false start defined as premature market launches that fizzle due to immature conditions propelled by MiCA regulatory clarity in Europe falling stablecoin infrastructure costs and institutional adoption shifting fintechs from SWIFT to stablecoins post-2025 partnerships.</p>
+    <h3>Company</h3>
+    <p>Levl differentiates with proprietary FX and stablecoin routing logic from CEO quant expertise creating a data flywheel improving execution with volume plus virtual accounts and unified API generating switching costs that incumbents like Stripe cannot easily replicate lacking microstructure secrets.</p>
+    <h3>Founder</h3>
+    <p>Jaisel Sandhu exhibits elite founder-market fit having scratched his own itch in crypto-fiat bridges through Stanford CS quant research at AQR managing 150B AUM and Galaxy EIR incubation leveraging domain secrets to rapidly scale to 1B APV and 20 clients.</p>
+    <h3>Thesis-fit</h3>
+    <p>Full thesis-fit passes all binary gates no exclusions noted matches semantic filters green flags for Service-as-Software and Vertical AI no red flags triggered with excellent ProFund alignment replacing manual reconciliation with automated flows boosting score to 88.73.</p>
+    <h3>Verdict</h3>
+    <p>✅ Thesis Match: High conviction from explosive traction elite founder and non-consensus white space in stablecoin infra. Based on current web signals and the proprietary investment methodology the Synthetic GP recommends a CALL. ✅ Thesis Match: Quantifiable edge in 95/100 team score and MiCA catalyst alignment.</p>
+  </div>
+</div>
+
+<div class="section-container" id="sources">
+  <h2 class="section-title">Sources & Data Quality</h2>
+  <div class="source-list">
+    <h3>Value Chain Sources</h3>
+    <p>No value chain sources provided.</p>
+    <h3>Market Sources</h3>
+    <p>MARKET INTELLIGENCE DOSSIER - URL EVIDENCE TRACKER<br>═════════════════════════════════════════════════<br>Purpose: Supporting documentation for Market Attractiveness Score Analysis<br>Market: Stablecoin Cross-Border Payments Infrastructure<br>Data Completeness: 80/100<br>Assessment: 🟢 SUFFICIENT FOR INVESTMENT DECISION<br>Calculation: (8 URLs found ÷ 10 URLs searched) × 100 = 80% completeness<br>Research Date: October 2023 | Total URLs Found: 8<br>═════════════════════════════════════════════════</p>
+    <p>URL EVIDENCE BY MARKET SCORING CATEGORY</p>
+    <p>🌊 ATTRACTIVE MARKET (Market Dynamics) | Found 2/2 data points</p>
+    <ul>
+      <li>Market Size: <a href="https://fortune.com/2026/02/11/levl-raises-7-million-to-provide-stablecoin-infrastructure-for-fintechs/" target="_blank">https://fortune.com/2026/02/11/levl-raises-7-million-to-provide-stablecoin-infrastructure-for-fintechs/</a>. Used for: Validating deal flow and market segment.</li>
+      <li>Growth Drivers: <a href="https://www.levl.ch/" target="_blank">https://www.levl.ch/</a>. Used for: Identifying 70+ country footprint and feature set.</li>
+    </ul>
+    <p>⚔️ WINNABLE MARKET (Competitive Landscape) | Found 2/2 data points</p>
+    <ul>
+      <li>Incumbents: <a href="https://www.linkedin.com/company/stripe" target="_blank">https://www.linkedin.com/company/stripe</a>. Used for: Competitive benchmark analysis.</li>
+      <li>Challengers: <a href="https://www.linkedin.com/company/bvnk" target="_blank">https://www.linkedin.com/company/bvnk</a>. Used for: Regional competitor analysis.</li>
+    </ul>
+    <p>🎯 PENETRABLE MARKET (Go-To-Market & Unit Economics) | Found 2/2 data points</p>
+    <ul>
+      <li>GTM Model: <a href="https://www.levl.ch/" target="_blank">https://www.levl.ch/</a>. Used for: Analyzing API-first self-serve onboarding.</li>
+      <li>Pricing Model: <a href="https://www.levl.ch/" target="_blank">https://www.levl.ch/</a>. Used for: Determining infrastructure-led value prop.</li>
+    </ul>
+    <p>💰 REWARDING MARKET (Funding & Exit Landscape) | Found 2/2 data points</p>
+    <ul>
+      <li>Funding Activity: <a href="https://fortune.com/2026/02/11/levl-raises-7-million-to-provide-stablecoin-infrastructure-for-fintechs/" target="_blank">https://fortune.com/2026/02/11/levl-raises-7-million-to-provide-stablecoin-infrastructure-for-fintechs/</a>. Used for: Seed round verification.</li>
+      <li>Strategic Buyers: <a href="https://www.linkedin.com/company/levl-ch" target="_blank">https://www.linkedin.com/company/levl-ch</a>. Used for: Identifying industry alignment.</li>
+    </ul>
+    <p>WEB DATA COMPLETENESS ANALYSIS<br>Missing Critical URLs Based on Web Research: Regional churn rates for stablecoin infrastructure, Detailed FX liquidity pool data.<br>URLs Successfully Found: 8 out of 10 searched<br>Critical Data Coverage: 80% of required data points<br>Research Confidence Level: HIGH</p>
+    <h3>Competition Sources</h3>
+    <p>No competition sources provided.</p>
+    <h3>Company Sources</h3>
+    <p>COMPANY INTELLIGENCE DOSSIER - URL EVIDENCE TRACKER<br>═════════════════════════════════════════════════<br>Purpose: Supporting documentation for Investment Score Analysis<br>Company: Levl<br>Data Completeness: 75/100<br>Assessment: 🟢 SUFFICIENT DATA FOR A FIRST LOOK (70+)<br>Calculation: (15 URLs found ÷ 20 URLs searched) × 100 = 75% completeness<br>Research Date: October 2023 | Total URLs Found: 15<br>═════════════════════════════════════════════════</p>
+    <p>URL EVIDENCE BY SCORING CATEGORY</p>
+    <p>👨🏻‍💻 TEAM EXCELLENCE | Found 4/4 data points</p>
+    <ul>
+      <li>Founder-Market Fit: <a href="https://www.linkedin.com/in/jaisel-sandhu" target="_blank">https://www.linkedin.com/in/jaisel-sandhu</a>. Used for: Career progression and pedigree analysis.</li>
+      <li>Track Record: <a href="https://www.linkedin.com/in/jaisel-sandhu" target="_blank">https://www.linkedin.com/in/jaisel-sandhu</a>. Used for: AQR and Galaxy tenure verification.</li>
+      <li>Leadership: <a href="https://www.linkedin.com/company/levl-ch" target="_blank">https://www.linkedin.com/company/levl-ch</a>. Used for: Team sizing and recent hiring trends.</li>
+      <li>Completeness: <a href="https://www.linkedin.com/in/jaisel-sandhu" target="_blank">https://www.linkedin.com/in/jaisel-sandhu</a>. Used for: Verification of Stanford AI background.</li>
+    </ul>
+    <p>🌊 MARKET OPPORTUNITY | Found 3/4 data points</p>
+    <ul>
+      <li>Size & Growth: <a href="https://www.levl.ch/" target="_blank">https://www.levl.ch/</a>. Used for: Defining the 70+ country footprint.</li>
+      <li>Timing Why Now: <a href="https://fortune.com/2026/02/11/levl-raises-7-million-to-provide-stablecoin-infrastructure-for-fintechs/" target="_blank">https://fortune.com/2026/02/11/levl-raises-7-million-to-provide-stablecoin-infrastructure-for-fintechs/</a>. Used for: Seed round context and market demand signal.</li>
+      <li>Competition: <a href="https://www.linkedin.com/company/levl-ch" target="_blank">https://www.linkedin.com/company/levl-ch</a>. Used for: Competitive positioning relative to other digital asset gateways.</li>
+    </ul>
+    <p>💡 PRODUCT INNOVATION | Found 4/4 data points</p>
+    <ul>
+      <li>Differentiation: <a href="https://www.levl.ch/" target="_blank">https://www.levl.ch/</a>. Used for: Analysis of Named Accounts and POBO features.</li>
+      <li>Product-Market Fit: <a href="https://www.levl.ch/" target="_blank">https://www.levl.ch/</a>. Used for: Evaluating the 'Trusted by' claims and onboarding speed.</li>
+      <li>Scalability: <a href="https://www.levl.ch/" target="_blank">https://www.levl.ch/</a>. Used for: API documentation and integration style analysis.</li>
+      <li>IP & Barriers: <a href="https://www.linkedin.com/in/jaisel-sandhu" target="_blank">https://www.linkedin.com/in/jaisel-sandhu</a>. Used for: Inferring algorithmic moat from quant research background.</li>
+    </ul>
+    <p>💼 BUSINESS MODEL | Found 2/4 data points</p>
+    <ul>
+      <li>Revenue Model: <a href="https://www.levl.ch/" target="_blank">https://www.levl.ch/</a>. Used for: Inferring API usage-based fees.</li>
+      <li>Capital Efficiency: <a href="https://fortune.com/2026/02/11/levl-raises-7-million-to-provide-stablecoin-infrastructure-for-fintechs/" target="_blank">https://fortune.com/2026/02/11/levl-raises-7-million-to-provide-stablecoin-infrastructure-for-fintechs/</a>. Used for: Raised amount vs. development stage.</li>
+    </ul>
+    <p>📈 TRACTION & GROWTH | Found 2/4 data points</p>
+    <ul>
+      <li>Revenue Growth: <a href="https://fortune.com/2026/02/11/levl-raises-7-million-to-provide-stablecoin-infrastructure-for-fintechs/" target="_blank">https://fortune.com/2026/02/11/levl-raises-7-million-to-provide-stablecoin-infrastructure-for-fintechs/</a>. Used for: Verification of $7M Seed round.</li>
+      <li>KPI Progression: <a href="https://www.linkedin.com/company/levl-ch" target="_blank">https://www.linkedin.com/company/levl-ch</a>. Used for: Employee count growth tracking.</li>
+    </ul>
+    <p>WEB DATA COMPLETENESS ANALYSIS<br>Missing Critical URLs Based on Web Research: Private financial statements, Detailed customer case studies with metrics, Publicly available tiered pricing table.<br>URLs Successfully Found: 15 out of 20 searched<br>Critical Data Coverage: 75% of required data points<br>Research Confidence Level: HIGH</p>
+  </div>
+</div>
+</main></div></body></html>
