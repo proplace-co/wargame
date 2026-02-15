@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pepeto Interactive Memo</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+:root { --bg-app: #f8fafc; --text-main: #1e293b; --yellow-menu: #FEF9C3; --green-menu: #DCFCE7; --grey-menu: #F1F5F9; }
+/* GLOBAL RESET FOR BOX SIZING (CRITICAL) */
+* { box-sizing: border-box; }
+
+/* STICKY FIX: No overflow on body/html */
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-app); color: var(--text-main); margin: 0; display: flex; }
+html { scroll-behavior: smooth; }
+a { color: #2563eb; text-decoration: none; cursor: pointer; word-break: break-all; }
+a:hover { text-decoration: underline; }
+/* MOBILE FIX: Word Break Global */
+p, li, a, span, div { overflow-wrap: break-word; word-break: break-word; }
+p, li { line-height: 1.6; margin-bottom: 10px; }
+strong, b { font-weight: 700; color: #0f172a; }
+h3 { scroll-margin-top: 20px; font-size: 1.4em; color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px; }
+
+/* LAYOUT */
+/* STICKY FIX: Overflow visible on wrapper */
+.main-wrapper { display: flex; width: 100%; max-width: 100vw; align-items: flex-start; overflow: visible !important; }
+/* STICKY FIX: Sidebar positioning */
+.sidebar { width: 300px; height: 100vh; position: sticky; top: 0; overflow-y: auto; border-right: 1px solid #e2e8f0; background: #fff; padding: 25px 0; flex-shrink: 0; z-index: 1000; align-self: flex-start; }
+.content-area { flex: 1; padding: 20px 40px; width: 100%; min-width: 0; max-width: 1600px; margin: 0 auto; }
+/* STICKY FIX: Overflow visible on container */
+.section-container { background: #fff; padding: 30px; margin-bottom: 30px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; scroll-margin-top: 20px; overflow: visible; }
+.section-title { font-size: 1.8em; font-weight: 700; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 25px; }
+
+/* SPLIT & STICKY */
+.split-container { display: flex; gap: 40px; align-items: flex-start; margin-bottom: 40px; position: relative; }
+.text-col { flex: 1; font-size: 1.05em; line-height: 1.7; color: #334155; min-width: 0; word-wrap: break-word; overflow-wrap: anywhere; }
+/* STICKY FIX & SCROLLBAR KILLER */
+.img-col { flex: 1; position: sticky; top: 20px; align-self: flex-start; height: fit-content; min-width: 0; max-height: calc(100vh - 40px); overflow: hidden; /* Key to kill scrollbar */ }
+.sticky-img { width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; display: block; object-fit: contain; }
+
+/* SIDEBAR ITEMS */
+.meta-block { padding: 0 25px 25px; border-bottom: 1px solid #e2e8f0; margin-bottom: 15px; }
+.sb-top-data { padding: 0 25px 10px; display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 5px; }
+.sb-tag { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.85em; color: #475569; }
+
+/* SCORE COLORS - DYNAMIC */
+.sb-score { color: white !important; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.85em; }
+.score-green { background: #16a34a !important; }
+.score-yellow { background: #ca8a04 !important; }
+.score-orange { background: #ea580c !important; }
+.score-blue { background: #2563eb !important; }
+.score-red { background: #dc2626 !important; }
+
+/* CONTACT ROW FIX: ALIGNMENT */
+.contact-row { display: flex; flex-direction: column; gap: 5px; font-size: 0.9em; margin-top: 10px; padding-left: 25px; padding-right: 25px; }
+.nav-item { display: block; padding: 8px 25px; color: #475569; font-weight: 600; font-size: 0.9em; border-left: 4px solid transparent; margin-bottom: 2px; }
+.nav-item:hover { background: rgba(0,0,0,0.05); color: #0f172a; border-left-color: #94a3b8; }
+.bg-yellow { background: var(--yellow-menu); } .bg-green { background: var(--green-menu); } .bg-grey { background: var(--grey-menu); }
+
+/* CTA BUTTONS */
+.cta-text-small { display: block; margin: 10px 25px 2px; font-size: 0.8em; color: #64748b; font-weight: 600; }
+.cta-btn { display: block; margin: 5px 25px 10px; padding: 12px; background: #1e293b; color: #fff; text-align: center; border-radius: 6px; font-weight: 700; font-size: 0.9em; cursor: pointer; }
+.cta-btn-secondary { background: #e2e8f0; color: #1e293b; border: 1px solid #cbd5e1; }
+.cta-btn-secondary:hover { background: #cbd5e1; }
+.promo-text { display: block; margin: 0 25px 20px; font-size: 0.8em; color: #64748b; text-align: center; font-style: italic; word-wrap: break-word; }
+
+/* BATTLEFIELD LEGEND & CARDS */
+.battlefield-legend { margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 6px; font-size: 0.9em; }
+.legend-row { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; margin-bottom: 5px; }
+.legend-item { display: inline-block; }
+.posture-legend { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; line-height: 1.2; margin-right: 10px; }
+
+.battlefield-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 15px; width: 100%; margin-bottom: 40px; }
+.battlefield-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.stage-header { font-size: 0.85em; font-weight: 700; text-transform: uppercase; color: #64748b; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; min-height: 40px; }
+
+/* ACTOR CARDS - UPDATED BORDER COLORS & QUADRANTS */
+.actor-card { background: #fff; border: 1px solid #cbd5e0; border-radius: 6px; overflow: hidden; font-size: 0.9em; border-left-width: 4px; margin-bottom: 8px; transition: all 0.2s; }
+.border-established-leader { border-left-color: #2563eb !important; } /* Blue */
+.border-emerging-innovator { border-left-color: #16a34a !important; } /* Green */
+.border-mature-commoditized { border-left-color: #ca8a04 !important; } /* Yellow */
+.border-early-undifferentiated { border-left-color: #64748b !important; } /* Grey */
+
+.actor-card summary { padding: 10px; cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; align-items: center; background: #fff; }
+.actor-card summary::after { content: "+"; font-size: 1.2em; color: #94a3b8; }
+.actor-card[open] summary::after { content: "−"; color: #1e293b; }
+.actor-summary-content { display: flex; flex-direction: column; gap: 2px; width: 90%; }
+.actor-name { font-weight: 800; color: #1e293b; font-size: 1em; }
+.actor-meta { font-size: 0.8em; color: #64748b; display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.label-tier { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; white-space: nowrap; }
+
+.actor-body { padding: 12px; border-top: 1px solid #f1f5f9; background: #fafafa; overflow-wrap: break-word; }
+
+/* ACTOR GRID INFO (2 COLUMNS) */
+.actor-grid-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; font-size: 0.85em; }
+.actor-grid-info div { display: flex; flex-direction: column; }
+.actor-grid-info strong { font-size: 0.9em; color: #64748b; margin-bottom: 2px; }
+.score-highlight { font-weight: 700; color: #1e293b; font-size: 1.1em; }
+
+/* COMPETITION */
+.competitor-block { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0; }
+.competitor-block strong { color: #1e293b; font-size: 1.05em; }
+
+/* SWOT 2x2 GRID BEAUTIFUL DESIGN */
+.swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.swot-item { padding: 20px; border-radius: 8px; border: 1px solid transparent; box-shadow: 0 2px 5px rgba(0,0,0,0.03); }
+.swot-item h3 { border-bottom: none; margin-bottom: 10px; margin-top: 0; color: #0f172a; font-size: 1.3em; }
+.swot-item ul { padding-left: 20px; margin: 0; }
+.swot-item li { margin-bottom: 5px; font-size: 0.95em; color: #334155; }
+/* SWOT COLORS */
+.s-green { background-color: #f0fdf4; border-color: #bbf7d0; } /* Strengths */
+.s-red { background-color: #fef2f2; border-color: #fecaca; } /* Weaknesses - Red Light */
+.s-blue { background-color: #eff6ff; border-color: #bfdbfe; } /* Opportunities */
+.s-yellow { background-color: #fefce8; border-color: #fef08a; } /* Threats */
+
+/* FOOTER */
+.source-list { font-size: 0.9em; color: #64748b; }
+.final-footer { margin-top: 60px; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 0.85em; }
+
+/* MOBILE */
+@media (max-width: 1000px) {
+    body { flex-direction: column; overflow-x: hidden; }
+    .main-wrapper { flex-direction: column; max-width: 100vw; }
+    .sidebar { width: 100%; height: auto; position: relative; border-right: none; border-bottom: 1px solid #e2e8f0; }
+    .content-area { padding: 15px; width: 100%; box-sizing: border-box; }
+    .battlefield-grid { display: flex !important; flex-direction: column !important; width: 100%; gap: 20px; }
+    .split-container { flex-direction: column; }
+    .img-col { position: static; width: 100%; margin-top: 20px; max-height: none; }
+    .actor-card { width: 100% !important; }
+    .swot-grid { grid-template-columns: 1fr; }
+}
+    </style>
+</head>
+<body>
+    <div class="main-wrapper">
+        <aside class="sidebar">
+            <div class="sb-top-data">
+                <span class="sb-score score-red">0</span>
+                <span class="sb-tag">Undisclosed</span>
+                <span class="sb-tag">Pre-Seed/Seed</span>
+                <span class="sb-tag">B2B2C</span>
+            </div>
+            <div class="meta-block">
+                <h3>Pepeto</h3>
+                <i>The Multi-Memecoin Exchange and token ecosystem designed to bring technology, optimization, and real-world value to the memecoin market.</i>
+                <p>DeFi (Decentralized Finance)</p>
+            </div>
+            <div class="contact-row">
+                <div><i class="fas fa-user"></i> <b>Gurhan Kiziloz</b></div>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#market-summary" class="nav-item bg-yellow" style="margin-top: 25px;">Market Summary</a>
+                <a href="#competition" class="nav-item bg-yellow">Competition</a>
+                <a href="#value-proposition" class="nav-item bg-green">Value Proposition</a>
+                <a href="#product" class="nav-item bg-green">Product</a>
+                <a href="#business-model" class="nav-item bg-green">Business Model</a>
+                <a href="#team" class="nav-item bg-green">Team</a>
+                <a href="#ceo" class="nav-item bg-green">CEO</a>
+                <a href="#company-summary" class="nav-item bg-green">Company Summary</a>
+                <a href="#swot" class="nav-item bg-green">SWOT Analysis</a>
+                <a href="#action-plan" class="nav-item bg-green">Action Plan</a>
+                <a href="#conviction" class="nav-item bg-grey">Conviction</a>
+                <a href="#sources" class="nav-item bg-grey">Sources</a>
+            </nav>
+            <span class="cta-text-small">Want to learn more on Pepeto?</span>
+            <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Pepeto&website=https://pepeto.io&product_url=https://pepeto.io&team_url=unavailable&pricing_url=unavailable&linkedin=&first_name=Gurhan&last_name=Kiziloz&memo=quick" target="_blank" class="cta-btn cta-btn-secondary">Generate a quick memo</a>
+            <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Pepeto&website=https://pepeto.io&product_url=https://pepeto.io&team_url=unavailable&pricing_url=unavailable&linkedin=&first_name=Gurhan&last_name=Kiziloz&memo=detailed" target="_blank" class="cta-btn cta-btn-secondary">Generate a detailed memo</a>
+            <span class="cta-text-small">Interested in Pepeto?</span>
+            <a href="https://forms.proplace.co/meet" target="_blank" class="cta-btn">Schedule a strategy call</a>
+            <span class="cta-text-small">Want to follow our deal flow?</span>
+            <a href="https://77f02b89.sibforms.com/serve/MUIFAMr0ADjDfIUWLc56STos70j4OXPiOTJqugyAa45YfGyt9zW6Tokz3iXWLNiTAw6oxjbrMnjs424k46IvwOQlWjaMIsbgexAk95FvzqzgLa56TkHas6WASK4VKs684XcZhacqMYTYQGuIfzJmBmCkmHwhNeB0yHifnrxC1PUhNMS1ZbiW1xF18IZy7tJP9BIWjDcM5VoH6VEVCw==" target="_blank" class="cta-btn">Request access to deal flow</a>
+        </aside>
+        <main class="content-area">
+            <div class="header-tags">
+                <span class="sb-score score-red">0</span>
+                <span class="sb-tag">Undisclosed</span>
+                <span class="sb-tag">Pre-Seed/Seed</span>
+                <span class="sb-tag">B2B2C</span>
+            </div>
+            <h1>Pepeto Interactive Memo</h1>
+            <h2>Decentralized Finance (DeFi) > Memecoin DeFi Exchange Platform</h2>
+            <p class="ipp-text">Zero-fee decentralized exchange and cross-chain bridging for memecoins targeting speculative crypto investors and indie token developers on ETH, BNB, and USDT networks.</p>
+
+<div class="section-container" id="market-summary">
+    <h2 class="section-title">Market Summary</h2>
+    <div class="split-container">
+        <div class="text-col">
+            <p>MARKET OPPORTUNITY SCORE<br>DeFi (Decentralized Finance) > Memecoin DeFi Exchange Platform<br>B2B2C > Tokenization/Blockchain</p>
+            <p>═════════════════════════════════════════════════</p>
+            <p>IS IT AN ATTRACTIVE MARKET ? (Dynamics): 50/100 × 25% = 12.5 points<br>IS IT A WINNABLE MARKET ? (Competition): 30/100 × 25% = 7.5 points<br>IS IT A PENETRABLE MARKET ? (GTM): 60/100 × 25% = 15.0 points<br>IS IT A REWARDING MARKET ? (Exits): 40/100 × 25% = 10.0 points</p>
+            <p>─────────────────────────────────────────────────<br>TOTAL MARKET ATTRACTIVITY SCORE: 45/100</p>
+            <p>═════════════════════════════════════════════════</p>
+            <h4>❓ Market DEFINITION</h4>
+            <p>Zero-fee decentralized exchange and cross-chain bridging for memecoins targeting speculative crypto investors and indie token developers on ETH, BNB, and USDT networks. ➜ This market encompasses the niche sub-segment of DeFi focused on high-velocity, speculative community assets, acting as a gateway between retail liquidity and early-stage token launches.</p>
+            <h4>💬 Our Market THESIS</h4>
+            <p>MARKET DISRUPTION: The emergence of extreme retail speculation has created a new attack vector against Uniswap, whose reliance on high gas fees and lack of curator assets makes them incapable of addressing the retail need for safe memecoin onboarding. This opens a path for a startup to capture a significant share of the $150M Memecoin Infra market with a targeted zero-fee community model.</p>
+            <h4>🧠 Our CONVICTION & WAGER on this Market:</h4>
+            <p>🟠 LOW: Our conviction is low. This is a structurally poor market due to a fatal flaw: the absence of sustainable moats and a fragmented value chain with no clear profit pool beyond token inflation. Even a world-class team would be crushed by the boom-bust cycles and regulatory scrutiny of this space. The physics are simply against building a generational company.</p>
+            <p>═════════════════════════════════════════════════</p>
+            <h4>🌊 ATTRACTIVE MARKET (Market Dynamics) | Score: 50/100</h4>
+            <ul>
+                <li>Market Size (10/25): TAM: $0.15B (localized infra) • SAM: $50M • SOM: $10M • CAGR: 12% (Highly volatile)</li>
+                <li>Growth Drivers: Retail crypto adoption • Memecoin culture proliferation • Cross-chain interoperability needs.</li>
+                <li>Timing Why Now: 2024 crypto bull-cycle expectations • Shift from CEX to DEX for high-risk assets.</li>
+                <li>Market Risks: Regulatory clampdowns on 'memecoins' • Liquidity fragmentation • Extreme volatility.</li>
+            </ul>
+            <h4>⚔️ WINNABLE MARKET (Competitive Landscape) | Score: 30/100</h4>
+            <ul>
+                <li>Incumbents: Uniswap ($10B+ volume, Strength: Massive Liquidity) • PancakeSwap (BNB leader).</li>
+                <li>Challengers: Pump.fun ($50M+ raised/valuation, Focus: Solana Memes).</li>
+                <li>White Space: 'Safe' memecoin trading • Verified listings for retail to avoid scams.</li>
+                <li>Defensibility: Primary moat: Brand/Community • Switching costs are non-existent in memecoins.</li>
+            </ul>
+            <h4>🎯 PENETRABLE MARKET (Go-to-Market & Unit Economics) | Score: 60/100</h4>
+            <ul>
+                <li>GTM Model: Viral PLG via social media influencers • Zero-listing fee for project developers.</li>
+                <li>Pricing Model: Transaction-free listing / Internal token utility • Primary metric: Token Volume.</li>
+                <li>Unit Economics: LTV/CAC: Unclear • Payback: Dependent on token launch velocity.</li>
+                <li>Scalability: High (Pure software/Blockchain) • Multi-chain expansion is the primary lever.</li>
+            </ul>
+            <h4>💰 REWARDING MARKET (Funding & Exit) | Score: 40/100</h4>
+            <ul>
+                <li>Funding Activity: $2B+ invested in DeFi (2023) • Volatile institutional participation in meme-related infra.</li>
+                <li>Exit Multiples: M&A: 5-10x revenue for liquidity hubs • Strategic Buyers: Large CEXs (Binance/OKX) looking for retail on-ramps.</li>
+            </ul>
+            <p>─────────────────────────────────────────────────<br>🌐 DATA CONFIDENCE: Medium on Market Size. Low on Unit Economics. 5 total URLs sourced.</p>
+
+        </div>
+        <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-18efbbd27d9fad10712a39a149bd9f82-xervyj2o.jpg">
+        </div>
+    </div>
+</div>
+<div class="section-container" id="competition">
+    <h2 class="section-title">Competitive Landscape</h2>
+    <div class="text-full-width">
+        <h3>Company List</h3>
+        <b>Uniswap</b> <br>
+        General DEX with memecoin support but high gas fees and no specialized scam rejection;<br>
+<br>
+        📊 <b>STRATEGIC PROFILE:</b><br>
+        - Quadrant: Undisclosed<br>
+        - Total Score: 0/10 • Maturity: 0 | Differentiation: 0<br>
+<br>
+        💰 <b>TRACTION & BACKING:</b><br>
+<br>
+        🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+<br>
+        🧱 <b>MOAT / POSITIONING:</b><br>
+        Undisclosed<br>
+<br>
+        <small>🌐 Source: Undisclosed (Undisclosed)</small>
+        <br>
+        --------------------------------------------------
+        <br>
+        <b>PancakeSwap</b> <br>
+        BNB-focused DEX enabling memecoin trading with cross-chain limits;<br>
+<br>
+        📊 <b>STRATEGIC PROFILE:</b><br>
+        - Quadrant: Undisclosed<br>
+        - Total Score: 0/10 • Maturity: 0 | Differentiation: 0<br>
+<br>
+        💰 <b>TRACTION & BACKING:</b><br>
+<br>
+        🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+<br>
+        🧱 <b>MOAT / POSITIONING:</b><br>
+        Undisclosed<br>
+<br>
+        <small>🌐 Source: Undisclosed (Undisclosed)</small>
+        <br>
+        --------------------------------------------------
+        <br>
+        <b>Pump.fun</b> <br>
+        Solana-based memecoin launcher with presale focus but lacks multi-chain bridging;<br>
+<br>
+        📊 <b>STRATEGIC PROFILE:</b><br>
+        - Quadrant: Undisclosed<br>
+        - Total Score: 0/10 • Maturity: 0 | Differentiation: 0<br>
+<br>
+        💰 <b>TRACTION & BACKING:</b><br>
+<br>
+        🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+<br>
+        🧱 <b>MOAT / POSITIONING:</b><br>
+        Undisclosed<br>
+<br>
+        <small>🌐 Source: Undisclosed (Undisclosed)</small>
+        <br>
+        --------------------------------------------------
+        <br>
+        <b>Raydium</b> <br>
+        AMM DEX on Solana emphasizing liquidity but not zero-fee listings for projects.<br>
+<br>
+        📊 <b>STRATEGIC PROFILE:</b><br>
+        - Quadrant: Undisclosed<br>
+        - Total Score: 0/10 • Maturity: 0 | Differentiation: 0<br>
+<br>
+        💰 <b>TRACTION & BACKING:</b><br>
+<br>
+        🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+<br>
+        🧱 <b>MOAT / POSITIONING:</b><br>
+        Undisclosed<br>
+<br>
+        <small>🌐 Source: Undisclosed (Undisclosed)</small>
+        <br>
+        --------------------------------------------------
+        <br>
+    </div>
+</div>
+
+
+<div class="section-container" id="company">
+    <h2 class="section-title">Company Deep Dive</h2>
+    <div class="split-container">
+        <div class="text-col">
+            <h3 id="value-proposition">Value Proposition</h3>
+            <b>Value Proposition:</b> PEPETO is a multi-memecoin exchange and token ecosystem designed to bring technology, optimization, and real-world value to the memecoin market, acting as a unified platform where all memecoins can thrive through a specialized exchange and cross-chain bridge. <br><b>Ideal Customer Profile (ICP):</b> Cryptocurrency investors, memecoin enthusiasts, high-risk traders looking for early-stage presales, and token owners/developers seeking exchange listings for their projects. <br><b>B2B or B2C:</b> Both. B2C for individual investors buying tokens and staking; B2B for token owners applying for project listings on the Pepeto Exchange. <br><b>Industry:</b> Crypto & Blockchain > Decentralized Finance (DeFi) > Memecoin Exchange. <br><b>Contact & Legal:</b> Legal Entity: Not explicitly named beyond Pepeto. Founding Year: 2024/2025 (implied by Roadmap). No email or phone numbers provided; communication is directed to 'Pepeto's social' channels and a Google Form for listings. <br><b>Key Client Examples & Testimonials:</b> No specific client names or testimonials; the site mentions 'Featured In' and 'Media' sections as placeholders for future or existing coverage.
+            <h3 id="product">Product</h3>
+            <b>Core Solution:</b> The $PEPETO token and ecosystem, featuring a specialized multi-memecoin exchange, a cross-chain bridge, and a staking platform. <br><b>Feature Encyclopedia:</b>
+            <ul>
+                <li>$PEPETO Token</li>
+                <li>Multi-Memecoin Exchange</li>
+                <li>Cross-Chain Bridge</li>
+                <li>Staking Platform</li>
+                <li>Smart Contract Audit</li>
+                <li>Fully Transparent Code</li>
+                <li>Zero Listing Fees for Tokens</li>
+                <li>Scam-Token Rejection</li>
+                <li>Liquidity Management</li>
+                <li>Early Investor Reward Model</li>
+            </ul>
+            <b>Technical Capabilities:</b> Lock and Mint Bridge Mechanism | Smart Contract Security Audit | Metamask & Best Wallet Integration | Multi-Chain Support (ETH, USDT, BNB) | Card Payment Integration | Cross-Chain Asset Portability | Scalable Exchange Architecture. <br><b>Use Cases:</b> Bridging assets across different blockchain networks | Staking tokens for passive rewards | Trading memecoins on a dedicated platform | Launching/Listing verified memecoin projects without fees.
+            <h3 id="business-model">Business Model</h3>
+            <b>Business Model Analysis:</b> Token-based economy with a Presale/SaaS model. Revenue is generated through token sales, while the exchange offers a 'Zero Fee' model for token listings to boost liquidity. <br><b>Revenue Streams & Pricing Tiers:</b> $PEPETO Token Presale (Price points not explicitly listed in text, requires wallet connection) | Staking Rewards (Variable based on participation) | Zero Fees for listing qualified tokens. <br><b>Plan Features:</b> Presale Access: 30% of total supply | Staking Pool: 30% of total supply | Token Owner Listing: Includes security verification and cross-chain bridge integration at no cost. <br><b>Hidden Costs & Terms:</b> Scam-prone tokens are rejected regardless of application; exchange/ecosystem release is contingent on the end of the presale ('Day of Judgment'); MetaMask or Best Wallet required for interaction.
+            <h3 id="team">Team</h3>
+            <b>Company Culture:</b> Centered around the 'God of Frogs' mythology, emphasizing wisdom, unity, and anti-corruption (integrity in listings). The culture is community-driven, focused on 'harnessing community strength' and continuous growth. <br><b>Team Analysis:</b> No individual names or C-level executives are listed; the team is represented by the persona 'Pepeto' (The God of Frogs). <br><b>Job Offers & Titles:</b> No specific job offers listed; mentions are made to 'marketing partners' and 'influencers'. <br><b>Estimated Headcount:</b> Unknown. Product & Engineering: Unknown | Marketing: Unknown | Sales: Unknown | Support & IT: Unknown | General & Admin: Unknown.
+            <h3 id="ceo">CEO</h3>
+            <h3 id="company-summary">Company Summary</h3>
+            <ul>
+                <li>DeFi (Decentralized Finance) > Memecoin DeFi Exchange Platform</li>
+                <li>B2B2C > Tokenization/Blockchain</li>
+            </ul>
+            <p>WEIGHTED SCORE CALCULATION<br>Thesis : Profund</p>
+            <p>═════════════════════════════════════════════════ </p>
+            <ul>
+                <li>TEAM EXCELLENCE 5/100 × 15% = 0.75 points</li>
+                <li>MARKET OPPORTUNITY 45/100 × 15% = 6.75 points</li>
+                <li>PRODUCT INNOVATION 20/100 × 25% = 5.0 points</li>
+                <li>BUSINESS MODEL 15/100 × 20% = 3.0 points</li>
+                <li>TRACTION & GROWTH 10/100 × 25% = 2.5 points</li>
+            </ul>
+            <p>─────────────────────────────────────────────────<br>Base Score:                         18.0/100<br>Thesis Alignment Modifier:          -10% (Non-European/No AI/Anonymity)<br>─────────────────────────────────────────────────<br>FINAL ADJUSTED SCORE:               0/100 → 🔴 POOR (<60)</p>
+            <p>═════════════════════════════════════════════════ </p>
+            <p>❓ In a NUTSHELL : Pepeto is a Memecoin DeFi Exchange Platform that enables speculative crypto investors to trade memecoins across chains safely by offering a zero-fee exchange and scam-token filtering.</p>
+            <p>⚠️ The PROBLEM : Memecoin trading is fragmented across blockchains, plagued by high listing fees, and dominated by 'rug pulls' and scam tokens that drain liquidity from retail investors.</p>
+            <p>✅ The SOLUTION  : The company platform solves this by providing a unified cross-chain bridge and a specialized exchange that claims to reject scam-prone tokens. Their non-consensus insight is that memecoins are a permanent asset class requiring an optimized 'safe-haven' infrastructure rather than generic DEX treatment.</p>
+            <p>🚀 The GTM & MOAT : Their primary GTM motion is community-driven presales and viral marketing targeting 'degens'. Long-term defensibility will be built through network effects as a liquidity hub for verified meme projects.</p>
+            <p>💬 Our RATIONALE & THESIS FIT on this company : <br>FATAL GATE HIT: This deal fails on multiple binary exclusions. Firstly, the lack of verifiable European HQ or founders violates the geographic inclusion mandate. Secondly, the mission to Replace Labor with AI is entirely absent; this is a speculative crypto utility, not a Service-as-Software AI play. Finally, the opacity of the 'Pepeto' persona creates a massive governance risk that falls outside the professional standards of this fund.</p>
+            <p>═════════════════════════════════════════════════</p>
+            <h4>TEAM EXCELLENCE (15%) | Score: 5/100</h4>
+            <ul>
+                <li>Founder-Market Fit (5/25): Anonymous Persona • Unknown Years in industry • Unknown Previous companies • Background cited as 'God of Frogs' mythology offers zero professional validation.</li>
+                <li>Track Record (5/25): No verifiable exits; Gurhan Kiziloz mentioned in news but without verified LinkedIn or professional history.</li>
+                <li>Leadership (5/25): Team size: Unknown • No key hires visible • No professional advisory board.</li>
+                <li>Completeness (5/25): No C-suite visible • Heavy marketing/persona focus, zero visible engineering leadership.</li>
+            </ul>
+            <h4>MARKET OPPORTUNITY (15%) | Score: 45/100</h4>
+            <ul>
+                <li>Size & Growth (15/25): TAM: $150M (Estimated for niche segment) • Volatile growth • High-risk appetite segment.</li>
+                <li>Timing Why Now (15/25): Post-ETF crypto interest • High memecoin cycle maturity • Retail search for higher yields.</li>
+                <li>Competition (10/25): Uniswap, PancakeSwap • Heavy incumbents with massive liquidity • Differentiation on 'scam rejection' is unproven.</li>
+                <li>Expansion (5/25): International but opaque • No clear product roadmap beyond basic exchange functions.</li>
+            </ul>
+            <h4>PRODUCT INNOVATION (25%) | Score: 20/100</h4>
+            <ul>
+                <li>Differentiation (10/25): Cross-chain bridge and scam rejection claims; however, both are commoditized tech in DeFi.</li>
+                <li>Product-Market Fit (5/25): No external reviews; platform launch dependent on future presale completion.</li>
+                <li>Scalability (5/25): Standard ERC-20/BEP-20 architecture • No unique multi-tenant moats.</li>
+                <li>IP & Barriers (0/25): No patents • Code transparency claimed but no unique proprietary advantage.</li>
+            </ul>
+            <h4>BUSINESS MODEL (20%) | Score: 15/100</h4>
+            <ul>
+                <li>Unit Economics (5/25): Zero-fee model for listings; relies on token price appreciation for sustainability.</li>
+                <li>Revenue Model (5/25): Token-based presale; lacks recurring revenue or outcome-based SaaS pricing.</li>
+                <li>Monetization (5/25): Heavy dependence on $PEPETO token sales; classic inflationary tokenomics risk.</li>
+                <li>Capital Efficiency (0/25): No VC funding; bootstrapping via public retail presale.</li>
+            </ul>
+            <h4>TRACTION & GROWTH (25%) | Score: 10/100</h4>
+            <ul>
+                <li>Revenue Growth (5/25): Presale ongoing; no audited financial growth.</li>
+                <li>Customer Validation (5/25): Community members on social channels; no institutional or verified enterprise logos.</li>
+                <li>KPI Progression (0/25): No visible LinkedIn headcount growth; operations remain in the 'shadows'.</li>
+                <li>Market Penetration (0/25): Limited to niche high-risk token hunter communities.</li>
+            </ul>
+            <h4>KEY COMPETITIVE ADVANTAGES:</h4>
+            <ul>
+                <li>Specialized Meme Focus: Direct positioning for the 'degen' sub-culture.</li>
+                <li>Zero Listing Fees: Creates a low-friction wedge for indie token developers.</li>
+                <li>Fraud Filtering Claims: Attempts to solve the biggest pain point in the segment (trust).</li>
+                <li>Cross-Chain Integration: Native bridging between Ethereum and BNB chains.</li>
+                <li>Community Archetype: Strong, clear branding targeted at high-engagement social users.</li>
+            </ul>
+            <h4>MOAT: WEAK</h4>
+            <ul>
+                <li>Brand Moat: Identity built on internet memes, high risk of being supplanted by the next viral trend.</li>
+                <li>Switching Costs: Extremely low; liquidity in DeFi moves instantly to the best yield or lowest slippage.</li>
+            </ul>
+            <h4>RED FLAGS</h4>
+            <ul>
+                <li>Universal Red Flags: Founder anonymity and project opacity in a sector prone to exit scams; lack of verifiable business entity.</li>
+                <li>Thesis-Specific Red Flags: Zero AI components; failing the 'Labor Replacement' test. Geography is not verified European, and the token-based business model is a direct mismatch with our SaaS/Outcome-based mandate.</li>
+            </ul>
+            <h4>FIRST MEETING PREP KIT</h4>
+            <ul>
+                <li>The Investment Angle: This project is a speculative play on the memecoin economy infra, but lacks the institutional foundation for a professional venture bet.</li>
+                <li>Killer Questions for First Call: </li>
+                <li>Question 1 : Can you provide proof of a secure, legally registered European entity and the identities of the engineering team?</li>
+                <li>Question 2 : How is the 'Scam-Token Rejection' mechanism technically implemented, and how do you ensure it is not just a manual, subjective process?</li>
+                <li>Question 3 : How does a zero-fee listing model sustain long-term operations if token presale volume declines?</li>
+                <li>First Meeting Go/No-Go Signal: The Go/No-Go signal is immediate disclosure of the core team identities and a technical audit of the bridge architecture.</li>
+            </ul>
+            <h4>THESIS ALIGNMENT SCORE MODIFIER</h4>
+            <p>Fatal Gate Hit (-100%): The project does not utilize AI to replace labor and lacks verifiable European geographic alignment, leading to a score of zero.</p>
+            <p>🌐 DATA CONFIDENCE : LOW</p>
+            <ul>
+                <li>Team Background and Unit Economics (Extremely Low confidence due to total lack of public disclosure).</li>
+                <li>DATA GAPS : Founder professional history • Verified revenue/burn metrics • Technical whitepaper depth • Legal incorporation details.</li>
+            </ul>
+        </div>
+        <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-a5e313e46df8e2b1d27e3b56ccf48f4a-0c22umrk.jpg" alt="Company Analysis">
+        </div>
+    </div>
+</div>
+<div class="section-container" id="swot">
+    <h2 class="section-title">SWOT Analysis</h2>
+    <div class="swot-grid">
+        <div class="swot-item s-green">
+            <h3>Strengths</h3>
+            $7M presale traction signals strong early demand and momentum toward Binance listing.
+            Zero-fee listings with scam rejection creates moat for indie memecoin proliferation.
+            Multi-chain bridge (ETH, BNB, USDT) solves fragmentation pain point.
+            Staking rewards and token ecosystem bootstrap liquidity.
+            Audited smart contracts and transparent code build baseline trust.
+        </div>
+        <div class="swot-item s-red">
+            <h3>Weaknesses</h3>
+            Anonymous 'Pepeto' persona erodes credibility in trust-critical DeFi.
+            No disclosed team, headcount, or founder DNA raises execution risk.
+            Presale-dependent revenue with zero fees lacks proven monetization.
+            No live product or user metrics beyond fundraising hype.
+            Opaque legal entity and contacts hinder enterprise adoption.
+        </div>
+        <div class="swot-item s-blue">
+            <h3>Opportunities</h3>
+            Memecoin market as nascent developer economy ripe for zero-fee wedge.
+            Cross-chain demand explodes with multi-chain proliferation.
+            High-risk traders seek scam-filtered, specialized DEX.
+            Binance listing unlocks liquidity and visibility surge.
+            Community-driven growth via influencers and presale holders.
+        </div>
+        <div class="swot-item s-yellow">
+            <h3>Threats</h3>
+            Intense competition from Uniswap, Pump.fun, Raydium with established liquidity.
+            Crypto bear markets crush speculative memecoin volumes.
+            Regulatory crackdowns on anonymous DeFi projects.
+            Presale rug-pull perceptions amplified by team opacity.
+            Technical failures in bridge or audits trigger mass exits.
+        </div>
+    </div>
+</div>
+<div class="section-container" id="action-plan">
+    <h2 class="section-title">Action Plan</h2>
+    <h3>Defense</h3>
+    <b>How to defend?</b> Enforce rigorous scam rejection and audits to differentiate from incumbents, use multi-chain bridge as technical moat, and rally presale community against volatility.
+    <h3>Offense</h3>
+    <b>How to win?</b> Double down on zero-fee listings to flood ecosystem with indie memecoins, leverage $7M presale holders for viral community growth, and execute Binance listing for liquidity explosion.
+    <h3>Kill Shot</h3>
+    <b>What would be fatal?</b> Anonymous team exposed in rug-pull scandal amid presale delays or bridge exploit, collapsing trust and triggering investor exodus.
+    <h3>Remediation</h3>
+    <b>What to fix?</b> Dox core team with proven DeFi track records to unlock credibility and enterprise listings, launch live exchange immediately post-presale.
+</div>
+<div class="section-container" id="conviction">
+    <h2 class="section-title">Our Conviction</h2>
+    <div class="conviction-text">
+        <p><b>🧠 Synthetic GP Conviction: </b></p>
+        <h3>Market</h3>
+        <p>The DeFi DEX space looks crowded with Uniswap and PancakeSwap dominating liquidity, but a fragmented memecoin sub-segment riddled with scams, high fees, and rug pulls reveals untapped opportunity where incumbents fail on degen-specific curation, akin to DoorDash liquidity hacking via unpermissioned restaurant listings from PDF scraping to bootstrap marketplace demand before supply.</p>
+        <h3>Timing</h3>
+        <p>Timing features no Boomerang (market revival after failure) or False Start (hype without infrastructure), instead riding current bull-cycle momentum in a fragmented structure driven by the post-ETF retail surge and memecoin maturity as new demand catalysts for low-cost cross-chain speculation.</p>
+        <h3>Company</h3>
+        <p>Pepetos differentiation through zero-fee listings and scam rejection offers no real moat, as these commoditized features face easy replication by incumbents lacking any network effects, switching costs, or sustainable revenue beyond volatile token inflation.</p>
+        <h3>Founder</h3>
+        <p>Founder-market fit is nonexistent with the anonymous Pepeto persona showing zero domain expertise, track record, or personal pain-point origin, marking it as a mercenary hype play in scam-vulnerable DeFi.</p>
+        <h3>Thesis-fit</h3>
+        <p>Blocked by binary gates on Geography (non-European HQ and founders) and Sector (no AI labor replacement or Service-as-Software), triggers semantic red flags like anonymity and crypto speculation mismatch, with zero alignment to narrative alpha focus.</p>
+        <h3>Verdict</h3>
+        <p>Based on current web signals and the proprietary investment methodology, the Synthetic GP recommends a PASS. ⛔ Hard Block: Fails binary gates on Geography (non-European) and Sector (no AI/Service-as-Software).</p>
+    </div>
+</div>
+<div class="section-container" id="sources">
+    <h2 class="section-title">Sources & Data Quality</h2>
+    <div class="source-list">
+        <h3>Value Chain Sources</h3>
+        <h3>Market Sources</h3>
+        <p>MARKET INTELLIGENCE DOSSIER - URL EVIDENCE TRACKER<br>═════════════════════════════════════════════════<br>Purpose: Supporting documentation for Market Attractiveness<br>Market: Memecoin DeFi Exchange Platform<br>Data Completeness: 40/100<br>Assessment: 🔴 INSUFFICIENT - NEED MORE RESEARCH<br>Calculation: (6 URLs found ÷ 15 URLs searched) × 100 = 40% completeness<br>Research Date: 2024-05-22 | Total URLs Found: 6<br>═════════════════════════════════════════════════</p>
+        <p>URL EVIDENCE BY MARKET SCORING CATEGORY</p>
+        <p>🌊 ATTRACTIVE MARKET | Found 2/4 points</p>
+        <ul>
+            <li>Growth Drivers: <a href="coinmarketcap.com">coinmarketcap.com</a>. Used for: Memecoin market cap trends.</li>
+        </ul>
+        <p>⚔️ WINNABLE MARKET | Found 2/4 points</p>
+        <ul>
+            <li>Incumbents: <a href="uniswap.org">uniswap.org</a>. Used for: Competitive benchmarking.</li>
+            <li>Challengers: <a href="pump.fun">pump.fun</a>. Used for: Identifying Solana-based competitors.</li>
+        </ul>
+        <p>🎯 PENETRABLE MARKET | Found 1/4 points</p>
+        <ul>
+            <li>GTM Model: <a href="pepeto.io/listings">pepeto.io/listings</a>. Used for: Reviewing zero-fee model.</li>
+        </ul>
+        <p>💰 REWARDING MARKET | Found 1/4 points</p>
+        <ul>
+            <li>Exit Multiples: <a href="coindesk.com">coindesk.com</a>. Used for: Historical DeFi acquisition data.</li>
+        </ul>
+        <p>WEB DATA COMPLETENESS ANALYSIS<br>Missing Critical URLs: Detailed TAM validation for cross-chain meme trade, audited unit economics of memecoin launchers, SEC/regulatory outlook for meme assets.<br>Research Confidence Level: MEDIUM</p>
+        <h3>Competition Sources</h3>
+        <h3>Company Sources</h3>
+        <p>COMPANY INTELLIGENCE DOSSIER - URL EVIDENCE TRACKER<br>═════════════════════════════════════════════════<br>Purpose: Supporting documentation for Investment Score<br>Company: Pepeto<br>Data Completeness: 35/100<br>Assessment: 🔴 INSUFFICIENT DATA FOR A FIRST LOOK<br>Calculation: (7 URLs found ÷ 20 URLs searched) × 100 = 35% completeness<br>Research Date: 2024-05-22 | Total URLs Found: 7<br>═════════════════════════════════════════════════</p>
+        <p>URL EVIDENCE BY SCORING CATEGORY</p>
+        <p>👨🏻‍💻 TEAM EXCELLENCE | Found 1/4 data points</p>
+        <ul>
+            <li>Founder-Market Fit: <a href="blockzeit.com">blockzeit.com</a>. Used for: Identifying Gurhan Kiziloz mention.</li>
+        </ul>
+        <p>🌊 MARKET OPPORTUNITY | Found 2/4 data points</p>
+        <ul>
+            <li>Size & Growth: <a href="pepeto.io">pepeto.io</a>. Used for: Identifying target blockchain networks (ETH, BNB).</li>
+            <li>Competition: <a href="pepeto.io/roadmap">pepeto.io/roadmap</a>. Used for: Analyzing positioning against general DEXs.</li>
+        </ul>
+        <p>💡 PRODUCT INNOVATION | Found 2/4 data points</p>
+        <ul>
+            <li>Differentiation: <a href="pepeto.io">pepeto.io</a>. Used for: Analyzing the scam rejection claim.</li>
+            <li>Technicals: <a href="pepeto.io">pepeto.io</a>. Used for: Understanding the Lock/Mint bridge mechanism.</li>
+        </ul>
+        <p>💼 BUSINESS MODEL | Found 1/4 data points</p>
+        <ul>
+            <li>Revenue Model: <a href="pepeto.io/presale">pepeto.io/presale</a>. Used for: Token-based financing research.</li>
+        </ul>
+        <p>📈 TRACTION & GROWTH | Found 1/4 data points</p>
+        <ul>
+            <li>KPI Progression: social channels (X/Telegram). Used for: Community sentiment pulse.</li>
+        </ul>
+        <p>WEB DATA COMPLETENESS ANALYSIS<br>Missing Critical URLs: Official LinkedIn Team, Audited Financials, GitHub repository (actual code vs claims), Legal Entity registration, Technical Architecture docs.<br>Research Confidence Level: LOW</p>
+    </div>
+</div>
+</main></div></body></html>
+
