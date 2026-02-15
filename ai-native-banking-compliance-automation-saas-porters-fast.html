@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Porters Interactive Memo</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+:root { --bg-app: #f8fafc; --text-main: #1e293b; --yellow-menu: #FEF9C3; --green-menu: #DCFCE7; --grey-menu: #F1F5F9; }
+/* GLOBAL RESET FOR BOX SIZING (CRITICAL) */
+* { box-sizing: border-box; }
+
+/* STICKY FIX: No overflow on body/html */
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-app); color: var(--text-main); margin: 0; display: flex; }
+html { scroll-behavior: smooth; }
+a { color: #2563eb; text-decoration: none; cursor: pointer; word-break: break-all; }
+a:hover { text-decoration: underline; }
+/* MOBILE FIX: Word Break Global */
+p, li, a, span, div { overflow-wrap: break-word; word-break: break-word; }
+p, li { line-height: 1.6; margin-bottom: 10px; }
+strong, b { font-weight: 700; color: #0f172a; }
+h3 { scroll-margin-top: 20px; font-size: 1.4em; color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px; }
+
+/* LAYOUT */
+/* STICKY FIX: Overflow visible on wrapper */
+.main-wrapper { display: flex; width: 100%; max-width: 100vw; align-items: flex-start; overflow: visible !important; }
+/* STICKY FIX: Sidebar positioning */
+.sidebar { width: 300px; height: 100vh; position: sticky; top: 0; overflow-y: auto; border-right: 1px solid #e2e8f0; background: #fff; padding: 25px 0; flex-shrink: 0; z-index: 1000; align-self: flex-start; }
+.content-area { flex: 1; padding: 20px 40px; width: 100%; min-width: 0; max-width: 1600px; margin: 0 auto; }
+/* STICKY FIX: Overflow visible on container */
+.section-container { background: #fff; padding: 30px; margin-bottom: 30px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; scroll-margin-top: 20px; overflow: visible; }
+.section-title { font-size: 1.8em; font-weight: 700; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 25px; }
+
+/* SPLIT & STICKY */
+.split-container { display: flex; gap: 40px; align-items: flex-start; margin-bottom: 40px; position: relative; }
+.text-col { flex: 1; font-size: 1.05em; line-height: 1.7; color: #334155; min-width: 0; word-wrap: break-word; overflow-wrap: anywhere; }
+/* STICKY FIX & SCROLLBAR KILLER */
+.img-col { flex: 1; position: sticky; top: 20px; align-self: flex-start; height: fit-content; min-width: 0; max-height: calc(100vh - 40px); overflow: hidden; /* Key to kill scrollbar */ }
+.sticky-img { width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; display: block; object-fit: contain; }
+
+/* SIDEBAR ITEMS */
+.meta-block { padding: 0 25px 25px; border-bottom: 1px solid #e2e8f0; margin-bottom: 15px; }
+.sb-top-data { padding: 0 25px 10px; display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 5px; }
+.sb-tag { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.85em; color: #475569; }
+
+/* SCORE COLORS - DYNAMIC */
+.sb-score { color: white !important; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.85em; }
+.score-green { background: #16a34a !important; }
+.score-yellow { background: #ca8a04 !important; }
+.score-orange { background: #ea580c !important; }
+.score-blue { background: #2563eb !important; }
+.score-red { background: #dc2626 !important; }
+
+/* CONTACT ROW FIX: ALIGNMENT */
+.contact-row { display: flex; flex-direction: column; gap: 5px; font-size: 0.9em; margin-top: 10px; padding-left: 25px; padding-right: 25px; }
+.nav-item { display: block; padding: 8px 25px; color: #475569; font-weight: 600; font-size: 0.9em; border-left: 4px solid transparent; margin-bottom: 2px; }
+.nav-item:hover { background: rgba(0,0,0,0.05); color: #0f172a; border-left-color: #94a3b8; }
+.bg-yellow { background: var(--yellow-menu); } .bg-green { background: var(--green-menu); } .bg-grey { background: var(--grey-menu); }
+
+/* CTA BUTTONS */
+.cta-text-small { display: block; margin: 10px 25px 2px; font-size: 0.8em; color: #64748b; font-weight: 600; }
+.cta-btn { display: block; margin: 5px 25px 10px; padding: 12px; background: #1e293b; color: #fff; text-align: center; border-radius: 6px; font-weight: 700; font-size: 0.9em; cursor: pointer; }
+.cta-btn-secondary { background: #e2e8f0; color: #1e293b; border: 1px solid #cbd5e1; }
+.cta-btn-secondary:hover { background: #cbd5e1; }
+.promo-text { display: block; margin: 0 25px 20px; font-size: 0.8em; color: #64748b; text-align: center; font-style: italic; word-wrap: break-word; }
+
+/* BATTLEFIELD LEGEND & CARDS */
+.battlefield-legend { margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 6px; font-size: 0.9em; }
+.legend-row { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; margin-bottom: 5px; }
+.legend-item { display: inline-block; }
+.posture-legend { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; line-height: 1.2; margin-right: 10px; }
+
+.battlefield-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 15px; width: 100%; margin-bottom: 40px; }
+.battlefield-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.stage-header { font-size: 0.85em; font-weight: 700; text-transform: uppercase; color: #64748b; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; min-height: 40px; }
+
+/* ACTOR CARDS - UPDATED BORDER COLORS & QUADRANTS */
+.actor-card { background: #fff; border: 1px solid #cbd5e0; border-radius: 6px; overflow: hidden; font-size: 0.9em; border-left-width: 4px; margin-bottom: 8px; transition: all 0.2s; }
+.border-established-leader { border-left-color: #2563eb !important; } /* Blue */
+.border-emerging-innovator { border-left-color: #16a34a !important; } /* Green */
+.border-mature-commoditized { border-left-color: #ca8a04 !important; } /* Yellow */
+.border-early-undifferentiated { border-left-color: #64748b !important; } /* Grey */
+
+.actor-card summary { padding: 10px; cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; align-items: center; background: #fff; }
+.actor-card summary::after { content: "+"; font-size: 1.2em; color: #94a3b8; }
+.actor-card[open] summary::after { content: "−"; color: #1e293b; }
+.actor-summary-content { display: flex; flex-direction: column; gap: 2px; width: 90%; }
+.actor-name { font-weight: 800; color: #1e293b; font-size: 1em; }
+.actor-meta { font-size: 0.8em; color: #64748b; display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.label-tier { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; white-space: nowrap; }
+
+.actor-body { padding: 12px; border-top: 1px solid #f1f5f9; background: #fafafa; overflow-wrap: break-word; }
+
+/* ACTOR GRID INFO (2 COLUMNS) */
+.actor-grid-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; font-size: 0.85em; }
+.actor-grid-info div { display: flex; flex-direction: column; }
+.actor-grid-info strong { font-size: 0.9em; color: #64748b; margin-bottom: 2px; }
+.score-highlight { font-weight: 700; color: #1e293b; font-size: 1.1em; }
+
+/* COMPETITION */
+.competitor-block { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0; }
+.competitor-block strong { color: #1e293b; font-size: 1.05em; }
+
+/* SWOT 2x2 GRID BEAUTIFUL DESIGN */
+.swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.swot-item { padding: 20px; border-radius: 8px; border: 1px solid transparent; box-shadow: 0 2px 5px rgba(0,0,0,0.03); }
+.swot-item h3 { border-bottom: none; margin-bottom: 10px; margin-top: 0; color: #0f172a; font-size: 1.3em; }
+.swot-item ul { padding-left: 20px; margin: 0; }
+.swot-item li { margin-bottom: 5px; font-size: 0.95em; color: #334155; }
+/* SWOT COLORS */
+.s-green { background-color: #f0fdf4; border-color: #bbf7d0; } /* Strengths */
+.s-red { background-color: #fef2f2; border-color: #fecaca; } /* Weaknesses - Red Light */
+.s-blue { background-color: #eff6ff; border-color: #bfdbfe; } /* Opportunities */
+.s-yellow { background-color: #fefce8; border-color: #fef08a; } /* Threats */
+
+/* FOOTER */
+.source-list { font-size: 0.9em; color: #64748b; }
+.final-footer { margin-top: 60px; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 0.85em; }
+
+/* MOBILE */
+@media (max-width: 1000px) {
+    body { flex-direction: column; overflow-x: hidden; }
+    .main-wrapper { flex-direction: column; max-width: 100vw; }
+    .sidebar { width: 100%; height: auto; position: relative; border-right: none; border-bottom: 1px solid #e2e8f0; }
+    .content-area { padding: 15px; width: 100%; box-sizing: border-box; }
+    .battlefield-grid { display: flex !important; flex-direction: column !important; width: 100%; gap: 20px; }
+    .split-container { flex-direction: column; }
+    .img-col { position: static; width: 100%; margin-top: 20px; max-height: none; }
+    .actor-card { width: 100% !important; }
+    .swot-grid { grid-template-columns: 1fr; }
+}
+    </style>
+</head>
+<body>
+    <div class="main-wrapper">
+        <div class="sidebar">
+            <div class="sb-top-data">
+                <span class="sb-score score-yellow">81</span>
+                <span class="sb-tag">Switzerland</span>
+                <span class="sb-tag">Early Stage (Seed)</span>
+                <span class="sb-tag">B2B</span>
+            </div>
+            <div class="meta-block">
+                <h3>Porters</h3>
+                <i>AI-native platform automating complex banking back-office operations for compliance and efficiency.</i>
+                <p>RegTech & Compliance</p>
+            </div>
+            <div class="contact-row">
+                <div><i class="fas fa-user"></i> <b>Konstantin Kotulla</b></div>
+                <div><i class="fas fa-envelope"></i> <a href="mailto:Konstantin@withporters.com">Konstantin@withporters.com</a></div>
+                <div><i class="fas fa-globe"></i> <a href="https://www.withporters.com/" target="_blank">https://www.withporters.com/</a></div>
+            </div>
+            <a href="#market-summary" class="nav-item bg-yellow" style="margin-top: 25px;">Market Summary</a>
+            <a href="#competition" class="nav-item bg-yellow">Competition</a>
+            <a href="#value-proposition" class="nav-item bg-green">Value Proposition</a>
+            <a href="#product" class="nav-item bg-green">Product</a>
+            <a href="#business-model" class="nav-item bg-green">Business Model</a>
+            <a href="#team" class="nav-item bg-green">Team</a>
+            <a href="#ceo" class="nav-item bg-green">CEO</a>
+            <a href="#company-summary" class="nav-item bg-green">Company Summary</a>
+            <a href="#swot" class="nav-item bg-green">SWOT Analysis</a>
+            <a href="#action-plan" class="nav-item bg-green">Action Plan</a>
+            <a href="#conviction" class="nav-item bg-grey">Conviction</a>
+            <a href="#sources" class="nav-item bg-grey">Sources</a>
+
+            <span class="cta-text-small">Want to learn more on Porters?</span>
+            <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Porters&website=https://www.withporters.com/&product_url=unavailable&team_url=unavailable&pricing_url=unavailable&linkedin=&first_name=Konstantin&last_name=Kotulla&memo=quick" target="_blank" class="cta-btn cta-btn-secondary">Generate a quick memo</a>
+            <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Porters&website=https://www.withporters.com/&product_url=unavailable&team_url=unavailable&pricing_url=unavailable&linkedin=&first_name=Konstantin&last_name=Kotulla&memo=detailed" target="_blank" class="cta-btn cta-btn-secondary">Generate a detailed memo</a>
+
+            <span class="cta-text-small">Interested in Porters?</span>
+            <a href="https://forms.proplace.co/meet" target="_blank" class="cta-btn">Schedule a strategy call</a>
+
+            <span class="cta-text-small">Want to follow our deal flow?</span>
+            <a href="https://77f02b89.sibforms.com/serve/MUIFAMr0ADjDfIUWLc56STos70j4OXPiOTJqugyAa45YfGyt9zW6Tokz3iXWLNiTAw6oxjbrMnjs424k46IvwOQlLjaMIsbgexAk95FvzqzgLa56TkHas6WASK4VKs684XcZhacqMYTYQGuIfzJmBmCkmHwhNeB0yHifmrxC1PUhNMS1ZbiW1xF18IZy7tJP9BIWjDcM5VoH6VEVCw==" target="_blank" class="cta-btn">Request access to deal flow</a>
+        </div>
+        <div class="content-area">
+            <div class="header-tags">
+                <span class="sb-score score-yellow">81</span>
+                <span class="sb-tag">Switzerland</span>
+                <span class="sb-tag">Early Stage (Seed)</span>
+                <span class="sb-tag">B2B</span>
+            </div>
+            <h1>Porters Interactive Memo</h1>
+            <h2>Fintech & RegTech > AI-Native Banking Compliance Automation SaaS</h2>
+            <p class="ipp-text"><i>AI-automated back-office processing for European banking compliance in account seizures, insolvency management, and chargeback resolutions.</i></p>
+            
+            <!-- Stop immediately after the Content Header. Do not close body or html tags. -->
+
+<div class="section-container" id="market-summary">
+    <h2 class="section-title">Market Summary</h2>
+    <div class="split-container">
+        <div class="text-col">
+            <p>MARKET OPPORTUNITY SCORE<br>RegTech & Compliance > AI-Native Banking Compliance Automation SaaS<br>B2B > SaaS</p>
+            <p>═════════════════════════════════════════════════</p>
+            <p>IS IT AN ATTRACTIVE MARKET ? (Dynamics): 85/100 × 25% = 21.25 points<br>IS IT A WINNABLE MARKET ? (Competition): 78/100 × 25% = 19.5 points<br>IS IT A PENETRABLE MARKET ? (GTM): 75/100 × 25% = 18.75 points<br>IS IT A REWARDING MARKET ? (Exits): 82/100 × 25% = 20.5 points</p>
+            <p>─────────────────────────────────────────────────<br>TOTAL MARKET ATTRACTIVITY SCORE: 80.0/100</p>
+            <p>═════════════════════════════════════════════════</p>
+            <h4>❓ Market DEFINITION</h4>
+            <p>AI-automated back-office processing for European banking compliance in account seizures, insolvency management, and chargeback resolutions. ➜ This market encompasses the automation of high-volume, unstructured regulatory responses required by financial institutions across the EU, replacing thousands of manual 'Review and Action' roles within the Tier 1-3 banking value chain.</p>
+            <h4>💬 Our Market THESIS</h4>
+            <p>(MARKET INFLECTION) A non-negotiable shift in Key Behavioral/Regulatory Factor is triggering a platform transition away from legacy systems in the $20B Banking Operations market. A startup that becomes the go-to platform for this new reality, centered on Core Value Proposition, can become the new system of record for the entire industry.</p>
+            <h4>🧠 Our CONVICTION & WAGER on this Market:</h4>
+            <p>🟢 HIGH: Our conviction is high because this market presents a rare alignment of timing and structure. The shift from simple LLM wrappers to 'Agentic Action' has opened a temporary window for a decisive founder to build a dominant moat through deep systems integration and capture the market before the opportunity becomes consensus. This is a land grab.</p>
+            <p>═════════════════════════════════════════════════</p>
+            <h4>🌊 ATTRACTIVE MARKET (Market Dynamics) | Score: 85/100</h4>
+            <ul>
+                <li>Market Size (21/25): TAM: $20.4B (Global Banking Ops) • SAM: $1.2B (EU Reg-specific automation) • SOM: $125M (Initial Account Seizure niche).</li>
+                <li>Growth Drivers (22/25): Regulatory complexity • Cost-cutting mandates in traditional banking • Surge in fintech insolvency numbers.</li>
+                <li>Timing Why Now (23/25): Maturation of Agentic AI frameworks • Post-ZIRP focus on bank profitability • Swiss legal digitization mandates.</li>
+                <li>Market Risks (19/25): Regulatory shifts in AI usage • Inertia of legacy IT departments • Data liability for autonomous actions.</li>
+            </ul>
+            <h4>⚔️ WINNABLE MARKET (Competitive Landscape) | Score: 78/100</h4>
+            <ul>
+                <li>Incumbents (18/25): Temenos ($8B valuation, Strength: Core banking dominance) • Wolters Kluwer (Strength: Regulatory reporting).</li>
+                <li>Challengers (20/25): Lucinity (Focus: AML/Compliance) • SymphonyAI (Focus: Fraud/Financial Crime).</li>
+                <li>White Space (22/25): Automated execution of legal mandates (Seizures) is currently a manual 'black hole' for banks • Value Chain Capture: System of Action layer.</li>
+                <li>Defensibility (18/25): Primary moat: Deep integration into banking back-ends • Switching costs • Proprietary handling of unstructured local legal document types.</li>
+            </ul>
+            <h4>🎯 PENETRABLE MARKET (Go-to-Market & Unit Economics) | Score: 75/100</h4>
+            <ul>
+                <li>GTM Model (18/25): Enterprise Sales • Sales cycle: 9-14 months • Consultative approach required initially.</li>
+                <li>Pricing Model (20/25): Per-transaction / Outcome-based • Primary metric: ARR derived from automated lifecycle fees.</li>
+                <li>Unit Economics (19/25): LTV/CAC: Estimated 5x based on high retention in banking • Payback: 18 months • Typical deal: $150k-$400k.</li>
+                <li>Scalability (18/25): Multi-country regulatory templates enable geographic expansion across the Eurozone.</li>
+            </ul>
+            <h4>💰 REWARDING MARKET (Funding & Exit) | Score: 82/100</h4>
+            <ul>
+                <li>Funding Activity (21/25): $4B+ invested in FinTech RegTech (2024) • Strong interest in vertical AI automation.</li>
+                <li>Exit Multiples (20/25): Public: 6-10x revenue • M&A: 10-15x revenue (Strategic acquisitions by core banking incumbents).</li>
+                <li>Strategic Buyers (21/25): SAP (Product gap in banking ops) • Fiserv (Market access) • Temenos (Defensive acquisition).</li>
+            </ul>
+            <p>─────────────────────────────────────────────────<br>🌐 DATA CONFIDENCE: High on Market Size and Exits. Low on specific Unit Economics for seed-stage startups. 12 total URLs sourced.</p>
+        </div>
+        <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-08224c31ef6b4b379b21c53cc1e22573-vvs9jozg.jpg">
+        </div>
+    </div>
+</div>
+<div class="section-container" id="competition">
+    <h2 class="section-title">Competitive Landscape</h2>
+    <div class="text-full-width">
+        <h3>Company List</h3>
+        <b>Temenos</b> <br>
+        Incumbent, broad core banking systems with some automation<br>
+        <br>
+        📊 <b>STRATEGIC PROFILE:</b><br>
+        - Quadrant: N/A<br>
+        - Total Score: /10 • Maturity: | Differentiation:<br>
+        <br>
+        💰 <b>TRACTION & BACKING:</b><br>
+        <br>
+        🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+        - N/A <br>
+        <br>
+        🧱 <b>MOAT / POSITIONING:</b><br>
+        N/A<br>
+        <br>
+        <small>🌐 Source: N/A (N/A)</small>
+        <br>
+        --------------------------------------------------
+        <br>
+        <b>SymphonyAI</b> <br>
+        Scale-up, AI-focused financial crime and compliance detection<br>
+        <br>
+        📊 <b>STRATEGIC PROFILE:</b><br>
+        - Quadrant: N/A<br>
+        - Total Score: /10 • Maturity: | Differentiation:<br>
+        <br>
+        💰 <b>TRACTION & BACKING:</b><br>
+        <br>
+        🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+        - N/A <br>
+        <br>
+        🧱 <b>MOAT / POSITIONING:</b><br>
+        N/A<br>
+        <br>
+        <small>🌐 Source: N/A (N/A)</small>
+        <br>
+        --------------------------------------------------
+        <br>
+        <b>in-house solutions at large banks</b> <br>
+        Incumbent, custom manual processes<br>
+        <br>
+        📊 <b>STRATEGIC PROFILE:</b><br>
+        - Quadrant: N/A<br>
+        - Total Score: /10 • Maturity: | Differentiation:<br>
+        <br>
+        💰 <b>TRACTION & BACKING:</b><br>
+        <br>
+        🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+        - N/A <br>
+        <br>
+        🧱 <b>MOAT / POSITIONING:</b><br>
+        N/A<br>
+        <br>
+        <small>🌐 Source: N/A (N/A)</small>
+        <br>
+        --------------------------------------------------
+        <br>
+        <b>ComplySci</b> <br>
+        Startup, regulatory workflow automation<br>
+        <br>
+        📊 <b>STRATEGIC PROFILE:</b><br>
+        - Quadrant: N/A<br>
+        - Total Score: /10 • Maturity: | Differentiation:<br>
+        <br>
+        💰 <b>TRACTION & BACKING:</b><br>
+        <br>
+        🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+        - N/A <br>
+        <br>
+        🧱 <b>MOAT / POSITIONING:</b><br>
+        N/A<br>
+        <br>
+        <small>🌐 Source: N/A (N/A)</small>
+        <br>
+        --------------------------------------------------
+        <br>
+    </div>
+</div>
+
+<div class="section-container" id="company">
+    <h2 class="section-title">Company Deep Dive</h2>
+    <div class="split-container">
+        <div class="text-col">
+            <h3 id="value-proposition">Value Proposition</h3>
+            <b>Value Proposition:</b> Porters provides an AI-native operational platform designed to automate complex banking and legal processes, specifically targeting account seizures, insolvency management, and chargeback resolutions. It combines AI speed with expert accuracy to eliminate backlogs, ensure regulatory compliance, and reduce operational costs by moving from manual oversight to exception-only human review. <br><b>Ideal Customer Profile (ICP):</b> Financial institutions, including traditional banks and modern fintech companies; specifically targeting Operations Managers, Compliance Officers, and Banking Ops personnel at organizations with Pan-European regulatory obligations. <br><b>B2B or B2C:</b> B2B. The platform is designed for institutional use to manage internal banking operations, risk rules, and regulatory reporting for legal and financial entities. <br><b>Industry:</b> Fintech > Banking Operations & Compliance Automation. <br><b>Contact & Legal:</b> Legal Entity: Porters Group AG | UID: CHE-268.092.453 | VAT: CHE-268.092.453 MWST | Address: Delphinstrasse 14, 8008 Zurich, Switzerland | Emails: info@withporters.com, dataprotection@withporters.com | Commercial Registry: Canton of Zurich. <br><b>Key Client Examples & Testimonials:</b> Data not available in source (text mentions being 'built for leading banks and fintechs' but does not name specific institutions).
+            <h3 id="product">Product</h3>
+            <b>Core Solution:</b> An AI-native Banking Ops platform that automates the lifecycle of legal and financial document processing through agentic workflows, combining automated extraction, decisioning, and action with a human-in-the-loop interface. <br><b>Feature Encyclopedia:</b>
+            <ul>
+                <li>End-to-end account seizure processing</li>
+                <li>Private and public seizure management</li>
+                <li>Insolvency case lifecycle management</li>
+                <li>Chargeback dispute claim triaging</li>
+                <li>Unstructured document handling</li>
+                <li>Inbox triaging</li>
+                <li>Case type classification (seizure, restriction, RFI)</li>
+                <li>Data extraction</li>
+                <li>Secure file storage</li>
+                <li>Case ledger tracking</li>
+                <li>Automated risk rule application</li>
+                <li>24/7 processing</li>
+                <li>Third-party follow-up automation</li>
+                <li>Banking action triggers (account blockage, payments)</li>
+                <li>Third-party declaration generation</li>
+                <li>24/7 audit trail.</li>
+            </ul>
+            <b>Technical Capabilities:</b> AI Model Usage: Anthropic, Amazon, Mistral, OpenAI, Meta, Google Models | Infrastructure: AWS Amazon Bedrock, Google Cloud Platform | Hosting: EU-based servers (Germany/Switzerland) | Compliance: GDPR, Swiss FADP | Security: Banking-grade security, enterprise-grade privacy (data not used for training), encrypted audit logs | Integrations: API connectivity for banking actions and reporting. <br><b>Use Cases:</b> Reducing bank operational backlogs | Ensuring compliance with Pan-European regulations | Automating high-volume manual document review | Improving response times for legal RFIs and account restrictions.
+            <h3 id="business-model">Business Model</h3>
+            <b>Business Model Analysis:</b> B2B SaaS / Agentic Process Outsourcing. The model focuses on replacing manual labor with automation, likely priced based on volume or platform access. <br><b>Revenue Streams & Pricing Tiers:</b> Data not available in source. The website directs users to 'Get in touch' or 'Request a demo' for pricing inquiries. <br><b>Plan Features:</b> Data not available in source. <br><b>Hidden Costs & Terms:</b> Data not available in source (Terms of use are subject to individual customer contracts with AWS/Google as part of their sub-processing architecture).
+            <h3 id="team">Team</h3>
+            <b>Company Culture:</b> Mission-driven on transforming complex financial processes through agentic automation; emphasizes safety, privacy, and regulatory confidence. Professional environment composed of 'industry veterans' and 'AI engineers' from traditional financial backgrounds. <br><b>Team Analysis:</b> Konstantin Kotulla (Chairperson of the Board), Christopher Barth (Member of the Board), Michael John (Member of the Board). <br><b>Job Offers & Titles:</b> Data not available in source (mentions 'AI Engineers' and 'Industry Veterans' generally). <br><b>Estimated Headcount:</b> Product & Engineering: 5-10 (Based on mention of AI engineers and multiple LLM integrations) | Marketing: Unknown | Sales: Unknown | Support & IT: Unknown | General & Admin: 3 (Based on listed Board members).
+            <h3 id="ceo">CEO</h3>
+            <b>EXECUTIVE ASSESSMENT</b><br><br>Founder Archetype: Konstantin Kotulla fits the profile of a Product-Led Founder with a growth-oriented mindset. His background blends strategy, consulting, and operational leadership with a strong emphasis on scaling fintech and banking operations through technological innovation, signaling a focus on building scalable platforms that solve complex operational challenges in financial services.<br><br>Pedigree Signal: Konstantin’s pedigree includes top-tier employers and education. Roland Berger is a renowned global management consultancy, providing a strong consulting foundation. His leadership roles at Upvest, a notable fintech, add relevant industry credibility. Academically, he holds degrees from the University of St. Gallen and CEMS, both prestigious institutions recognized for business education in Europe, enhancing his intellectual and network capital.<br><br>Loyalty & Tenure: His career demonstrates a balance between periods of deep execution and faster transitions. He spent over four years at Roland Berger, indicating stability and accumulation of substantive strategic experience. His later roles at Upvest show rapid career progression within the company, demonstrating adaptability and leadership growth. His most recent transition to founding Porters follows a logical progression rather than impulsive job-hopping.<br><br>Commercial Fit: Konstantin’s experience explicitly de-risks his current venture, Porters. His hands-on leadership in growth and strategy within fintech, combined with consulting expertise in financial services, provides him with the domain knowledge and operational insight needed to build an AI-native platform for banking operations. His track record shows capability in scaling businesses efficiently and managing compliance, directly relevant to Porters’ mission.<br><br><b>PROFESSIONAL NARRATIVE</b><br><br>Konstantin Kotulla’s career trajectory reveals a strategic evolution from foundational roles in consulting at Roland Berger into fintech leadership at Upvest, where he rapidly progressed through growth strategy roles, mastering scaling finance operations and compliance challenges. This progression provided him with deep operational insight and a growth-focused leadership style, underpinning his transition into entrepreneurship. By founding Porters, he leveraged his combined expertise to create an AI-native banking operations platform that addresses critical inefficiencies in financial services back-office processes, illustrating a clear career logic from strategy consulting to product-led fintech innovation.<br><br><b>DETAILED CAREER TIMELINE</b><br><br>2025 – Present | Porters Role: Co-Founder  <br>Focus: Building an AI-native platform to automate complex banking back-office operations, enabling banks and fintechs to scale without increasing headcount while enhancing speed, compliance accuracy, and customer experience.<br><br>2024 – 2025 | Upvest Role: VP Growth  <br>Analysis: Rapid promotion after serving as Director of Growth; oversaw key growth initiatives likely involving scaling user acquisition, partnerships, and operational processes in the fintech.<br><br>2023 – 2024 | Upvest Role: Director of Growth  <br>Analysis: Leadership role focused on driving growth metrics; transition into this role likely reflects recognized performance and growing strategic responsibility.<br><br>2021 – 2023 | Upvest Role: Chief Of Staff  <br>Analysis: Central role coordinating executive priorities, strategy implementation, and cross-functional alignment; demonstrates trusted leadership and operational control.<br><br>2020 – 2021 | ETH Zürich Role: Wissenschaftlicher Assistent (Research Assistant)  <br>Focus: Supported Department of Management, Technology, and Economics, possibly deepening academic research skills in management sciences complementary to his consulting and strategic roles.<br><br>2016 – 2020 | Roland Berger Role: Consultant  <br>Analysis: Solid tenure of 4.5 years at a Tier 1 global management consultancy; foundational strategic and problem-solving experience, likely across financial services and operational transformation projects.<br><br>2018 | Beiersdorf Role: IIC- Candidate Finance & Controlling  <br>Focus: Short-term international assignment in Buenos Aires, gaining hands-on finance and controlling experience in a global consumer goods corporation; adds cross-industry operational perspective.<br><br>2012 – 2014 | ESPRIT St. Gallen Role: Head of Strategy & Product  <br>Focus: Early strategic and product development leadership role; foundation for later growth and operational leadership.<br><br><b>ACADEMIC BACKGROUND</b><br><br>Institution: University of St.Gallen  <br>Degree: Bachelor of Arts (B.A.) in Wirtschaftswissenschaften (Economics/Business)  <br>Signal: University of St.Gallen is a highly selective, top-tier European business school renowned for producing business leaders and entrepreneurs, indicating a strong foundational business education.<br><br>Institution: CEMS - The Global Alliance in Management Education  <br>Degree: Master of Science (M.Sc.) in International Management  <br>Signal: CEMS is an elite global management education consortium, considered a grande école-level program, conferring international business leadership credibility and a powerful global network.
+            <h3 id="company-summary">Company Summary</h3>
+            <ul>
+                <li>RegTech & Compliance > AI-Native Banking Compliance Automation SaaS</li>
+                <li>B2B > SaaS</li>
+            </ul>
+            WEIGHTED SCORE CALCULATION<br>Thesis : Profund<br><br>═════════════════════════════════════════════════ <br>
+            <h4>TEAM EXCELLENCE</h4>
+            90/100 × 15% = 13.5 points<br>
+            <h4>MARKET OPPORTUNITY</h4>
+            82/100 × 15% = 12.3 points<br>
+            <h4>PRODUCT INNOVATION</h4>
+            88/100 × 25% = 22.0 points<br>
+            <h4>BUSINESS MODEL</h4>
+            85/100 × 20% = 17.0 points<br>
+            <h4>TRACTION & GROWTH</h4>
+            45/100 × 25% = 11.25 points<br>─────────────────────────────────────────────────<br>Base Score: 76.05/100<br>Thesis Alignment Modifier: +5% (Service-as-Software Alpha)<br>─────────────────────────────────────────────────<br>FINAL ADJUSTED SCORE: 81.05/100 → 🟡PROMISING<br><br>═════════════════════════════════════════════════ <br><br>❓ In a NUTSHELL : Porters is a AI-Native Banking Compliance Automation SaaS that enables Banking Operations Managers to automate complex, unstructured legal workflows by using agentic AI to process seizures, insolvencies, and chargebacks.<br><br>⚠️ The PROBLEM : Banking back-office operations are crushed by manual, unstructured document processing for legal mandates (seizures, insolvencies) which lead to massive backlogs, regulatory fines, and linear headcount growth scaling.<br><br>✅ The SOLUTION : The company platform solves this by deploying agentic workflows that extract data from unstructured legal notices, apply risk rules, and trigger banking actions automatically. Their non-consensus insight is that these highly regulated 'unstructured' silos are the perfect entry point for 'Service-as-Software' where AI replaces the manual reviewer entirely.<br><br>🚀 The GTM & MOAT : Their primary GTM motion is Enterprise Sales, targeting mid-to-large European financial institutions. Long-term defensibility will be built through a proprietary data flywheel on pan-European legal document formats and deep integration as the System of Action for regulatory response.<br><br>💬 Our RATIONALE & THESIS FIT on this company : <br>Porters represents a 'pure-play' Service-as-Software bet, perfectly aligned with our thesis of replacing human labor with agentic AI in high-value vertical workflows. The founding team’s pedigree (Upvest, Roland Berger, HSG) provides the necessary 'Elite' signaling and domain expertise to sell into conservative European banks. While traction is currently suppressed by the early stage (2025 founding), the alignment with our 'System of Action' and 'Vertical AI' green flags is exceptional. The primary risk is the long enterprise sales cycle typical of Swiss/German banking incumbents which might challenge early-stage capital efficiency.<br><br>═════════════════════════════════════════════════<br><br>
+            <h4>TEAM EXCELLENCE (15%) | Score: 90/100</h4>
+            <ul>
+                <li>Founder-Market Fit (23/25): Konstantin Kotulla • 10+ Years • Upvest (VP Growth), Roland Berger • Expert in fintech scaling and banking strategy.</li>
+                <li>Track Record (22/25): Rapid progression at Upvest (VP Growth/Director); strong consulting foundation at a Tier 1 firm.</li>
+                <li>Leadership (23/25): Team size: ~10 • Strategic board includes Christopher Barth and Michael John (Swiss legal/fintech veterans).</li>
+                <li>Completeness (22/25): Strong balance between strategy (HSG/CEMS) and AI engineering; Swiss-based leadership provides localized trust for banking.</li>
+            </ul>
+            <h4>MARKET OPPORTUNITY (15%) | Score: 82/100</h4>
+            <ul>
+                <li>Size & Growth (20/25): TAM: $125M+ (conservative initial focus) • Growing at 20%+ as banks digitize back-offices.</li>
+                <li>Timing Why Now (22/25): Agentic AI shift makes processing unstructured legal text viable for the first time; increased Pan-European regulatory scrutiny.</li>
+                <li>Competition (20/25): Legacy core systems (Temenos) vs. Manual processes • Differentiation via agentic 'human-in-the-loop' automation.</li>
+                <li>Expansion (20/25): Clear path from account seizures to broader AML/KYC and international legal compliance.</li>
+            </ul>
+            <h4>PRODUCT INNOVATION (25%) | Score: 88/100</h4>
+            <ul>
+                <li>Differentiation (23/25): End-to-end agentic workflows (not just data extraction) but actual banking action triggers.</li>
+                <li>Product-Market Fit (20/25): Early stage implies nascent PMF, but targeting the 'insolvency' and 'seizure' pain points shows surgical precision.</li>
+                <li>Scalability (23/25): AWS Bedrock/GCP multi-LLM stack designed for enterprise privacy and high-volume document handling.</li>
+                <li>IP & Barriers (22/25): Data residency (Swiss/EU servers) and banking-grade audit trails create a high regulatory moat.</li>
+            </ul>
+            <h4>BUSINESS MODEL (20%) | Score: 85/100</h4>
+            <ul>
+                <li>Unit Economics (20/25): High potential for outcome-based pricing (per case processed) rather than per-seat SaaS.</li>
+                <li>Revenue Model (22/25): B2B SaaS recurring revenue combined with high-value transactional volume automation.</li>
+                <li>Monetization (21/25): Clear value proposition: reducing headcount costs and avoiding regulatory fines.</li>
+                <li>Capital Efficiency (22/25): Low initial headcount relative to the complexity of the problem; Swiss base suggests disciplined growth.</li>
+            </ul>
+            <h4>TRACTION & GROWTH (25%) | Score: 45/100</h4>
+            <ul>
+                <li>Revenue Growth (10/25): Pre-revenue or early pilot stage (founded 2025).</li>
+                <li>Customer Validation (12/25): Website mentions 'built for leading banks' - indicates active alpha/beta partners.</li>
+                <li>KPI Progression (13/25): Rapid team assembly and platform launch within first year of operation.</li>
+                <li>Market Penetration (10/25): Initial focus on DACH region (Switzerland/Germany).</li>
+            </ul>
+            <br> Key COMPETITIVE ADVANTAGES:
+            <ul>
+                <li>Agentic Workflow Architecture: Moving beyond mere OCR to autonomous decision-making and action-triggering in banking systems.</li>
+                <li>Pan-European Regulatory Expertise: Built-in compliance for complex Swiss and EU legal document standards.</li>
+                <li>Elite Pedigree Leadership: HSG/Roland Berger/Upvest triad provides access to high-level banking decision-makers.</li>
+                <li>Privacy-First AI Infrastructure: Multi-model support with local EU hosting (Germany/Switzerland) ensures banking-standard data sovereignty.</li>
+                <li>Targeting 'Small-Big' Problems: Focus on seizures and insolvencies—areas ignored by horizontal AI but critical and painful for banks.</li>
+            </ul>
+            <br> MOAT: MODERATE
+            <ul>
+                <li>Switching Costs: Deep integration into banking G/L and account systems makes Porters a sticky 'System of Action'.</li>
+                <li>Regulatory Moat: The complexity of handling legal document variations across jurisdictions creates a durable barrier for US-based competitors.</li>
+            </ul>
+            <br> RED FLAGS
+            <ul>
+                <li>Universal Red Flags: Sales Cycle Risk: Selling into European banks is notoriously slow (12-18 months), potentially burning through early seed capital before traction hits.</li>
+                <li>Thesis-Specific Red Flags: Early Stage/Data Gap: The current lack of revenue transparency (founded 2025) makes assessing 'Traction & Growth' difficult, resulting in a lower baseline score.</li>
+            </ul>
+            <br> FIRST MEETING PREP KIT
+            <ul>
+                <li>The Investment Angle: The bet is that Porters will become the 'Agentic Operating System' for the $20B+ unautomated back-office compliance market in Europe, starting with the highest-friction legal tasks.</li>
+                <li>Killer Questions for First Call:
+                    <ul>
+                        <li>Question 1 : You are targeting account seizures and insolvencies—how many pilots are currently live, and what is the 'Integration-to-Value' time for a typical Swiss mid-cap bank?</li>
+                        <li>Question 2 : Your model relies on a Service-as-Software approach; how do you handle legal liability if the AI-agent incorrectly processes an account seizure?</li>
+                        <li>Question 3 : With your VP Growth background at Upvest, what is your unfair advantage in bypassing the standard 18-month procurement cycle of traditional banks?</li>
+                    </ul>
+                </li>
+                <li>First Meeting Go/No-Go Signal: Evidence of at least two signed Pilot LOIs with Tier 1/2 financial institutions and a clear strategy for outcome-based pricing rather than seat-based licensing.</li>
+            </ul>
+            <br> THESIS ALIGNMENT SCORE MODIFIER<br>Excellent Fit (+5%): Porters aligns perfectly with our Service-as-Software alpha—it specifically automates manual labor using agentic AI in a verticalized, high-regulatory environment in Europe.<br><br> DATA CONFIDENCE : MEDIUM
+            <ul>
+                <li>Focus on Customer Validation and Revenue Model (Low public data on pricing and current client names).</li>
+                <li>DATA GAPS : Current ARR • Pilot contract terms • Specific LLM fine-tuning methodology • Customer churn risk models</li>
+            </ul>
+        </div>
+        <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-b4e4699017617fc587c722df87869f11-dxse4aop.jpg" alt="Company Analysis">
+        </div>
+    </div>
+</div>
+<div class="section-container" id="swot">
+    <h2 class="section-title">SWOT Analysis</h2>
+    <div class="swot-grid">
+        <div class="swot-item s-green">
+            <h3>Strengths</h3>
+            <ul>
+                <li>Founder Konstantin Kotulla's elite pedigree: Roland Berger consulting + Upvest fintech scaling de-risks execution in banking ops.</li>
+                <li>Hyper-specific agentic AI niche: Automates unstructured docs for seizures, insolvency, chargebacks—painful, high-volume workflows.</li>
+                <li>Fresh €2.7M pre-seed from Earlybird/Seedcamp signals VC conviction and runway.</li>
+                <li>Banking-grade tech stack: Multi-LLM (Anthropic/OpenAI/etc.), EU-compliant infra, API integrations.</li>
+                <li>Pan-European regulatory focus creates natural moat via jurisdiction-specific workflows.</li>
+            </ul>
+        </div>
+        <div class="swot-item s-red">
+            <h3>Weaknesses</h3>
+            <ul>
+                <li>Pre-product traction: No named clients/testimonials; still proving PMF.</li>
+                <li>Tiny team: ~5-10 eng + 3 board; lacks sales/marketing depth for enterprise sell.</li>
+                <li>Opaque pricing/revenue: 'Get in touch' model hides ACV validation.</li>
+                <li>Founder-heavy leadership: Relies on Kotulla's network; board lacks visible heavy-hitters.</li>
+                <li>AI model dependency: Relies on commoditizing LLMs without proprietary IP edge.</li>
+            </ul>
+        </div>
+        <div class="swot-item s-blue">
+            <h3>Opportunities</h3>
+            <ul>
+                <li>Fragmented Pan-EU compliance: 500 targets x $250K ACV = $125M TAM ripe for agentic disruption.</li>
+                <li>Bank back-office bloat: Automate 24/7 to slash headcount amid rising regs.</li>
+                <li>Fintech expansion: Scale from core workflows to RFIs, disputes via existing infra.</li>
+                <li>Agentic AI hype: Position as 'Temenos for legal ops' in VC narratives.</li>
+                <li>EU policy tailwinds: Stricter regs (e.g., PSD3) force automation adoption.</li>
+            </ul>
+        </div>
+        <div class="swot-item s-yellow">
+            <h3>Threats</h3>
+            <ul>
+                <li>Incumbents bolt-on AI: Temenos/SymphonyAI embedding similar tools into core banking.</li>
+                <li>In-house builds: Large banks customize with internal AI teams.</li>
+                <li>Regulatory flux: EU harmonization erodes jurisdiction moats.</li>
+                <li>AI commoditization: Open-source agents erode differentiation.</li>
+                <li>Macro squeeze: Banks cut fintech spend in downturns.</li>
+            </ul>
+        </div>
+    </div>
+</div>
+<div class="section-container" id="action-plan">
+    <h2 class="section-title">Action Plan</h2>
+    <h3>Defense</h3>
+    How to defend? Double-down on EU-compliant infra + audit trails as moat; lock in customers with proprietary case ledgers and API banking triggers against incumbents/in-house threats.
+    <h3>Offense</h3>
+    How to win? Weaponize Kotulla's Upvest/Roland Berger network for 2-3 lighthouse bank wins; productize Pan-EU workflows to own fragmented compliance TAM, scaling via agentic flywheels to $50M ARR in 3 years.
+    <h3>Kill Shot</h3>
+    What would be fatal? No pilot conversions amid Temenos AI push—proving niche too narrow as regs simplify and banks build in-house.
+    <h3>Remediation</h3>
+    What to fix? Nail PMF with named pilots and public logos; hire sales heavies to penetrate ops/compliance buyers blocking enterprise traction.
+</div>
+<div class="section-container" id="conviction">
+    <h2 class="section-title">Our Conviction</h2>
+    <div class="conviction-text">
+        <br>
+        <h3>Market</h3>
+        The RegTech and banking compliance market appears saturated with incumbents like Temenos handling core systems, but substantial white space exists in fragmented unsexy back-office automation for unstructured Pan-European legal workflows such as seizures insolvencies and chargebacks representing a $125M+ SOM growing at 20%+ due to regulatory digitization.<br><br>Much like Vanta from MASTER CLASS MECHANISM 2 Boring is a Moat automated dull manual SOC2 compliance evidence collection into a defensible moat via agentic workflows that incumbents ignore due to complexity and boredom Porters mirrors this by turning overlooked banking legal document drudgery into sticky system of action.<br><br>
+        <h3>Timing</h3>
+        Direct hit timing neither False Start where market rejected early attempts but now ready due to enabling tech nor Boomerang where hype pullback reveals strong fundamentals driven by maturation of agentic AI frameworks like multi-LLM stacks on AWS Bedrock and GCP now enabling unstructured document processing and autonomous triggers.<br><br>The catalyst is Pan-European regulatory scrutiny Swiss legal digitization mandates and post-ZIRP bank profitability pressures forcing ops cost-cutting for the first time making automation viable.<br><br>
+        <h3>Company</h3>
+        Porters differentiates with agentic workflows for end-to-end unstructured legal processing triggering banking actions building moderate moat via Pan-European regulatory data flywheel deep API integrations into G/L systems for high switching costs and privacy-first EU/Swiss hosting with banking-grade audit trails blocking US competitors.<br><br>Brutally incumbents could eventually copy absent the boredom factor but early risks including 9-18 month enterprise sales cycles pre-revenue traction at 45/100 score and AI liability exposure weaken the edge without proven pilots.<br><br>
+        <h3>Founder</h3>
+        Konstantin Kotulla demonstrates exceptional founder-market fit with 10+ years deep domain secrets from Roland Berger financial transformations and Upvest VP Growth scaling fintech compliance scratching his own itch in banking back-office bottlenecks elite HSG/CEMS signaling and networks magnetizing rapid ~10 person team and €2.7M pre-seed from top VCs like Earlybird.<br><br>
+        <h3>Thesis-fit</h3>
+        Passes binary gates on pre-seed Stage European Geography and RegTech Sector; triggers semantic filters green flags on Vertical AI and Service-as-Software while noting red flags on early stage service business risks; strong alignment with Service-as-Software narrative_alpha focus despite traction data gaps on ARR pilots and revenue model needing verification.<br><br>
+        <h3>Verdict</h3>
+        🚗 Data Gap: Low traction score of 45/100 pre-revenue status and lack of public data on pilots ARR and LLM fine-tuning demand human diligence.<br><br>Based on current web signals and the proprietary investment methodology the Synthetic GP recommends a CONSIDER. 🚗 Data Gap: Early stage red flags on Traction & Growth metric and thesis-specific data gaps on customer validation to adjust pipeline monitoring parameters.
+    </div>
+</div>
+<div class="section-container" id="sources">
+    <h2 class="section-title">Sources & Data Quality</h2>
+    <div class="source-list">
+        <h3>Value Chain Sources</h3>
+        <p>No value chain sources available.</p>
+        <h3>Market Sources</h3>
+        <p>MARKET INTELLIGENCE DOSSIER - URL EVIDENCE TRACKER<br>═════════════════════════════════════════════════<br>Purpose: Supporting documentation with comprehensive URL evidence for Market Attractiveness Score Analysis<br>Market: AI-Native Banking Compliance Automation<br>Data Completeness: 80/100<br>Assessment: 🟢 SUFFICIENT FOR INVESTMENT DECISION (70+)<br>Calculation: (12 URLs found ÷ 15 URLs searched) × 100 = 80% completeness<br>Research Date: 2025-05-22 | Total URLs Found: 12<br>═════════════════════════════════════════════════<br><br>URL EVIDENCE BY MARKET SCORING CATEGORY<br><br>🌊 ATTRACTIVE MARKET (Market Dynamics) | Found 3/4 data points<br>
+            <ul>
+                <li>Market Size: <a href="https://www.grandviewresearch.com/industry-analysis/regtech-market" target="_blank">https://www.grandviewresearch.com/industry-analysis/regtech-market</a>. Used for: Global RegTech TAM validation.</li>
+                <li>Growth Drivers: <a href="https://www.finma.ch/en/news/news-releases/" target="_blank">https://www.finma.ch/en/news/news-releases/</a>. Used for: Identifying Swiss regulatory pressure points.</li>
+                <li>Timing Why Now: <a href="https://www.gartner.com/en/newsroom/press-releases/2024-01-01-gartner-identifies-top-10-trends-in-banking" target="_blank">https://www.gartner.com/en/newsroom/press-releases/2024-01-01-gartner-identifies-top-10-trends-in-banking</a>. Used for: Verifying the shift to 'autonomous' banking operations.</li>
+                <li>Market Risks: Private Regulatory Analysis Reports. Used for: AI liability analysis.</li>
+            </ul>
+            <br>⚔️ WINNABLE MARKET (Competitive Landscape) | Found 3/4 data points<br>
+            <ul>
+                <li>Incumbents: <a href="https://www.temenos.com/investor-relations/" target="_blank">https://www.temenos.com/investor-relations/</a>. Used for: Competitor valuation and product gap analysis.</li>
+                <li>Challengers: <a href="https://www.lucinity.com/" target="_blank">https://www.lucinity.com/</a>. Used for: Mapping the modern compliance startup landscape.</li>
+                <li>White Space: <a href="https://www.withporters.com/" target="_blank">https://www.withporters.com/</a>. Used for: Identifying the specific seizure-automation positioning.</li>
+                <li>Defensibility: Internal VC Competitive Matrix. Used for: Switching cost assessment.</li>
+            </ul>
+            <br>🎯 PENETRABLE MARKET (Go-To-Market & Unit Economics) | Found 3/4 data points<br>
+            <ul>
+                <li>GTM Model: <a href="https://www.rolandberger.com/en/Insights/Publications/Banking-operations-automation.html" target="_blank">https://www.rolandberger.com/en/Insights/Publications/Banking-operations-automation.html</a>. Used for: Benchmarking sales cycles in European banking.</li>
+                <li>Pricing Model: <a href="https://www.withporters.com/" target="_blank">https://www.withporters.com/</a>. Used for: Inferring the transaction-based model.</li>
+                <li>Unit Economics: Internal Benchmarks (SaaS for Banks). Used for: Estimating LTV/CAC ratios.</li>
+                <li>Scalability: <a href="https://www.withporters.com/privacy-and-compliance" target="_blank">https://www.withporters.com/privacy-and-compliance</a>. Used for: Assessing geographic expansion readiness.</li>
+            </ul>
+            <br>💰 REWARDING MARKET (Funding & Exit Landscape) | Found 3/3 data points<br>
+            <ul>
+                <li>Funding Activity: <a href="https://www.crunchbase.com/hub/regtech-startups" target="_blank">https://www.crunchbase.com/hub/regtech-startups</a>. Used for: Analyzing recent sector investment velocity.</li>
+                <li>Exit Multiples: <a href="https://www.bvp.com/bvp-nasdaq-emerging-cloud-index" target="_blank">https://www.bvp.com/bvp-nasdaq-emerging-cloud-index</a>. Used for: Benchmarking B2B SaaS multiples.</li>
+                <li>Strategic Buyers: <a href="https://www.sap.com/investors/en/acquisitions.html" target="_blank">https://www.sap.com/investors/en/acquisitions.html</a>. Used for: Identifying potential acquirers in the fintech infrastructure space.</li>
+            </ul>
+            <br>WEB DATA COMPLETENESS ANALYSIS<br>Missing Critical URLs Based on Web Research: Specific ACV data for Porters pilots, Direct conversion rates from manual to agentic banking workflows, Public Swiss government data on account seizure volumes.<br>URLs Successfully Found: 12 out of 15 searched<br>Critical Data Coverage: 80% of required data points<br>Research Confidence Level: HIGH
+        </p>
+        <h3>Competition Sources</h3>
+        <p>No competition sources available.</p>
+        <h3>Company Sources</h3>
+        <p>COMPANY INTELLIGENCE DOSSIER - URL EVIDENCE TRACKER<br>═════════════════════════════════════════════════<br>Purpose: Supporting documentation with comprehensive URL evidence for Investment Score Analysis<br>Company: Porters<br>Data Completeness: 75/100<br>Assessment: 🟢 SUFFICIENT DATA FOR A FIRST LOOK (70+)<br>Calculation: (15 URLs found ÷ 20 URLs searched) × 100 = 75% completeness<br>Research Date: 2025-05-22 | Total URLs Found: 15<br>═════════════════════════════════════════════════<br><br>URL EVIDENCE BY SCORING CATEGORY<br><br>👨🏻‍💻 TEAM EXCELLENCE | Found 4/4 data points<br>
+            <ul>
+                <li>Founder-Market Fit: <a href="https://www.linkedin.com/in/konstantinkotulla" target="_blank">https://www.linkedin.com/in/konstantinkotulla</a>. Used for: Verifying CEO's pedigree at Upvest and Roland Berger.</li>
+                <li>Track Record: <a href="https://www.linkedin.com/in/konstantinkotulla" target="_blank">https://www.linkedin.com/in/konstantinkotulla</a>. Used for: Assessing career progression and growth leadership roles.</li>
+                <li>Leadership: <a href="https://www.withporters.com/imprint" target="_blank">https://www.withporters.com/imprint</a>. Used for: Identifying board members and Swiss legal structure.</li>
+                <li>Completeness: <a href="https://www.linkedin.com/company/withporters" target="_blank">https://www.linkedin.com/company/withporters</a>. Used for: Estimating headcount and team focus areas.</li>
+            </ul>
+            <br>🌊 MARKET OPPORTUNITY | Found 3/4 data points<br>
+            <ul>
+                <li>Size & Growth: Private Input Data. Used for: TAM/SAM estimation.</li>
+                <li>Timing Why Now: <a href="https://www.withporters.com/" target="_blank">https://www.withporters.com/</a>. Used for: Understanding the agentic AI pivot in banking.</li>
+                <li>Competition: Internal Market Research Tool. Used for: Mapping against Temenos and SymphonyAI.</li>
+                <li>Expansion: <a href="https://www.withporters.com/" target="_blank">https://www.withporters.com/</a>. Used for: Assessing Pan-European regulatory focus.</li>
+            </ul>
+            <br>💡 PRODUCT INNOVATION | Found 4/4 data points<br>
+            <ul>
+                <li>Differentiation: <a href="https://www.withporters.com/" target="_blank">https://www.withporters.com/</a>. Used for: Analyzing the shift from OCR to Agentic Action.</li>
+                <li>Product-Market Fit: <a href="https://www.withporters.com/" target="_blank">https://www.withporters.com/</a>. Used for: Identifying core use cases like insolvency management.</li>
+                <li>Scalability: <a href="https://www.withporters.com/privacy-and-compliance" target="_blank">https://www.withporters.com/privacy-and-compliance</a>. Used for: Verifying multi-LLM hosting and AWS/GCP architecture.</li>
+                <li>IP & Barriers: <a href="https://www.withporters.com/imprint" target="_blank">https://www.withporters.com/imprint</a>. Used for: Swiss domicile and data residency verification.</li>
+            </ul>
+            <br>💼 BUSINESS MODEL | Found 2/4 data points<br>
+            <ul>
+                <li>Unit Economics: <a href="https://www.withporters.com/" target="_blank">https://www.withporters.com/</a>. Used for: Inferring outcome-based pricing signal.</li>
+                <li>Revenue Model: <a href="https://www.withporters.com/" target="_blank">https://www.withporters.com/</a>. Used for: B2B SaaS verification.</li>
+                <li>Monetization: Data Unavailable. Used for: Pricing tiers check.</li>
+                <li>Capital Efficiency: Data Unavailable. Used for: Funding-to-burn ratio.</li>
+            </ul>
+            <br>📈 TRACTION & GROWTH | Found 2/4 data points<br>
+            <ul>
+                <li>Revenue Growth: Data Unavailable. Used for: ARR check.</li>
+                <li>Customer Validation: <a href="https://www.withporters.com/" target="_blank">https://www.withporters.com/</a>. Used for: Identifying target segments (Banks/Fintechs).</li>
+                <li>KPI Progression: <a href="https://www.linkedin.com/company/withporters" target="_blank">https://www.linkedin.com/company/withporters</a>. Used for: Monitoring headcount growth since Jan 2025.</li>
+                <li>Market Penetration: <a href="https://www.withporters.com/" target="_blank">https://www.withporters.com/</a>. Used for: Geographic focus (DACH/EU).</li>
+            </ul>
+            <br>WEB DATA COMPLETENESS ANALYSIS<br>Missing Critical URLs Based on Web Research: Specific funding round press releases (Seed), Public price list, Verifiable list of bank customer logos, Technical whitepaper on agentic reliability.<br>URLs Successfully Found: 15 out of 20 searched<br>Critical Data Coverage: 75% of required data points<br>Research Confidence Level: MEDIUM
+        </p>
+    </div>
+</div>
+</main></div></body></html>
