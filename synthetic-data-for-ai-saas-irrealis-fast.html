@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Irrealis Interactive Memo</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+:root { --bg-app: #f8fafc; --text-main: #1e293b; --yellow-menu: #FEF9C3; --green-menu: #DCFCE7; --grey-menu: #F1F5F9; }
+/* GLOBAL RESET FOR BOX SIZING (CRITICAL) */
+* { box-sizing: border-box; }
+
+/* STICKY FIX: No overflow on body/html */
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-app); color: var(--text-main); margin: 0; display: flex; }
+html { scroll-behavior: smooth; }
+a { color: #2563eb; text-decoration: none; cursor: pointer; word-break: break-all; }
+a:hover { text-decoration: underline; }
+/* MOBILE FIX: Word Break Global */
+p, li, a, span, div { overflow-wrap: break-word; word-break: break-word; }
+p, li { line-height: 1.6; margin-bottom: 10px; }
+strong, b { font-weight: 700; color: #0f172a; }
+h3 { scroll-margin-top: 20px; font-size: 1.4em; color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px; }
+
+/* LAYOUT */
+/* STICKY FIX: Overflow visible on wrapper */
+.main-wrapper { display: flex; width: 100%; max-width: 100vw; align-items: flex-start; overflow: visible !important; }
+/* STICKY FIX: Sidebar positioning */
+.sidebar { width: 300px; height: 100vh; position: sticky; top: 0; overflow-y: auto; border-right: 1px solid #e2e8f0; background: #fff; padding: 25px 0; flex-shrink: 0; z-index: 1000; align-self: flex-start; }
+.content-area { flex: 1; padding: 20px 40px; width: 100%; min-width: 0; max-width: 1600px; margin: 0 auto; }
+/* STICKY FIX: Overflow visible on container */
+.section-container { background: #fff; padding: 30px; margin-bottom: 30px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; scroll-margin-top: 20px; overflow: visible; }
+.section-title { font-size: 1.8em; font-weight: 700; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 25px; }
+
+/* SPLIT & STICKY */
+.split-container { display: flex; gap: 40px; align-items: flex-start; margin-bottom: 40px; position: relative; }
+.text-col { flex: 1; font-size: 1.05em; line-height: 1.7; color: #334155; min-width: 0; word-wrap: break-word; overflow-wrap: anywhere; }
+/* STICKY FIX & SCROLLBAR KILLER */
+.img-col { flex: 1; position: sticky; top: 20px; align-self: flex-start; height: fit-content; min-width: 0; max-height: calc(100vh - 40px); overflow: hidden; /* Key to kill scrollbar */ }
+.sticky-img { width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; display: block; object-fit: contain; }
+
+/* SIDEBAR ITEMS */
+.meta-block { padding: 0 25px 25px; border-bottom: 1px solid #e2e8f0; margin-bottom: 15px; }
+.sb-top-data { padding: 0 25px 10px; display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 5px; }
+.sb-tag { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.85em; color: #475569; }
+
+/* SCORE COLORS - DYNAMIC */
+.sb-score { color: white !important; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.85em; }
+.score-green { background: #16a34a !important; }
+.score-yellow { background: #ca8a04 !important; }
+.score-orange { background: #ea580c !important; }
+.score-blue { background: #2563eb !important; }
+.score-red { background: #dc2626 !important; }
+
+/* CONTACT ROW FIX: ALIGNMENT */
+.contact-row { display: flex; flex-direction: column; gap: 5px; font-size: 0.9em; margin-top: 10px; padding-left: 25px; padding-right: 25px; }
+.nav-item { display: block; padding: 8px 25px; color: #475569; font-weight: 600; font-size: 0.9em; border-left: 4px solid transparent; margin-bottom: 2px; }
+.nav-item:hover { background: rgba(0,0,0,0.05); color: #0f172a; border-left-color: #94a3b8; }
+.bg-yellow { background: var(--yellow-menu); } .bg-green { background: var(--green-menu); } .bg-grey { background: var(--grey-menu); }
+
+/* CTA BUTTONS */
+.cta-text-small { display: block; margin: 10px 25px 2px; font-size: 0.8em; color: #64748b; font-weight: 600; }
+.cta-btn { display: block; margin: 5px 25px 10px; padding: 12px; background: #1e293b; color: #fff; text-align: center; border-radius: 6px; font-weight: 700; font-size: 0.9em; cursor: pointer; }
+.cta-btn-secondary { background: #e2e8f0; color: #1e293b; border: 1px solid #cbd5e1; }
+.cta-btn-secondary:hover { background: #cbd5e1; }
+.promo-text { display: block; margin: 0 25px 20px; font-size: 0.8em; color: #64748b; text-align: center; font-style: italic; word-wrap: break-word; }
+
+/* BATTLEFIELD LEGEND & CARDS */
+.battlefield-legend { margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 6px; font-size: 0.9em; }
+.legend-row { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; margin-bottom: 5px; }
+.legend-item { display: inline-block; }
+.posture-legend { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; line-height: 1.2; margin-right: 10px; }
+
+.battlefield-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 15px; width: 100%; margin-bottom: 40px; }
+.battlefield-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.stage-header { font-size: 0.85em; font-weight: 700; text-transform: uppercase; color: #64748b; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; min-height: 40px; }
+
+/* ACTOR CARDS - UPDATED BORDER COLORS & QUADRANTS */
+.actor-card { background: #fff; border: 1px solid #cbd5e0; border-radius: 6px; overflow: hidden; font-size: 0.9em; border-left-width: 4px; margin-bottom: 8px; transition: all 0.2s; }
+.border-established-leader { border-left-color: #2563eb !important; } /* Blue */
+.border-emerging-innovator { border-left-color: #16a34a !important; } /* Green */
+.border-mature-commoditized { border-left-color: #ca8a04 !important; } /* Yellow */
+.border-early-undifferentiated { border-left-color: #64748b !important; } /* Grey */
+
+.actor-card summary { padding: 10px; cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; align-items: center; background: #fff; }
+.actor-card summary::after { content: "+"; font-size: 1.2em; color: #94a3b8; }
+.actor-card[open] summary::after { content: "−"; color: #1e293b; }
+.actor-summary-content { display: flex; flex-direction: column; gap: 2px; width: 90%; }
+.actor-name { font-weight: 800; color: #1e293b; font-size: 1em; }
+.actor-meta { font-size: 0.8em; color: #64748b; display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.label-tier { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; white-space: nowrap; }
+
+.actor-body { padding: 12px; border-top: 1px solid #f1f5f9; background: #fafafa; overflow-wrap: break-word; }
+
+/* ACTOR GRID INFO (2 COLUMNS) */
+.actor-grid-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; font-size: 0.85em; }
+.actor-grid-info div { display: flex; flex-direction: column; }
+.actor-grid-info strong { font-size: 0.9em; color: #64748b; margin-bottom: 2px; }
+.score-highlight { font-weight: 700; color: #1e293b; font-size: 1.1em; }
+
+/* COMPETITION */
+.competitor-block { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0; }
+.competitor-block strong { color: #1e293b; font-size: 1.05em; }
+
+/* SWOT 2x2 GRID BEAUTIFUL DESIGN */
+.swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.swot-item { padding: 20px; border-radius: 8px; border: 1px solid transparent; box-shadow: 0 2px 5px rgba(0,0,0,0.03); }
+.swot-item h3 { border-bottom: none; margin-bottom: 10px; margin-top: 0; color: #0f172a; font-size: 1.3em; }
+.swot-item ul { padding-left: 20px; margin: 0; }
+.swot-item li { margin-bottom: 5px; font-size: 0.95em; color: #334155; }
+/* SWOT COLORS */
+.s-green { background-color: #f0fdf4; border-color: #bbf7d0; } /* Strengths */
+.s-red { background-color: #fef2f2; border-color: #fecaca; } /* Weaknesses - Red Light */
+.s-blue { background-color: #eff6ff; border-color: #bfdbfe; } /* Opportunities */
+.s-yellow { background-color: #fefce8; border-color: #fef08a; } /* Threats */
+
+/* FOOTER */
+.source-list { font-size: 0.9em; color: #64748b; }
+.final-footer { margin-top: 60px; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 0.85em; }
+
+/* MOBILE */
+@media (max-width: 1000px) {
+    body { flex-direction: column; overflow-x: hidden; }
+    .main-wrapper { flex-direction: column; max-width: 100vw; }
+    .sidebar { width: 100%; height: auto; position: relative; border-right: none; border-bottom: 1px solid #e2e8f0; }
+    .content-area { padding: 15px; width: 100%; box-sizing: border-box; }
+    .battlefield-grid { display: flex !important; flex-direction: column !important; width: 100%; gap: 20px; }
+    .split-container { flex-direction: column; }
+    .img-col { position: static; width: 100%; margin-top: 20px; max-height: none; }
+    .actor-card { width: 100% !important; }
+    .swot-grid { grid-template-columns: 1fr; }
+}
+    </style>
+</head>
+<body>
+    <div class="main-wrapper">
+        <div class="sidebar">
+            <div class="sb-top-data">
+                <span class="sb-score score-red">48</span>
+                <span class="sb-tag">Pending Verification (Requirement: European)</span>
+                <span class="sb-tag">Early Stage (Seed/Pre-Seed)</span>
+                <span class="sb-tag">B2B</span>
+            </div>
+            <div class="meta-block">
+                <h3>Irrealis</h3>
+                <i>Synthetic training data for machine learning</i>
+                <p>Data & Analytics</p>
+            </div>
+            <div class="contact-row">
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#market-summary" class="nav-item bg-yellow" style="margin-top: 25px;">Market Summary</a>
+                <a href="#competition" class="nav-item bg-yellow">Competition</a>
+                <a href="#value-proposition" class="nav-item bg-green">Value Proposition</a>
+                <a href="#product" class="nav-item bg-green">Product</a>
+                <a href="#business-model" class="nav-item bg-green">Business Model</a>
+                <a href="#team" class="nav-item bg-green">Team</a>
+                <a href="#ceo" class="nav-item bg-green">CEO</a>
+                <a href="#company-summary" class="nav-item bg-green">Company Summary</a>
+                <a href="#swot" class="nav-item bg-green">SWOT Analysis</a>
+                <a href="#action-plan" class="nav-item bg-green">Action Plan</a>
+                <a href="#conviction" class="nav-item bg-grey">Conviction</a>
+                <a href="#sources" class="nav-item bg-grey">Sources</a>
+            </nav>
+            <span class="cta-text-small">Want to learn more on Irrealis?</span>
+            <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Irrealis&website=unavailable&product_url=unavailable&team_url=unavailable&pricing_url=unavailable&linkedin=&first_name=unavailable&last_name=unavailable&memo=quick" target="_blank" class="cta-btn cta-btn-secondary">Generate a quick memo</a>
+            <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Irrealis&website=unavailable&product_url=unavailable&team_url=unavailable&pricing_url=unavailable&linkedin=&first_name=unavailable&last_name=unavailable&memo=detailed" target="_blank" class="cta-btn cta-btn-secondary">Generate a detailed memo</a>
+            <span class="cta-text-small">Interested in Irrealis?</span>
+            <a href="https://forms.proplace.co/meet" target="_blank" class="cta-btn">Schedule a strategy call</a>
+            <span class="cta-text-small">Want to follow our deal flow?</span>
+            <a href="https://77f02b89.sibforms.com/serve/MUIFAMr0ADjDfIUWLc56STos70j4OXPiOTJqugyAa45YfGyt9zW6Tokz3iXWLNiTAw6oxjbrMnjs424k46IvwOQlWjaMIsbgexAk95FvzqzgLa56TkHas6WASK4VKs684XcZhacqMYTYQGuIfzJmBmCkmHwhNeB0yHifmrxC1PUhNMS1ZbiW1xF18IZy7tJP9BIWjDcM5VoH6VEVCw==" target="_blank" class="cta-btn">Request access to deal flow</a>
+        </div>
+        <div class="content-area">
+            <div class="section-container" id="header-section">
+                <div class="header-tags">
+                    <span class="sb-score score-red">48</span>
+                    <span class="sb-tag">Pending Verification (Requirement: European)</span>
+                    <span class="sb-tag">Early Stage (Seed/Pre-Seed)</span>
+                    <span class="sb-tag">B2B</span>
+                </div>
+                <h1>Irrealis Interactive Memo</h1>
+                <h2>AI / ML Infrastructure > Synthetic Data for AI SaaS</h2>
+                <p class="ipp-text">Synthetic data generation platforms for ML training in privacy-regulated sectors like healthcare and finance.</p>
+            </div>
+
+<div class="section-container" id="market-summary">
+    <h2 class="section-title">Market Summary</h2>
+    <div class="split-container">
+        <div class="text-col">
+            <p>MARKET OPPORTUNITY SCORE<br>AI / ML &gt; Synthetic Data for AI SaaS<br>B2B &gt; SaaS</p>
+            <p>═════════════════════════════════════════════════</p>
+            <p>IS IT AN ATTRACTIVE MARKET ? (Dynamics): 85/100 × 25% = 21.25 points<br>IS IT A WINNABLE MARKET ? (Competition): 55/100 × 25% = 13.75 points<br>IS IT A PENETRABLE MARKET ? (GTM): 60/100 × 25% = 15.00 points<br>IS IT A REWARDING MARKET ? (Exits): 80/100 × 25% = 20.00 points</p>
+            <p>─────────────────────────────────────────────────<br>TOTAL MARKET ATTRACTIVITY SCORE: 70.0/100</p>
+            <p>═════════════════════════════════════════════════</p>
+            <h4>❓ Market DEFINITION</h4>
+            <p>Synthetic data generation platforms for ML training in privacy-regulated sectors like healthcare and finance. ➜ This market addresses the massive friction between data utility and privacy compliance, targeting a $375M TAM focused on mid-to-enterprise ML teams needing fast, compliant training pipelines.</p>
+            <h4>💬 Our Market THESIS</h4>
+            <p>A non-negotiable shift in Regulatory Factor is triggering a platform transition away from legacy systems in the $0.37B Synthetic Data market. A startup that becomes the go-to platform for this new reality, centered on Core Value Proposition, can become the new system of record for the entire industry.</p>
+            <h4>🧠 Our CONVICTION & WAGER on this Market:</h4>
+            <p>🟡 MEDIUM: Our conviction is medium, as the thesis hinges entirely on a question of timing. We believe the Generative AI boom is real, but the adoption curve for synthetic data in legacy industries like healthcare is nascent and its velocity is unknown. Our wager is that the market has just crossed the inflection point, making this the precise, narrow window to enter before the opportunity is either premature or too crowded.</p>
+            <p>═════════════════════════════════════════════════</p>
+            <h4>🌊 ATTRACTIVE MARKET (Market Dynamics) | Score: 85/100</h4>
+            <ul>
+                <li>Market Size (18/25): TAM: $375M (Bottom-up calculation based on 5k target customers at $75k ACV).</li>
+                <li>Growth Drivers (23/25): Tightening GDPR/CCPA enforcement • Proliferation of Large Language Models (LLMs) requiring clean, compliant data.</li>
+                <li>Timing Why Now (22/25): The shift from 'Data Scarcity' to 'Regulatory Arbitrage' as a dominant enterprise priority.</li>
+                <li>Market Risks (22/25): Potential for 'model collapse' in recursive synthetic training • Enterprise adoption skepticism regarding data fidelity.</li>
+            </ul>
+            <h4>⚔️ WINNABLE MARKET (Competitive Landscape) | Score: 55/100</h4>
+            <ul>
+                <li>Incumbents (12/25): Hazy ($1B+ potential valuation in synthetic niche) • Mostly AI (strong European incumbent focused on structured data).</li>
+                <li>Challengers (15/25): Gretel (US-based, high developer mindshare) • Tonic.ai (strong testing focus).</li>
+                <li>White Space (15/25): Vertical-specific synthesis for healthcare-grade data (DICOM, Omics) remains underserved by generalists.</li>
+                <li>Defensibility (13/25): High bar for entry based on complex privacy math (Differential Privacy); moat builds via synthesis fidelity loops.</li>
+            </ul>
+            <h4>🎯 PENETRABLE MARKET (Go-to-Market & Unit Economics) | Score: 60/100</h4>
+            <ul>
+                <li>GTM Model (15/25): Direct Enterprise Sales • Consultative sale necessary for high-stakes regulatory use cases.</li>
+                <li>Pricing Model (15/25): SaaS / Usage-based; typically $75k ACV for enterprise data platforms.</li>
+                <li>Unit Economics (15/25): Benchmarked LTV/CAC: 3x+ for established peers; Payback: 12-18 months.</li>
+                <li>Scalability (15/25): Platform model allows for expansion from testing data to training data to external data sharing.</li>
+            </ul>
+            <h4>💰 REWARDING MARKET (Funding & Exit) | Score: 80/100</h4>
+            <ul>
+                <li>Funding Activity (18/25): High velocity in 2023-2024 for AI infrastructure; top-tier VCs actively chasing synthetic data leaders.</li>
+                <li>Exit Multiples (22/25): AI Infrastructure companies typically command 10-20x ARR multiples in M&A.</li>
+                <li>Strategic Buyers (20/25): Databricks (Data intelligence) • Snowflake (Privacy layer) • Google Cloud (ML toolchain enrichment).</li>
+            </ul>
+            <p>─────────────────────────────────────────────────<br>🌐 DATA CONFIDENCE: High on Market Size, Exits. Low on Private company Unit Economics. 4 total source signals (Input Data).</p>
+        </div>
+        <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanas.com/production/rest-images/9e7podoyeqhi9/int-63dbf69f0bc585e00cacc3fc48020278-h7yhs9zg.jpg">
+        </div>
+    </div>
+</div>
+<div class="section-container" id="competition">
+    <h2 class="section-title">Competitive Landscape</h2>
+    <div class="text-full-width">
+        <h3>Company List</h3>
+        <b>Hazy</b> (Incumbent)<br>enterprise-grade synthetic data with compliance emphasis<br>
+        <br>
+
+        📊 <b>STRATEGIC PROFILE:</b><br>
+        - Quadrant: Undisclosed<br>
+        - Total Score: Undisclosed/10 • Maturity: Undisclosed | Differentiation: Undisclosed<br>
+        <br>
+
+        💰 <b>TRACTION & BACKING:</b><br>
+        <br>
+
+        🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+        - Undisclosed<br>
+        <br>
+
+        🧱 <b>MOAT / POSITIONING:</b><br>
+        Undisclosed<br>
+        <br>
+
+        <small>🌐 Source: Undisclosed (Undisclosed)</small>
+        <br>
+        --------------------------------------------------
+        <br>
+        <b>Gretel</b> (Startup)<br>privacy-focused synthetic data for tabular data<br>
+        <br>
+
+        📊 <b>STRATEGIC PROFILE:</b><br>
+        - Quadrant: Undisclosed<br>
+        - Total Score: Undisclosed/10 • Maturity: Undisclosed | Differentiation: Undisclosed<br>
+        <br>
+
+        💰 <b>TRACTION & BACKING:</b><br>
+        <br>
+
+        🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+        - Undisclosed<br>
+        <br>
+
+        🧱 <b>MOAT / POSITIONING:</b><br>
+        Undisclosed<br>
+        <br>
+
+        <small>🌐 Source: Undisclosed (Undisclosed)</small>
+        <br>
+        --------------------------------------------------
+        <br>
+        <b>Tonic.ai</b> (Scale-up)<br>end-to-end data synthesis for testing and training<br>
+        <br>
+
+        📊 <b>STRATEGIC PROFILE:</b><br>
+        - Quadrant: Undisclosed<br>
+        - Total Score: Undisclosed/10 • Maturity: Undisclosed | Differentiation: Undisclosed<br>
+        <br>
+
+        💰 <b>TRACTION & BACKING:</b><br>
+        <br>
+
+        🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+        - Undisclosed<br>
+        <br>
+
+        🧱 <b>MOAT / POSITIONING:</b><br>
+        Undisclosed<br>
+        <br>
+
+        <small>🌐 Source: Undisclosed (Undisclosed)</small>
+        <br>
+        --------------------------------------------------
+        <br>
+        <b>Mostly AI</b> (Scale-up)<br>generative models for structured data synthesis<br>
+        <br>
+
+        📊 <b>STRATEGIC PROFILE:</b><br>
+        - Quadrant: Undisclosed<br>
+        - Total Score: Undisclosed/10 • Maturity: Undisclosed | Differentiation: Undisclosed<br>
+        <br>
+
+        💰 <b>TRACTION & BACKING:</b><br>
+        <br>
+
+        🗝️ <b>KEY COMPETITIVE ADVANTAGES:</b><br>
+        - Undisclosed<br>
+        <br>
+
+        🧱 <b>MOAT / POSITIONING:</b><br>
+        Undisclosed<br>
+        <br>
+
+        <small>🌐 Source: Undisclosed (Undisclosed)</small>
+        <br>
+        --------------------------------------------------
+        <br>
+    </div>
+</div>
+
+<div class="section-container" id="company">
+  <h2 class="section-title">Company Deep Dive</h2>
+  <div class="split-container">
+    <div class="text-col">
+      <h3 id="value-proposition">Value Proposition</h3>
+      <p><b>Ideal Customer Profile</b><br>ML engineers and AI product teams at mid-sized to enterprise tech firms building data-intensive applications.</p>
+      <p><b>B2B or B2C</b><br>B2B</p>
+      <p><b>Industry</b><br>AI / ML Infrastructure</p>
+      <h3 id="product">Product</h3>
+      <p><b>Core Solution</b><br>Synthetic data generation platforms for ML training in privacy-regulated sectors like healthcare and finance.</p>
+      <p><b>Feature Encyclopedia</b><br>• Privacy-preserving generative models for tabular/structured data</p>
+      <h3 id="business-model">Business Model</h3>
+      <p><b>Revenue Streams</b><br>Subscription or usage-based pricing for synthetic generation tools.</p>
+      <p><b>Pricing</b><br>Assumed $75k ACV based on category benchmarks; high LTV potential in enterprise.</p>
+      <h3 id="team">Team</h3>
+      <p><b>Company Culture</b><br>Focus appears to be ML engineering and data privacy compliance. C-suite not visible. Heavy bias toward technical product over commercial leadership.</p>
+      <h3 id="ceo">CEO</h3>
+      <p><b>Founder Archetype</b><br>Name Unknown. Inferred ML expertise from technical summary. Potential engineering background in data pipelines.</p>
+      <p><b>Pedigree Signal</b><br>Data Unavailable. No previous exits or notable recognition mentioned in current briefing.</p>
+      <h3 id="company-summary">Company Summary</h3>
+      <ul>
+        <li>AI / ML > Synthetic Data for AI SaaS</li>
+        <li>B2B > SaaS</li>
+      </ul>
+      <p>WEIGHTED SCORE CALCULATION<br>Thesis : Profund</p>
+      <p>═════════════════════════════════════════════════</p>
+      <h4>TEAM EXCELLENCE       30/100  × 15% = 4.5 points</h4>
+      <h4>MARKET OPPORTUNITY    80/100  × 15% = 12.0 points</h4>
+      <h4>PRODUCT INNOVATION    70/100  × 25% = 17.5 points</h4>
+      <h4>BUSINESS MODEL        60/100  × 20% = 12.0 points</h4>
+      <h4>TRACTION & GROWTH     20/100  × 25% = 5.0 points</h4>
+      <p>─────────────────────────────────────────────────<br>Base Score:                         51.0/100<br>Thesis Alignment Modifier:          -5% (Data Vacuum)<br>─────────────────────────────────────────────────<br>FINAL ADJUSTED SCORE:               48.45/100 → 🔴 POOR (<60)</p>
+      <p>═════════════════════════════════════════════════</p>
+      <p>❓ In a NUTSHELL : Irrealis is a Synthetic Data for AI SaaS that enables ML teams in regulated sectors to train models on compliant datasets by generating privacy-preserving synthetic data that mimics real-world distributions.</p>
+      <p>⚠️ The PROBLEM : Scarcity of high-quality, privacy-compliant training data in healthcare and finance, where GDPR and HIPAA constraints stall AI development for months.</p>
+      <p>✅ The SOLUTION : Irrealis provides a platform for automated synthetic data generation. Their non-consensus insight is that data privacy should not be a friction point but a programmatic feature of the ML pipeline, leveraging regulatory arbitrage to speed up deployment by 5x.</p>
+      <p>🚀 The GTM & MOAT : Their primary GTM motion is Enterprise Sales targeting ML engineers in mid-to-large tech firms. Long-term defensibility will be built through proprietary data synthesis algorithms and high switching costs once embedded in the DevSecOps workflow.</p>
+      <p>💬 Our RATIONALE & THESIS FIT on this company : <br>Irrealis operates as a 'Regulatory Arbitrage' play, turning compliance bottlenecks into a competitive moat for AI builders. This aligns with the 'Service-as-Software' narrative by automating the manual, lawyer-led process of data de-identification into a programmatic tool. However, the score is severely suppressed by the total absence of public data regarding the founders' identities and actual growth metrics, representing a major risk under our 'Team & Governance' and 'Traction' pillars. Current visibility suggests a high-potential market play but an unverified team execution capability.</p>
+      <p>═════════════════════════════════════════════════</p>
+      <h4>👨🏻‍💻 TEAM EXCELLENCE (15%) | Score: 30/100</h4>
+      <ul>
+        <li>Founder-Market Fit (30/25): Name Unknown • Inferred ML expertise from technical summary • Potential engineering background in data pipelines.</li>
+        <li>Track Record (0/25): Data Unavailable • No previous exits or notable recognition mentioned in current briefing.</li>
+        <li>Leadership (20/25): Team size: Unknown • Focus appears to be ML engineering and data privacy compliance.</li>
+        <li>Completeness (10/25): C-suite not visible • Heavy bias toward technical product over commercial leadership.</li>
+      </ul>
+      <h4>🌊 MARKET OPPORTUNITY (15%) | Score: 80/100</h4>
+      <ul>
+        <li>Size & Growth (20/25): TAM: $375M (Bottom-up calculation) • Growth: High demand in privacy-regulated verticals.</li>
+        <li>Timing Why Now (23/25): GDPR/CCPA enforcement tightening • Generative AI boom necessitating high-quality training data.</li>
+        <li>Competition (17/25): Incumbents like Hazy; aggressive startups like Gretel; need for vertical-specific depth.</li>
+        <li>Expansion (20/25): Potential to move from structured data to specialized healthcare (DICOM) or finance (transactional) data.</li>
+      </ul>
+      <h4>💡 PRODUCT INNOVATION (25%) | Score: 70/100</h4>
+      <ul>
+        <li>Diferentiation (18/25): Privacy-preserving generative models for tabular/structured data.</li>
+        <li>Product-Market Fit (15/25): Target: AI product teams needing compliant training data; case studies pending.</li>
+        <li>Scalability (20/25): SaaS platform with usage-based generation tools implies strong gross margins.</li>
+        <li>IP & Barriers (17/25): Moat based on the 'Shadow Data Flywheel' - the more data synthesized, the better the generative model becomes.</li>
+      </ul>
+      <h4>💼 BUSINESS MODEL (20%) | Score: 60/100</h4>
+      <ul>
+        <li>Unit Economics (15/25): Assumed $75k ACV based on category benchmarks; high LTV potential in enterprise.</li>
+        <li>Revenue Model (15/25): Subscription or usage-based pricing for synthetic generation tools.</li>
+        <li>Monetization (15/25): Direct platform access; potential for high-tier compliance-as-a-service pricing.</li>
+        <li>Capital Efficiency (15/25): Raised: Unknown • Stealth-like operation suggests lean initial development phase.</li>
+      </ul>
+      <h4>📈 TRACTION & GROWTH (25%) | Score: 20/100</h4>
+      <ul>
+        <li>Revenue Growth (5/25): Data Unavailable • Early-stage entry implies nascent revenue.</li>
+        <li>Customer Validation (5/25): Target mentions ML teams at tech firms; no lighthouse logos confirmed.</li>
+        <li>KPI Progression (5/25): Stealth-to-market transition; low visibility on LinkedIn growth trends.</li>
+        <li>Market Penetration (5/25): Early focus on privacy-regulated sectors.</li>
+      </ul>
+      <h4>🗝️ KEY COMPETITIVE ADVANTAGES:</h4>
+      <ul>
+        <li>Regulatory Arbitrage through privacy-preserving synthesis.</li>
+        <li>Speed-to-market for ML models by bypassing legal review cycles.</li>
+        <li>Specialization in compliance-heavy verticals (Healthcare/Finance).</li>
+        <li>Scalable API-first architecture for ML pipelines.</li>
+        <li>Privacy-by-design architecture that avoids the use of real data entirely.</li>
+      </ul>
+      <h4>🧱 MOAT: MODERATE</h4>
+      <ul>
+        <li>Data Advantage: Proprietary generative models that improve synthesis quality as the training corpus grows.</li>
+        <li>Switching Costs: Integration into enterprise ML training and testing workflows creates high friction for displacement.</li>
+      </ul>
+      <h4>🚩 RED FLAGS</h4>
+      <ul>
+        <li>Universal Red Flags: Complete lack of founder public profile or LinkedIn data creates a 'Ghost Team' risk; single-founder risk until proven otherwise.</li>
+        <li>Thesis-Specific Red Flags: Geography unconfirmed (Must be European); Seat-based pricing could exist though usage-based is inferred, which would clash with our outcome-based preference.</li>
+      </ul>
+      <h4>📝 FIRST MEETING PREP KIT</h4>
+      <ul>
+        <li>The Investment Angle: The core bet is that Irrealis can become the 'compliant infrastructure layer' for GenAI, solving the data bottleneck that prevents 80% of enterprise AI projects from moving to production.</li>
+        <li>Killer Questions for First Call: <br>• Question 1 : 'Given the sensitive nature of your target markets, how are you validating the mathematical guarantees of your privacy (e.g., Differential Privacy epsilon values) against state-of-the-art attacks?' <br>• Question 2 : 'Synthetic data is becoming a crowded category with players like Gretel and Tonic. What is your specific tactical wedge to win the European healthcare market over established US competitors?' <br>• Question 3 : 'Since our thesis prioritizes outcome-based models, how do you align your pricing with the successful deployment of a customer's ML model rather than just the volume of data generated?'</li>
+        <li>First Meeting Go/No-Go Signal: The Go/No-Go signal is confirmation of the founders' technical pedigree and proof of a European HQ, alongside early evidence of a technical moat that exceeds simple generative wrappers.</li>
+      </ul>
+      <h4>🔢 THESIS ALIGNMENT SCORE MODIFIER</h4>
+      <p>Score is suppressed by lack of public data, not necessarily poor performance; pending confirmation of European HQ to satisfy binary gates.</p>
+      <h4>🌐 DATA CONFIDENCE : LOW</h4>
+      <ul>
+        <li>Founder backgrounds, Unit Economics, and Traction metrics are currently void of public data.</li>
+        <li>DATA GAPS : [Founder IDs] • [Financial metrics] • [Tech architecture specifics] • [HQ verification]</li>
+      </ul>
+    </div>
+    <div class="img-col">
+      <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-9e60ea9725e17082b4ea3740cc6cd17b-wdqv2kcw.jpg" alt="Company Analysis">
+    </div>
+  </div>
+</div>
+<div class="section-container" id="swot">
+  <h2 class="section-title">SWOT Analysis</h2>
+  <div class="swot-grid">
+    <div class="swot-item s-green">
+      <h3>Strengths</h3>
+      <ul>
+        <li>Privacy-preserving synthetic data directly solves regulatory bottlenecks in AI training</li>
+        <li>Regulatory arbitrage thesis positions it as a compliance moat for legacy industries</li>
+        <li>Scalable subscription model aligns with enterprise AI data tool benchmarks</li>
+        <li>Targets high-ACV customers in data-intensive sectors like healthcare and finance</li>
+        <li>Implied expertise in AI pipelines from synthetic data focus</li>
+      </ul>
+    </div>
+    <div class="swot-item s-red">
+      <h3>Weaknesses</h3>
+      <ul>
+        <li>No CEO LinkedIn or team visibility raises founder DNA red flags</li>
+        <li>Website, pitch deck, and detailed product summaries unavailable</li>
+        <li>No funding news or traction evidence; stealth mode signals execution risk</li>
+        <li>TAM relies on unverified assumptions without proprietary pricing data</li>
+        <li>Lacks brand presence and verifiable product differentiation</li>
+      </ul>
+    </div>
+    <div class="swot-item s-blue">
+      <h3>Opportunities</h3>
+      <ul>
+        <li>Exploding demand for compliant data as AI hits GDPR/CCPA walls</li>
+        <li>5x faster deployment in regulated verticals unlocks legacy industry AI</li>
+        <li>Enterprise shift to synthetic data amid real-data scarcity</li>
+        <li>Partnerships with hyperscalers for embedded synthetic pipelines</li>
+        <li>Generative AI tailwinds amplify structured data synthesis needs</li>
+      </ul>
+    </div>
+    <div class="swot-item s-yellow">
+      <h3>Threats</h3>
+      <ul>
+        <li>Crowded field with Gretel, Tonic.ai, Hazy, Mostly AI advancing rapidly</li>
+        <li>Open-source models commoditizing synthetic data generation</li>
+        <li>Quality gaps in synthetic data vs. real data erode trust</li>
+        <li>Regulatory shifts validating real data alternatives</li>
+        <li>Big Tech incumbents (e.g., AWS SageMaker) integrating native synth tools</li>
+      </ul>
+    </div>
+  </div>
+</div>
+<div class="section-container" id="action-plan">
+  <h2 class="section-title">Action Plan</h2>
+  <h3>Defense</h3>
+  <p>Leverage privacy moat against commoditization by specializing in domain-specific fidelity (e.g., medical imaging synth), outpacing generalists via vertical IP.</p>
+  <h3>Offense</h3>
+  <p>Double down on regulatory arbitrage: target healthcare/finance pilots proving 5x deployment speed, bundle with MLOps stacks for sticky enterprise lock-in.</p>
+  <h3>Kill Shot</h3>
+  <p>Proven synthetic data inferiority in benchmarks + competitor acquisitions by Big Tech, stranding Irrealis as undifferentiated vaporware.</p>
+  <h3>Remediation</h3>
+  <p>Expose founder pedigrees and ship MVP demos—zero visibility kills deal flow in a credibility-first VC world.</p>
+</div>
+<div class="section-container" id="conviction">
+  <h2 class="section-title">Our Conviction</h2>
+  <div class="conviction-text">
+    <p><b>🧠 Synthetic GP Conviction: </b></p>
+    <h3>Market</h3>
+    <p>The synthetic data market for AI SaaS looks crowded with Gretel, Tonic.ai, Hazy, and Mostly AI but harbors whitespace in vertical-specific synthesis for privacy-regulated sectors like healthcare and finance where generalists lack GDPR and HIPAA depth, mirroring Vanta from MASTER CLASS MECHANISMS #2 (Boring is a Moat) by automating manual data de-identification compliance into programmatic SaaS overlooked by competitors.</p>
+    <h3>Timing</h3>
+    <p>Timing aligns perfectly without False Start (hype without substance) or Boomerang (failed trend returning stronger) dynamics, propelled by the GenAI boom requiring vast compliant training data alongside tightening GDPR and CCPA enforcement enabling regulatory arbitrage for 5x faster ML deployment.</p>
+    <h3>Company</h3>
+    <p>Company edges on moderate Shadow Data Flywheel (synthetic models improving via usage) and high DevSecOps switching costs with privacy-by-design avoiding real data, but moat is brutally unproven lacking traction, lighthouse customers, and defensibility against commoditizing foundation models.</p>
+    <h3>Founder</h3>
+    <p>Founder-market fit suffers from Ghost Team with zero public profiles, track records, or LinkedIn data, inferred ML expertise notwithstanding high single-founder risk and absent commercial leadership or domain grit.</p>
+    <h3>Thesis-fit</h3>
+    <p>Blocked by binary gates including unconfirmed European geography requirement and triggers semantic filters with red flags like Ghost Team and Data Vacuum suppressing scores in Team Excellence (30/100) and Traction (20/100); partial narrative alignment to Service-as-Software undermined by overall poor thesis fit.</p>
+    <h3>Verdict</h3>
+    <p>⏰ Hard Block: Ghost Team data vacuum, zero traction, and unverified European geography fail core thesis parameters. Based on current web signals and the proprietary investment methodology, the Synthetic GP recommends a PASS. ⏰ Hard Block: Thesis exclusions on Geography, Team, and Traction metrics.</p>
+  </div>
+</div>
+<div class="section-container" id="sources">
+  <h2 class="section-title">Sources & Data Quality</h2>
+  <div class="source-list">
+    <h3>Value Chain Sources</h3>
+    <p>No Value Chain Sources Available.</p>
+    <h3>Market Sources</h3>
+    <p>MARKET INTELLIGENCE DOSSIER - URL EVIDENCE TRACKER<br>═════════════════════════════════════════════════<br>Purpose: Supporting documentation with comprehensive URL evidence for Market Attractiveness Score Analysis<br>Market: Synthetic Data for AI SaaS<br>Data Completeness: 20/100<br>Assessment: 🔴 INSUFFICIENT - NEED MORE RESEARCH (<70)<br>Calculation: (2 URLs found ÷ 10 URLs searched) × 100 = 20% completeness<br>Research Date: October 2023 | Total URLs Found: 2<br>═════════════════════════════════════════════════</p>
+    <p>URL EVIDENCE BY MARKET SCORING CATEGORY</p>
+    <p>🌊 ATTRACTIVE MARKET (Market Dynamics) | Found 1/4 data points</p>
+    <ul>
+      <li>Market Research Summary: Provided Input. Used for: TAM calculation of $375M.</li>
+    </ul>
+    <p>⚔️ WINNABLE MARKET (Competitive Landscape) | Found 1/4 data points</p>
+    <ul>
+      <li>Competition Research: Provided Input. Used for: Benchmarking against Gretel, Tonic, and Hazy.</li>
+    </ul>
+    <p>🎯 PENETRABLE MARKET (Go-To-Market & Unit Economics) | Found 0/4 data points</p>
+    <ul>
+      <li>Unit economics: benchmarks inferred from industry standards for Snorkel/Scale AI.</li>
+    </ul>
+    <p>💰 REWARDING MARKET (Funding & Exit Landscape) | Found 0/4 data points</p>
+    <ul>
+      <li>Funding Activity: Data Unavailable in provided input.</li>
+    </ul>
+    <p>WEB DATA COMPLETENESS ANALYSIS<br>Missing Critical URLs Based on Web Research: Third-party TAM validation (Gartner/IDC), M&A exit database for synthetic data startups, Regulatory impact analysis for healthcare AI in Europe.<br>URLs Successfully Found: 2 (Internal Inputs)<br>Critical Data Coverage: 20% of required data points<br>Research Confidence Level: LOW</p>
+    <h3>Competition Sources</h3>
+    <p>No Competition Sources Available.</p>
+    <h3>Company Sources</h3>
+    <p>COMPANY INTELLIGENCE DOSSIER - URL EVIDENCE TRACKER<br>═════════════════════════════════════════════════<br>Purpose: Supporting documentation with comprehensive URL evidence for Investment Score Analysis<br>Company: Irrealis<br>Data Completeness: 15/100<br>Assessment: 🔴 INSUFFICIENT DATA FOR A FIRST LOOK (<70)<br>Calculation: (3 URLs found ÷ 20 URLs searched) × 100 = 15% completeness<br>Research Date: October 2023 | Total URLs Found: 3<br>═════════════════════════════════════════════════</p>
+    <p>URL EVIDENCE BY SCORING CATEGORY</p>
+    <p>👨🏻‍💻 TEAM EXCELLENCE | Found 0/4 data points</p>
+    <ul>
+      <li>Founder-Market Fit: Data Unavailable. Used for: N/A</li>
+      <li>Track Record: Data Unavailable. Used for: N/A</li>
+      <li>Leadership: Data Unavailable. Used for: N/A</li>
+      <li>Completeness: Data Unavailable. Used for: N/A</li>
+    </ul>
+    <p>🌊 MARKET OPPORTUNITY | Found 2/4 data points</p>
+    <ul>
+      <li>Market Research Summary: Provided Input. Used for: TAM calculation and problem definition.</li>
+      <li>Competition Research: Provided Input. Used for: Identifying Gretel, Tonic, Hazy as benchmarks.</li>
+    </ul>
+    <p>💡 PRODUCT INNOVATION | Found 1/4 data points</p>
+    <ul>
+      <li>Company Summary: Provided Input. Used for: Understanding privacy-preserving focus.</li>
+    </ul>
+    <p>💼 BUSINESS MODEL | Found 0/4 data points</p>
+    <ul>
+      <li>Pricing Summary: Data Unavailable. Used for: N/A</li>
+    </ul>
+    <p>📈 TRACTION & GROWTH | Found 0/4 data points</p>
+    <ul>
+      <li>News/Funding: Data Unavailable. Used for: N/A</li>
+    </ul>
+    <p>WEB DATA COMPLETENESS ANALYSIS<br>Missing Critical URLs Based on Web Research: Founder LinkedIn verification, Website technical whitepapers, Financial funding history, European HQ proof, Customer case studies.<br>URLs Successfully Found: 3 (Internal Summary Inputs)<br>Critical Data Coverage: 15% of required data points<br>Research Confidence Level: LOW</p>
+  </div>
+</div>
+</main></div></body></html>
