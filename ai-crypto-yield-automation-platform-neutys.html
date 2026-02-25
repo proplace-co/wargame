@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neutys Interactive Memo</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+:root { --bg-app: #f8fafc; --text-main: #1e293b; --yellow-menu: #FEF9C3; --green-menu: #DCFCE7; --grey-menu: #F1F5F9; --blue-menu: #DBEAFE; }
+* { box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-app); color: var(--text-main); margin: 0; display: flex; }
+html { scroll-behavior: smooth; }
+a { color: #2563eb; text-decoration: none; cursor: pointer; word-break: break-all; } 
+a:hover { text-decoration: underline; }
+p, li { line-height: 1.6; margin-bottom: 10px; }
+strong, b { font-weight: 700; color: #0f172a; }
+h3 { scroll-margin-top: 40px; font-size: 1.4em; color: #000000; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px; }
+
+.main-wrapper { display: flex; width: 100%; max-width: 100vw; align-items: flex-start; overflow: visible !important; min-height: 100vh; }
+.sidebar { width: 300px; height: 100vh; position: sticky; top: 0; overflow-y: auto; border-right: 1px solid #e2e8f0; background: #fff; padding: 25px 0; flex-shrink: 0; z-index: 1000; align-self: flex-start; }
+.content-area { flex: 1; padding: 20px 40px; width: 100%; min-width: 0; max-width: 1600px; margin: 0 auto; min-height: 100vh; }
+.section-container { background: #fff; padding: 30px; margin-bottom: 30px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; scroll-margin-top: 40px; overflow: visible; }
+.section-title { font-size: 1.8em; font-weight: 700; color: #000000; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 25px; }
+.subtitle-category { font-size: 0.95em; font-weight: 700; color: #1e293b; margin-top: 0; margin-bottom: 5px; line-height: 1.4; }
+.body-tagline { font-size: 0.95em; color: #334155; margin-top: 0; margin-bottom: 30px; line-height: 1.6; }
+
+.split-container { display: flex; gap: 40px; align-items: flex-start; margin-bottom: 40px; position: relative; }
+.text-col { flex: 1; font-size: 1.05em; line-height: 1.7; color: #334155; min-width: 0; word-wrap: break-word; overflow-wrap: anywhere; }
+.img-col { flex: 1; position: sticky; top: 20px; align-self: flex-start; height: fit-content; min-width: 0; max-height: calc(100vh - 40px); overflow: visible; }
+.sticky-img { width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; display: block; object-fit: contain; }
+
+.meta-block { padding: 0 25px 25px; border-bottom: 1px solid #e2e8f0; margin-bottom: 15px; }
+.sidebar-company-name { font-size: 1.8em; margin: 0 0 10px 0; padding: 0; color: #0f172a; font-weight: 800; border-bottom: none; }
+.sb-top-data { padding: 0 0 15px 0; display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 0; }
+.sb-tag { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.85em; color: #475569; }
+.sb-score, .score-green { background: #16a34a !important; color: white !important; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.85em; }
+.contact-row { display: flex; flex-direction: column; gap: 5px; font-size: 0.9em; margin-top: 0; }
+.nav-item { display: block; padding: 8px 25px; color: #475569; font-weight: 600; font-size: 0.9em; border-left: 4px solid transparent; margin-bottom: 2px; }
+.nav-item:hover { background: rgba(0,0,0,0.05); color: #0f172a; border-left-color: #94a3b8; }
+.bg-yellow { background: var(--yellow-menu); } .bg-green { background: var(--green-menu); } .bg-grey { background: var(--grey-menu); }
+.bg-blue { background: var(--blue-menu); }
+.bg-light-purple { background: #f3e8ff; }
+
+.battlefield-legend { margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 6px; font-size: 0.9em; }
+.legend-row { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; margin-bottom: 5px; }
+.label-cap { background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-weight: 600; border: 1px solid #bbf7d0; white-space: nowrap; }
+.label-white { background: #fff; border: 1px solid #e2e8f0; padding: 2px 6px; border-radius: 4px; font-weight: 600; color: #334155; }
+.posture-legend { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; line-height: 1.2; margin-right: 10px; }
+
+.battlefield-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 15px; width: 100%; margin-bottom: 40px; }
+.battlefield-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.stage-header { font-size: 0.85em; font-weight: 700; text-transform: uppercase; color: #64748b; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; min-height: 40px; }
+
+.actor-card { background: #fff; border: 1px solid #cbd5e0; border-radius: 6px; overflow: hidden; font-size: 0.9em; border-left-width: 4px; margin-bottom: 8px; transition: all 0.2s; }
+.border-hunter { border-left-color: #dc2626 !important; }
+.border-hunted { border-left-color: #ca8a04 !important; }
+.border-fortress { border-left-color: #2563eb !important; }
+.border-opportunistic { border-left-color: #16a34a !important; }
+.border-distressed { border-left-color: #9333ea !important; }
+.actor-card summary { padding: 10px; cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; align-items: center; background: #fff; }
+.actor-card summary::after { content: "+"; font-size: 1.2em; color: #94a3b8; }
+.actor-card[open] summary::after { content: "−"; color: #1e293b; }
+.actor-summary-content { display: flex; flex-direction: column; gap: 2px; width: 90%; }
+.actor-name { font-weight: 800; color: #0f172a; font-size: 1em; }
+.actor-meta { font-size: 0.8em; color: #64748b; display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.label-tier { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.85em; color: #475569; white-space: nowrap; border: 1px solid #e2e8f0; }
+
+.actor-body { padding: 12px; border-top: 1px solid #f1f5f9; background: #fafafa; overflow-wrap: break-word; }
+.ws-box { background: #fffbeb; border: 1px solid #fcd34d; padding: 8px; border-radius: 6px; margin: 10px 0; font-size: 0.85em; color: #92400e; border: 1px solid #fcd34d; }
+.ws-box ul { padding-left: 20px; margin: 0; }
+.ws-box li { margin-bottom: 5px; }
+
+.swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+.swot-grid-small { display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 10px; }
+.swot-item { padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; }
+.swot-item h3 { margin-top: 0; font-size: 1.2em; border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: 10px; margin-bottom: 10px; }
+.swot-item ul { padding-left: 20px; margin: 0; }
+.swot-item li { margin-bottom: 8px; }
+
+.sg-box { padding: 6px; border-radius: 4px; font-size: 0.8em; line-height: 1.3; }
+.sg-box ul { padding-left: 20px; margin: 5px 0 0 0; }
+.sg-box li { margin-bottom: 4px; }
+.s-green { background: #dcfce7; color: #14532d; border: 1px solid #bbf7d0; } 
+.s-red { background: #fee2e2; color: #7f1d1d; border: 1px solid #fecaca; } 
+.s-blue { background: #dbeafe; color: #1e3a8a; border: 1px solid #bfdbfe; } 
+.s-orange { background: #ffedd5; color: #9a3412; border: 1px solid #fdba74; }
+.strat-inv-box { background: #f3e8ff; border: 1px solid #e9d5ff; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 0.85em; color: #6b21a8; }
+
+.actor-grid-info { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; font-size: 0.85em; }
+.actor-grid-info div { display: flex; flex-direction: column; }
+.actor-grid-info strong { font-size: 0.9em; color: #64748b; margin-bottom: 2px; }
+.label-diff { background: #e2e8f0; color: #1e293b; padding: 2px 6px; border-radius: 4px; font-weight: 700; width: fit-content; border: 1px solid #cbd5e1; }
+.label-posture-card { padding: 2px 6px; border-radius: 4px; font-weight: 700; color: #fff; width: fit-content; }
+.bg-hunter { background: #dc2626; } 
+.bg-hunted { background: #ca8a04; } 
+.bg-fortress { background: #2563eb; } 
+.bg-opportunistic { background: #16a34a; }
+.bg-distressed { background: #9333ea; }
+
+.competitor-block { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0; }
+.competitor-block strong { color: #1e293b; font-size: 1.05em; }
+
+details.scenario-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
+details.scenario-card summary { padding: 15px; font-weight: 500; font-size: 1.05em; line-height: 1.5; color: #334155; }
+.scen-logic-grid { display: inline-flex; flex-wrap: wrap; gap: 5px; margin-left: 10px; }
+.logic-tag { font-size: 0.75em; background: #f1f5f9; padding: 2px 8px; border-radius: 12px; border: 1px solid #cbd5e1; color: #475569; font-weight: 600; }
+.scen-details-body { padding: 20px; border-top: 1px solid #f1f5f9; background: #fcfcfc; }
+
+.table-container { width: 100%; overflow-x: auto; }
+.synergies-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.9em; }
+.synergies-table th { background: #f8fafc; padding: 12px; text-align: left; border-bottom: 2px solid #cbd5e1; white-space: nowrap; }
+.synergies-table td { padding: 12px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+.col-summary { width: 45%; min-width: 350px; } 
+
+.source-list { font-size: 0.9em; color: #64748b; }
+
+/* Sidebar CTA Elements */
+.section { margin: 0 25px 24px; }
+.section h3 { font-size: 15px; font-weight: 700; margin: 0 0 8px 0; border: none; padding: 0; color: #000000; }
+.meta-text { font-size: 12px; color: #94A3B8; margin-bottom: 16px; font-style: italic; }
+.meta-desc { font-size: 13px; color: #64748B; margin: 0 0 16px 0; line-height: 1.5; }
+.divider { height: 1px; background-color: #E2E8F0; margin: 24px 25px; }
+/* Sidebar Lists */
+.cta-list { list-style: none; padding: 0; margin: 0 0 16px 0; }
+.cta-list li { font-size: 13px; color: #475569; margin-bottom: 12px; padding-left: 20px; position: relative; line-height: 1.4; }
+.cta-list li::before { content: "→"; position: absolute; left: 0; color: #3B82F6; font-weight: bold; }
+.cta-list strong { color: #1E293B; }
+/* Enhanced Buttons */
+.btn { display: block; width: 100%; padding: 10px 14px; font-size: 14px; font-weight: 600; text-align: center; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; box-sizing: border-box; margin-bottom: 10px; white-space: normal; word-break: break-word; line-height: 1.4; }
+.btn-secondary { background-color: #F8FAFC; color: #0F172A; border: 1px solid #E2E8F0; }
+.btn-secondary:hover { background-color: #E2E8F0; text-decoration: none; border-color: #CBD5E1; }
+.btn-primary { background-color: #1E293B; color: #FFFFFF; border: none; }
+.btn-primary:hover { background-color: #0F172A; text-decoration: none; }
+
+@media (max-width: 1000px) {
+    body { flex-direction: column; overflow-x: hidden; }
+    .main-wrapper { flex-direction: column; max-width: 100vw; }
+    .sidebar { width: 100%; height: auto; position: relative; border-right: none; border-bottom: 1px solid #e2e8f0; }
+    .content-area { padding: 15px; width: 100%; box-sizing: border-box; }
+    .battlefield-grid { display: flex !important; flex-direction: column !important; width: 100%; gap: 20px; }
+    .split-container { flex-direction: column; }
+    .img-col { position: static; width: 100%; margin-top: 20px; max-height: none; }
+    .actor-card { width: 100% !important; }
+    .table-container { display: block; overflow-x: auto; }
+    .synergies-table { min-width: 700px; }
+    .swot-grid { grid-template-columns: 1fr; }
+}
+    </style>
+</head>
+<body>
+    <div class="main-wrapper">
+        <div class="sidebar">
+            <div class="meta-block">
+                <div class="sb-top-data">
+                    <span class="sb-score score-green">1</span>
+                    <span class="sb-tag">Luxembourg</span>
+                    <span class="sb-tag">Seed</span>
+                    <span class="sb-tag">DeFi (Decentralized Finance)</span>
+                    <span class="sb-tag">B2C</span>
+                </div>
+                <h3 class="sidebar-company-name">Neutys</h3>
+                <p class="meta-desc" style="margin-bottom: 15px;">Intelligent AI-driven trading and investment management generating stable daily returns.</p>
+                <div class="contact-row">
+                </div>
+            </div>
+            <nav>
+                <a href="#market-summary" class="nav-item bg-yellow">Market Summary</a>
+                <a href="#value-proposition" class="nav-item bg-green">Value Proposition</a>
+                <a href="#product" class="nav-item bg-green">Product</a>
+                <a href="#business-model" class="nav-item bg-green">Business Model</a>
+                <a href="#team" class="nav-item bg-green">Team</a>
+                <a href="#ceo" class="nav-item bg-green">CEO</a>
+                <a href="#company-summary" class="nav-item bg-green">Company Summary</a>
+                <a href="#swot" class="nav-item bg-green">SWOT Analysis</a>
+                <a href="#action-plan" class="nav-item bg-green">Action Plan</a>
+                <a href="#conviction" class="nav-item bg-blue">Conviction</a>
+                <a href="#sources" class="nav-item bg-blue">Sources</a>
+            </nav>
+            <div class="divider"></div>
+            <div class="section">
+                <h3>Explore Neutys further?</h3>
+                <p class="meta-text">Currently viewing: Fast Memo (Generated 02/25/2026 for )</p>
+                <ul class="cta-list">
+                    <li><strong>Quick Memo:</strong> Adds Market Sizing, Value Chain Analysis, Competition Magic Quadrant & Synergies with your company.</li>
+                    <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Neutys&website=https://neutys.net&product_url=unavailable&team_url=https://neutys.net/company&pricing_url=https://neutys.net/investors&linkedin=&first_name=Pierre&last_name=Shosola-Unyumbi&memo=quick" class="btn btn-secondary" target="_blank">Generate Quick Memo</a>
+                    <li style="margin-top: 16px;"><strong>Detailed Memo:</strong> Adds Competitive M&A quadrant, Strategic Scenarios, Synergies between ecosystem players & Synergies with your company.</li>
+                    <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Neutys&website=https://neutys.net&product_url=unavailable&team_url=https://neutys.net/company&pricing_url=https://neutys.net/investors&linkedin=&first_name=Pierre&last_name=Shosola-Unyumbi&memo=detailed" class="btn btn-secondary" target="_blank">Generate Detailed Memo</a>
+                </ul>
+                <a href="http://forms.proplace.co/meet" class="btn btn-secondary" target="_blank">Schedule a strategy call on Neutys</a>
+            </div>
+            <div class="divider"></div>
+            <div class="section">
+                <h3>Analyze another company?</h3>
+                <a href="https://forms.proplace.co/t/qS5aEtNxkAus" class="btn btn-primary" target="_blank">Get an AI-powered first-look</a>
+            </div>
+            <div class="section">
+                <h3>Want to follow our deal flow?</h3>
+                <p class="meta-desc">Receive European AI startups we assess every day from a VC perspective.</p>
+                <a href="https://77f02b89.sibforms.com/serve/MUIFAMr0ADjDfIUWLc56STos70j4OXPiOTJqugyAa45YfGyt9zW6Tokz3iXWLNiTAw6oxjbrMnjs424k46IvwOQlLjaMIsbgexAk95FvzqzgLa56TkHas6WASK4VKs684XcZhacqMYTYQGuIfzJmBmCkmHwhNeB0yHifmrxC1PUhNMS1ZbiW1xF18IZy7tJP9BIWjDcM5VoH6VEVCw==" class="btn btn-primary" target="_blank">Subscribe to deal flow</a>
+            </div>
+            <div class="section">
+                <h3>Want a proprietary deal flow?</h3>
+                <p class="meta-desc">Receive daily highly qualified targets for your acquisition strategy.</p>
+                <a href="http://forms.proplace.co/meet" class="btn btn-primary" target="_blank">Schedule a strategy call</a>
+            </div>
+            <div class="section" style="text-align: center; margin-bottom: 0; padding-top: 10px;">
+                <img src="https://ucarecdn.com/934c7669-d61d-4221-a984-6f28959b2865/686a6afa3b72adb2730d868e_Copie_de_Copie_de_Copie_de_Logo_720x180_white__1_p500__1_removebgpreview.png" alt="Proplace Logo" style="max-width: 120px; height: auto;">
+                <p class="meta-text" style="margin-top: 10px; margin-bottom: 0; font-size: 11px; line-height: 1.4; word-break: break-word;">Generated by <a href="https://www.proplace.co" target="_blank">Proplace.co</a> for Profund. Proplace is an AI and may make mistakes.<br><br>Contact us at <a href="mailto:alexandre@proplace.co">alexandre@proplace.co</a> to request updates, add missing information, or suggest improvements.</p>
+            </div>
+        </div>
+        <div class="content-area">
+            <h1>Neutys Interactive Memo</h1>
+            <h2 class="subtitle-category">DeFi (Decentralized Finance) ➜ AI Crypto Yield Automation Platform ➜ AI-automated high-yield investment platforms for retail and institutional crypto investors targeting daily returns from diversified Web3 and blockchain assets.</h2>
+            <p class="body-tagline">Intelligent AI-driven trading and investment management generating stable daily returns.</p>
+
+
+<div class="section-container" id="market-summary">
+    <h2 class="section-title">Market Summary</h2>
+    <div class="split-container">
+        <div class="text-col">
+            <p>MARKET OPPORTUNITY SCORE<br>DeFi (Decentralized Finance) &gt; AI Crypto Yield Automation Platform<br>B2C &gt; Multi-Level Marketing (MLM)</p>
+            <p>═════════════════════════════════════════════════</p>
+            <p>IS IT AN ATTRACTIVE MARKET ? (Dynamics): 40/100 × 25% = 10.0 points<br>IS IT A WINNABLE MARKET ? (Competition): 30/100 × 25% = 7.5 points<br>IS IT A PENETRABLE MARKET ? (GTM): 60/100 × 25% = 15.0 points<br>IS IT A REWARDING MARKET ? (Exits): 20/100 × 25% = 5.0 points</p>
+            <p>─────────────────────────────────────────────────<br>TOTAL MARKET ATTRACTIVITY SCORE: 37.5/100</p>
+            <p>═════════════════════════════════════════════════ </p>
+            <h4>❓ Market DEFINITION</h4>
+            <p>AI-automated high-yield investment platforms for retail and institutional crypto investors targeting daily returns from diversified Web3 and blockchain assets. This market segment sits at the intersection of retail DeFi and automated wealth management, where the value chain is increasingly commoditized but high-risk/high-reward 'yield chasing' remains a significant, albeit unstable, driver of capital flow.</p>
+            <h4>💬 Our Market THESIS</h4>
+            <p>(A) MARKET DISRUPTION : The maturation of AI is enabling the unbundling of traditional hedge fund platforms. We believe a focused company can build a best-in-class solution for the retail yield gap, using a Service-as-Software model to deliver a 10x better experience and carve out a dominant niche in the $12B Crypto Asset Management space.</p>
+            <h4>🧠 Our CONVICTION & WAGER on this Market:</h4>
+            <p>🟠 LOW: (Option 1 - The Broken Market Physics Play) Our conviction is low. This is a structurally poor market due to a fatal flaw: the absence of sustainable moats and a fragmented value chain where incumbents (Binance, Coinbase) dominate distribution while DeFi protocols (Aave, Lido) dominate yield generation. A startup focusing on 'guaranteed' daily returns in this space faces inevitable death by regulation or mathematical collapse.</p>
+            <p>═════════════════════════════════════════════════</p>
+            <h4>🌊 ATTRACTIVE MARKET (Market Dynamics) | Score: 40/100</h4>
+            <ul>
+                <li>Market Size (15/25): TAM: $12B (Crypto Wealth Management) • SAM: $2B (Algorithmic Trading Tools) • CAGR: 22%.</li>
+                <li>Growth Drivers (15/25): Institutional adoption of Web3 • Institutional liquidity in GameFi • Retail FOMO in crypto bull cycles.</li>
+                <li>Timing Why Now (10/25): Convergence of LLMs and trading bots; however, the regulatory window is closing for non-custodial or unlicensed platforms.</li>
+                <li>Market Risks (20/25): Regulatory crackdowns on 'Shadow Banking' • Systemic crypto de-pegging • High customer churn.</li>
+            </ul>
+            <h4>⚔️ WINNABLE MARKET (Competitive Landscape) | Score: 30/100</h4>
+            <ul>
+                <li>Incumbents (20/25): Binance ($100B+ ecosystem, Strength: Distribution/User Base) • Coinbase (Strength: Regulatory Compliance/Trust).</li>
+                <li>Challengers (15/25): SwissBorg ($500M+ AUM, Focus: Compliance/Staking) • Yearn Finance (Focus: DeFi Native/Protocol).</li>
+                <li>White Space (10/25): Automated management for individual Metaverse/GameFi assets, though this is a hyper-niche and highly volatile segment.</li>
+                <li>Defensibility (5/25): Primary moat is network effects (hard to build for a standalone tool) or proprietary data (unverifiable for startups).</li>
+            </ul>
+            <h4>🎯 PENETRABLE MARKET (Go-to-Market & Unit Economics) | Score: 60/100</h4>
+            <ul>
+                <li>GTM Model (20/25): MLM/Affiliate based – highly effective for rapid user acquisition but historically toxic for long-term retention.</li>
+                <li>Pricing Model (15/25): Tiered investment lines with varying daily yield; primary metric is AUM and Retention Rate.</li>
+                <li>Unit Economics (10/25): LTV/CAC is initially high due to viral loops but crashes once the 'yield' cannot be sustained or marketing costs spike.</li>
+                <li>Scalability (15/25): High digital scalability; no physical infrastructure required.</li>
+            </ul>
+            <h4>💰 REWARDING MARKET (Funding & Exit) | Score: 20/100</h4>
+            <ul>
+                <li>Funding Activity (10/25): Funding in 'retail yield' is down 70% YoY from the 2021 peak as VCs move to B2B Infrastructure.</li>
+                <li>Exit Multiples (5/25): M&A multiples for unregulated yield tools are near zero; usually asset sales or talent acquisitions.</li>
+                <li>Strategic Buyers (5/25): Crypto exchanges looking for specific trading tech, but they avoid the liability of HYIP-style platforms.</li>
+            </ul>
+            <p>─────────────────────────────────────────────────<br>🌐 DATA CONFIDENCE: High on Market Size and Competition. Low on private company unit economics. 9 total URLs sourced.</p>
+        </div>
+        <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-1b9339a50748899dd55724d337dbdcb0-ervnzdvr.jpg">
+        </div>
+    </div>
+</div>
+
+
+
+<div class="section-container" id="company">
+    <h2 class="section-title">Company Deep Dive</h2>
+    <div class="split-container">
+        <div class="text-col">
+            <h3 id="value-proposition">Value Proposition</h3>
+            <b>Value Proposition:</b><br>
+            Intelligent AI-driven trading and investment management generating stable daily returns across Web3, NFT, GameFi, and Metaverse sectors. AI-driven Web3 analytics ecosystem designed for real-time analytics across NFT marketplaces, GameFi, metaverse projects, and other blockchain assets. AI-integrated data processing, real-time dashboards, and risk-monitoring features. Non-consensus insight that retail users value 'stable' daily returns over long-term capital appreciation in the volatile crypto space.<br>
+            <b>Ideal Customer Profile (ICP):</b><br>
+            Retail and institutional crypto investors seeking automated yield and passive income through diversified blockchain assets. Retail investors lacking technical expertise and time to actively trade high-volatility Web3 assets (NFTs, GameFi). Yield-chasers rather than sustainable investors. Low-tier retail with low entry barrier ($0.10 minimum for some assets).<br>
+            <b>B2B or B2C:</b><br>
+            B2C - Individual investors joining an automated platform. B2C > Multi-Level Marketing (MLM).<br>
+            <b>Industry:</b><br>
+            FinTech / Crypto Investment. DeFi (Decentralized Finance) > AI Crypto Yield Automation Platform. Retail DeFi and automated wealth management. Crypto Asset Management space.<br>
+
+            <h3 id="product">Product</h3>
+            <b>Core Solution:</b><br>
+            An AI-driven capital allocation platform that automates trading in liquid crypto assets and Web3 projects. Website where you give them your digital money (crypto), and they use computer programs to trade it in the market promising small profit every single day. AI-driven investment management with automated yield generation. Web3 Intelligence Ecosystem for Decentralized Market Analytics.<br>
+            <b>Feature Encyclopedia:</b><br>
+            <ul>
+                <li>AI-Driven Investment Management</li>
+                <li>Real-time AI Dashboard</li>
+                <li>Transparent Reporting</li>
+                <li>Automated Reinvestment (Compound Interest)</li>
+                <li>Risk Minimization Algorithms</li>
+                <li>Lightning-fast Processing</li>
+                <li>Institutional-grade Security</li>
+                <li>Adaptive Trading Algorithms</li>
+                <li>Real-time investor dashboard for feedback loops</li>
+                <li>Simplified UX for complex Web3 yields</li>
+            </ul>
+
+            <h3 id="business-model">Business Model</h3>
+            <b>Business Model Analysis:</b><br>
+            High-Yield Investment Program (HYIP) / SaaS Management. High-Yield Investment Program (HYIP) / Multi-Level Marketing (MLM). Paying 29% in affiliate commissions + 2.2% daily returns. Based on capital deposits rather than value creation or outcome-based labor. Bootstrap/Affiliate-funded; no institutional rounds.<br>
+            <b>Revenue Streams & Pricing Tiers:</b><br>
+            Trader Invest Line: 2.2% Daily (15 days) | 3.5% Daily (30 days). Whale Invest Line: 3.0% Daily (40 days) | 4.5% Daily (50 days). Affiliate Program: 7-level deep commissions up to 29% total.<br>
+
+            <h3 id="team">Team</h3>
+            <b>Company Culture:</b><br>
+            Data-driven, transparent, and focused on the future of digital reality and smart investments.<br>
+            <b>Team Analysis:</b><br>
+            Pierre Shosola-Unyumbi (CEO), Jeffrey Frank (CFO), Juanita Bailey (Chief Risk Officer), Andrew West (Head of Trading), Michael Rhodes (Trader), Leona Park (Quant Developer).<br>
+
+            <h3 id="ceo">CEO</h3>
+            <b>Founder Archetype:</b> Pierre Shosola-Unyumbi.<br>
+            <b>Pedigree Signal:</b> Professional background lacks deep-tier engineering or tier-1 financial institutional track record. No visible history of building venture-scale technology companies.<br>
+
+            <h3 id="company-summary">Company Summary</h3>
+            <b>Thesis : Profund</b><br><br>
+            <b>WEIGHTED SCORE CALCULATION</b><br>
+            <ul>
+                <li>TEAM EXCELLENCE: 10/100</li>
+                <li>MARKET OPPORTUNITY: 20/100</li>
+                <li>PRODUCT INNOVATION: 10/100</li>
+                <li>BUSINESS MODEL: 5/100</li>
+                <li>TRACTION & GROWTH: 15/100</li>
+            </ul>
+            <b>FINAL ADJUSTED SCORE: 1.75/100 → 🔴 POOR</b><br><br>
+            <b>❓ In a NUTSHELL :</b> Neutys is a AI Crypto Yield Automation Platform that enables retail crypto investors to generate passive income by automating trading across Web3 and Metaverse assets.<br><br>
+            <b>⚠️ THE PROBLEM :</b> Retail investors lack the technical expertise and time to actively trade high-volatility Web3 assets.<br><br>
+            <b>✅ THE SOLUTION :</b> The platform provides an AI-driven dashboard and automated trading algorithms that promise daily returns (2.2% to 4.5%).<br><br>
+            <b>🚀 THE GTM & MOAT :</b> Their primary GTM motion is a 7-level deep affiliate marketing program. Moat is WEAK.<br><br>
+            <b>🗝️ KEY COMPETITIVE ADVANTAGES:</b>
+            <ul>
+                <li>Low entry barrier ($0.10 minimum for some assets)</li>
+                <li>High-velocity affiliate program (7-levels)</li>
+                <li>Multi-chain support (TRC20, BEP20, TON, etc.)</li>
+                <li>Simplified UX for complex Web3 yields</li>
+            </ul>
+            <b>🧱 MOAT: WEAK</b><br>
+            <b>🚩 RED FLAGS</b><br>
+            <b>🔢 THESIS ALIGNMENT SCORE MODIFIER</b><br>
+            <b>🌐 DATA CONFIDENCE : LOW</b>
+        </div>
+        <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-62cf5d206dd47702ef6d053eb605afd9-n56f6dwm.jpg" alt="Company Analysis">
+        </div>
+    </div>
+</div>
+
+<div class="section-container" id="swot">
+    <h2 class="section-title">SWOT Analysis</h2>
+    <div class="swot-grid">
+        <div class="swot-item s-green">
+            <h3>Strengths</h3>
+            <ul>
+                <li>AI branding in hyped Web3/NFT/GameFi sectors</li>
+                <li>Multi-chain support for broad accessibility</li>
+                <li>Affiliate program with deep 7-level commissions driving viral growth</li>
+                <li>1,827 investors and real-time transaction feed signaling traction</li>
+            </ul>
+        </div>
+        <div class="swot-item s-red">
+            <h3>Weaknesses</h3>
+            <ul>
+                <li>Unsustainable HYIP model (classic Ponzi)</li>
+                <li>Opaque team credentials; empty CEO LinkedIn</li>
+                <li>Vague legal claims and lack of CSSF licenses</li>
+                <li>Scam warnings on third-party sites eroding trust</li>
+            </ul>
+        </div>
+        <div class="swot-item s-blue">
+            <h3>Opportunities</h3>
+            <ul>
+                <li>Crypto bull market fueling retail yield hunger</li>
+                <li>AI-Web3 analytics hype from recent ecosystem launch</li>
+                <li>Passive income demand in volatile assets</li>
+                <li>Affiliate scalability into emerging markets</li>
+            </ul>
+        </div>
+        <div class="swot-item s-orange">
+            <h3>Threats</h3>
+            <ul>
+                <li>Regulatory crackdown on unregistered HYIPs in EU</li>
+                <li>Market downturn triggering mass withdrawals and collapse</li>
+                <li>Competition from regulated AI trading firms</li>
+                <li>User backlash from payout failures</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div class="section-container" id="action-plan">
+    <h2 class="section-title">Action Plan</h2>
+    <h3>Defense</h3>
+    Fortify with institutional-grade security and multi-chain diversification to withstand hacks and short-term volatility.
+    <h3>Offense</h3>
+    Hyper-scale via affiliates and AI-Web3 hype to onboard retail before saturation, capturing bull market FOMO in GameFi/metaverse yields.
+    <h3>Kill Shot</h3>
+    Mass withdrawals in bear market exposing Ponzi math, combined with Luxembourg regulators freezing assets.
+    <h3>Remediation</h3>
+    Validate team creds, disclose licenses, pivot from HYIP to sustainable fees to unlock institutional capital.
+</div>
+
+<div class="section-container" id="conviction">
+    <h2 class="section-title">Our Conviction</h2>
+    <div class="conviction-text">
+        <h3>Market</h3>
+        The market for retail crypto yield automation is a Seems Niche segment that is actually a subset of Too Personally Unfamiliar, as institutional investors avoid the inherent instability and regulatory toxicity of high-yield promises.
+        <h3>Timing</h3>
+        This investment represents a Boomerang, defined as the return of a previously failed idea that still lacks the necessary regulatory environment to succeed, despite the catalyst of AI-integrated marketing.
+        <h3>Company</h3>
+        The company lacks a technical moat, instead relying on a distribution hack via a 7-level deep Multi-Level Marketing (MLM) program.
+        <h3>Founder</h3>
+        The leadership appears to be a Mercenary team rather than deep-tech Missionaries, lacking any tier-1 financial or engineering pedigree.
+        <h3>Thesis-fit</h3>
+        This opportunity fails every primary Binary Gate. It triggers numerous Semantic Filter Red Flags including Utility Tool and MLM.
+        <h3>Verdict</h3>
+        <b>PASS:</b> The target is a toxic financial architecture that poses an existential reputational risk. Neutys is a retail-focused HYIP scheme that violates all ProFund safety and sector parameters.
+    </div>
+</div>
+
+<div class="section-container" id="sources">
+    <h2 class="section-title">Sources & Data Quality</h2>
+    <div class="source-list">
+        <h3>Value Chain Sources</h3>
+        No specific value chain data provided.
+        <h3>Market Sources</h3>
+        <ul>
+            <li>Market Size: https://www.globenewswire.com/news-release/2026/02/24/3243130/0/en/Neutys-Launches-AI-Driven-Web3-Intelligence-Ecosystem-for-Decentralized-Market-Analytics.html</li>
+            <li>Growth Drivers: https://neutys.net/news</li>
+            <li>Challengers: https://scam-detector.com/validator/neutys-net-review/</li>
+            <li>GTM Model: https://neutys.net/affiliate</li>
+        </ul>
+        <h3>Competition Magic Quadrant methodology</h3>
+        The framework evaluates companies based on Execution Power (Technical Moat, Capital Efficiency, Traction) vs. Strategic Vision (Innovation, Market Timing, Moat Durability).
+        <h3>Company Sources</h3>
+        <ul>
+            <li>Leadership: https://neutys.net/company</li>
+            <li>Unit Economics: https://neutys.net</li>
+            <li>KPI Progression: https://t.me/channel_neutys_net</li>
+        </ul>
+    </div>
+</div>
+
+</div></div></body></html>
