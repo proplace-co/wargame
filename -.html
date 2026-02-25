@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Memo</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+:root { --bg-app: #f8fafc; --text-main: #1e293b; --yellow-menu: #FEF9C3; --green-menu: #DCFCE7; --grey-menu: #F1F5F9; --blue-menu: #DBEAFE; }
+* { box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-app); color: var(--text-main); margin: 0; display: flex; }
+html { scroll-behavior: smooth; }
+a { color: #2563eb; text-decoration: none; cursor: pointer; word-break: break-all; } 
+a:hover { text-decoration: underline; }
+p, li { line-height: 1.6; margin-bottom: 10px; }
+strong, b { font-weight: 700; color: #0f172a; }
+h3 { scroll-margin-top: 40px; font-size: 1.4em; color: #000000; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px; }
+
+.main-wrapper { display: flex; width: 100%; max-width: 100vw; align-items: flex-start; overflow: visible !important; min-height: 100vh; }
+.sidebar { width: 300px; height: 100vh; position: sticky; top: 0; overflow-y: auto; border-right: 1px solid #e2e8f0; background: #fff; padding: 25px 0; flex-shrink: 0; z-index: 1000; align-self: flex-start; }
+.content-area { flex: 1; padding: 20px 40px; width: 100%; min-width: 0; max-width: 1600px; margin: 0 auto; min-height: 100vh; }
+.section-container { background: #fff; padding: 30px; margin-bottom: 30px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; scroll-margin-top: 40px; overflow: visible; }
+.section-title { font-size: 1.8em; font-weight: 700; color: #000000; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 25px; }
+.subtitle-category { font-size: 0.95em; font-weight: 700; color: #1e293b; margin-top: 0; margin-bottom: 5px; line-height: 1.4; }
+.body-tagline { font-size: 0.95em; color: #334155; margin-top: 0; margin-bottom: 30px; line-height: 1.6; }
+
+.split-container { display: flex; gap: 40px; align-items: flex-start; margin-bottom: 40px; position: relative; }
+.text-col { flex: 1; font-size: 1.05em; line-height: 1.7; color: #334155; min-width: 0; word-wrap: break-word; overflow-wrap: anywhere; }
+.img-col { flex: 1; position: sticky; top: 20px; align-self: flex-start; height: fit-content; min-width: 0; max-height: calc(100vh - 40px); overflow: visible; }
+.sticky-img { width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; display: block; object-fit: contain; }
+
+.meta-block { padding: 0 25px 25px; border-bottom: 1px solid #e2e8f0; margin-bottom: 15px; }
+.sidebar-company-name { font-size: 1.8em; margin: 0 0 10px 0; padding: 0; color: #0f172a; font-weight: 800; border-bottom: none; }
+.sb-top-data { padding: 0 0 15px 0; display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 0; }
+.sb-tag { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.85em; color: #475569; }
+.sb-score, .score-green { background: #16a34a !important; color: white !important; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.85em; }
+.contact-row { display: flex; flex-direction: column; gap: 5px; font-size: 0.9em; margin-top: 0; }
+.nav-item { display: block; padding: 8px 25px; color: #475569; font-weight: 600; font-size: 0.9em; border-left: 4px solid transparent; margin-bottom: 2px; }
+.nav-item:hover { background: rgba(0,0,0,0.05); color: #0f172a; border-left-color: #94a3b8; }
+.bg-yellow { background: var(--yellow-menu); } .bg-green { background: var(--green-menu); } .bg-grey { background: var(--grey-menu); }
+.bg-blue { background: var(--blue-menu); }
+.bg-light-purple { background: #f3e8ff; }
+
+.battlefield-legend { margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 6px; font-size: 0.9em; }
+.legend-row { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; margin-bottom: 5px; }
+.label-cap { background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-weight: 600; border: 1px solid #bbf7d0; white-space: nowrap; }
+.label-white { background: #fff; border: 1px solid #e2e8f0; padding: 2px 6px; border-radius: 4px; font-weight: 600; color: #334155; }
+.posture-legend { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; line-height: 1.2; margin-right: 10px; }
+
+.battlefield-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 15px; width: 100%; margin-bottom: 40px; }
+.battlefield-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.stage-header { font-size: 0.85em; font-weight: 700; text-transform: uppercase; color: #64748b; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; min-height: 40px; }
+
+.actor-card { background: #fff; border: 1px solid #cbd5e0; border-radius: 6px; overflow: hidden; font-size: 0.9em; border-left-width: 4px; margin-bottom: 8px; transition: all 0.2s; }
+.border-hunter { border-left-color: #dc2626 !important; }
+.border-hunted { border-left-color: #ca8a04 !important; }
+.border-fortress { border-left-color: #2563eb !important; }
+.border-opportunistic { border-left-color: #16a34a !important; }
+.border-distressed { border-left-color: #9333ea !important; }
+.actor-card summary { padding: 10px; cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; align-items: center; background: #fff; }
+.actor-card summary::after { content: "+"; font-size: 1.2em; color: #94a3b8; }
+.actor-card[open] summary::after { content: "−"; color: #1e293b; }
+.actor-summary-content { display: flex; flex-direction: column; gap: 2px; width: 90%; }
+.actor-name { font-weight: 800; color: #0f172a; font-size: 1em; }
+.actor-meta { font-size: 0.8em; color: #64748b; display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.label-tier { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.85em; color: #475569; white-space: nowrap; border: 1px solid #e2e8f0; }
+
+.actor-body { padding: 12px; border-top: 1px solid #f1f5f9; background: #fafafa; overflow-wrap: break-word; }
+.ws-box { background: #fffbeb; border: 1px solid #fcd34d; padding: 8px; border-radius: 6px; margin: 10px 0; font-size: 0.85em; color: #92400e; border: 1px solid #fcd34d; }
+.ws-box ul { padding-left: 20px; margin: 0; }
+.ws-box li { margin-bottom: 5px; }
+
+.swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+.swot-grid-small { display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 10px; }
+.swot-item { padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; }
+.swot-item h3 { margin-top: 0; font-size: 1.2em; border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: 10px; margin-bottom: 10px; }
+.swot-item ul { padding-left: 20px; margin: 0; }
+.swot-item li { margin-bottom: 8px; }
+
+.sg-box { padding: 6px; border-radius: 4px; font-size: 0.8em; line-height: 1.3; }
+.sg-box ul { padding-left: 20px; margin: 5px 0 0 0; }
+.sg-box li { margin-bottom: 4px; }
+.s-green { background: #dcfce7; color: #14532d; border: 1px solid #bbf7d0; } 
+.s-red { background: #fee2e2; color: #7f1d1d; border: 1px solid #fecaca; } 
+.s-blue { background: #dbeafe; color: #1e3a8a; border: 1px solid #bfdbfe; } 
+.s-orange { background: #ffedd5; color: #9a3412; border: 1px solid #fdba74; }
+.strat-inv-box { background: #f3e8ff; border: 1px solid #e9d5ff; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 0.85em; color: #6b21a8; }
+
+.actor-grid-info { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; font-size: 0.85em; }
+.actor-grid-info div { display: flex; flex-direction: column; }
+.actor-grid-info strong { font-size: 0.9em; color: #64748b; margin-bottom: 2px; }
+.label-diff { background: #e2e8f0; color: #1e293b; padding: 2px 6px; border-radius: 4px; font-weight: 700; width: fit-content; border: 1px solid #cbd5e1; }
+.label-posture-card { padding: 2px 6px; border-radius: 4px; font-weight: 700; color: #fff; width: fit-content; }
+.bg-hunter { background: #dc2626; } 
+.bg-hunted { background: #ca8a04; } 
+.bg-fortress { background: #2563eb; } 
+.bg-opportunistic { background: #16a34a; }
+.bg-distressed { background: #9333ea; }
+
+.competitor-block { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0; }
+.competitor-block strong { color: #1e293b; font-size: 1.05em; }
+
+details.scenario-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
+details.scenario-card summary { padding: 15px; font-weight: 500; font-size: 1.05em; line-height: 1.5; color: #334155; }
+.scen-logic-grid { display: inline-flex; flex-wrap: wrap; gap: 5px; margin-left: 10px; }
+.logic-tag { font-size: 0.75em; background: #f1f5f9; padding: 2px 8px; border-radius: 12px; border: 1px solid #cbd5e1; color: #475569; font-weight: 600; }
+.scen-details-body { padding: 20px; border-top: 1px solid #f1f5f9; background: #fcfcfc; }
+
+.table-container { width: 100%; overflow-x: auto; }
+.synergies-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.9em; }
+.synergies-table th { background: #f8fafc; padding: 12px; text-align: left; border-bottom: 2px solid #cbd5e1; white-space: nowrap; }
+.synergies-table td { padding: 12px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+.col-summary { width: 45%; min-width: 350px; } 
+
+.source-list { font-size: 0.9em; color: #64748b; }
+
+/* Sidebar CTA Elements */
+.section { margin: 0 25px 24px; }
+.section h3 { font-size: 15px; font-weight: 700; margin: 0 0 8px 0; border: none; padding: 0; color: #000000; }
+.meta-text { font-size: 12px; color: #94A3B8; margin-bottom: 16px; font-style: italic; }
+.meta-desc { font-size: 13px; color: #64748B; margin: 0 0 16px 0; line-height: 1.5; }
+.divider { height: 1px; background-color: #E2E8F0; margin: 24px 25px; }
+/* Sidebar Lists */
+.cta-list { list-style: none; padding: 0; margin: 0 0 16px 0; }
+.cta-list li { font-size: 13px; color: #475569; margin-bottom: 12px; padding-left: 20px; position: relative; line-height: 1.4; }
+.cta-list li::before { content: "→"; position: absolute; left: 0; color: #3B82F6; font-weight: bold; }
+.cta-list strong { color: #1E293B; }
+/* Enhanced Buttons */
+.btn { display: block; width: 100%; padding: 10px 14px; font-size: 14px; font-weight: 600; text-align: center; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; box-sizing: border-box; margin-bottom: 10px; white-space: normal; word-break: break-word; line-height: 1.4; }
+.btn-secondary { background-color: #F8FAFC; color: #0F172A; border: 1px solid #E2E8F0; }
+.btn-secondary:hover { background-color: #E2E8F0; text-decoration: none; border-color: #CBD5E1; }
+.btn-primary { background-color: #1E293B; color: #FFFFFF; border: none; }
+.btn-primary:hover { background-color: #0F172A; text-decoration: none; }
+
+@media (max-width: 1000px) {
+    body { flex-direction: column; overflow-x: hidden; }
+    .main-wrapper { flex-direction: column; max-width: 100vw; }
+    .sidebar { width: 100%; height: auto; position: relative; border-right: none; border-bottom: 1px solid #e2e8f0; }
+    .content-area { padding: 15px; width: 100%; box-sizing: border-box; }
+    .battlefield-grid { display: flex !important; flex-direction: column !important; width: 100%; gap: 20px; }
+    .split-container { flex-direction: column; }
+    .img-col { position: static; width: 100%; margin-top: 20px; max-height: none; }
+    .actor-card { width: 100% !important; }
+    .table-container { display: block; overflow-x: auto; }
+    .synergies-table { min-width: 700px; }
+    .swot-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+    <div class="main-wrapper">
+        <div class="sidebar">
+            <div class="meta-block">
+                <div class="sb-top-data">
+                </div>
+                <h3 class="sidebar-company-name"></h3>
+                <p class="meta-desc" style="margin-bottom: 15px;"></p>
+                <div class="contact-row">
+                </div>
+            </div>
+            
+            <a href="#market-summary" class="nav-item bg-yellow">Market Summary</a>
+            <a href="#value-proposition" class="nav-item bg-green">Value Proposition</a>
+            <a href="#product" class="nav-item bg-green">Product</a>
+            <a href="#business-model" class="nav-item bg-green">Business Model</a>
+            <a href="#team" class="nav-item bg-green">Team</a>
+            <a href="#ceo" class="nav-item bg-green">CEO</a>
+            <a href="#company-summary" class="nav-item bg-green">Company Summary</a>
+            <a href="#swot" class="nav-item bg-green">SWOT Analysis</a>
+            <a href="#action-plan" class="nav-item bg-green">Action Plan</a>
+            <a href="#conviction" class="nav-item bg-blue">Conviction</a>
+            <a href="#sources" class="nav-item bg-blue">Sources</a>
+            <div class="divider"></div>
+            <div class="section">
+                <h3>Explore  further?</h3>
+                <p class="meta-text">Currently viewing: Fast Memo (Generated 02/25/2026 for )</p>
+                <ul class="cta-list">
+                    <li><strong>Quick Memo:</strong> Adds Market Sizing, Value Chain Analysis, Competition Magic Quadrant & Synergies with your company.</li>
+                    <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=&website=&product_url=&team_url=&pricing_url=&linkedin=&first_name=&last_name=&memo=quick" class="btn btn-secondary" target="_blank">Generate Quick Memo</a>
+                    <li style="margin-top: 16px;"><strong>Detailed Memo:</strong> Adds Competitive M&A quadrant, Strategic Scenarios, Synergies between ecosystem players & Synergies with your company.</li>
+                    <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=&website=&product_url=&team_url=&pricing_url=&linkedin=&first_name=&last_name=&memo=detailed" class="btn btn-secondary" target="_blank">Generate Detailed Memo</a>
+                </ul>
+                <a href="http://forms.proplace.co/meet" class="btn btn-secondary" target="_blank">Schedule a strategy call on </a>
+            </div>
+            <div class="divider"></div>
+            <div class="section">
+                <h3>Analyze another company?</h3>
+                <a href="https://forms.proplace.co/t/qS5aEtNxkAus" class="btn btn-primary" target="_blank">Get an AI-powered first-look</a>
+            </div>
+            <div class="section">
+                <h3>Want to follow our deal flow?</h3>
+                <p class="meta-desc">Receive European AI startups we assess every day from a VC perspective.</p>
+                <a href="https://77f02b89.sibforms.com/serve/MUIFAMr0ADjDfIUWLc56STos70j4OXPiOTJqugyAa45YfGyt9zW6Tokz3iXWLNiTAw6oxjbrMnjs424k46IvwOQlWjaMIsbgexAk95FvzqzgLa56TkHas6WASK4VKs684XcZhacqMYTYQGuIfzJmBmCkmHwhNeB0yHifmrxC1PUhNMS1ZbiW1xF18IZy7tJP9BIWjDcM5VoH6VEVCw==" class="btn btn-primary" target="_blank">Subscribe to deal flow</a>
+            </div>
+            <div class="section">
+                <h3>Want a proprietary deal flow?</h3>
+                <p class="meta-desc">Receive daily highly qualified targets for your acquisition strategy.</p>
+                <a href="http://forms.proplace.co/meet" class="btn btn-primary" target="_blank">Schedule a strategy call</a>
+            </div>
+            <div class="section" style="text-align: center; margin-bottom: 0; padding-top: 10px;">
+                <img src="" alt="Proplace Logo" style="max-width: 120px; height: auto;">
+                <p class="meta-text" style="margin-top: 10px; margin-bottom: 0; font-size: 11px; line-height: 1.4; word-break: break-word;">Generated by <a href="https://www.proplace.co" target="_blank">Proplace.co</a> for . Proplace is an AI and may make mistakes.<br><br>Contact us at <a href="mailto:alexandre@proplace.co">alexandre@proplace.co</a> to request updates, add missing information, or suggest improvements.</p>
+            </div>
+        </div>
+        <div class="content-area">
+            <h1> Interactive Memo</h1>
+            <h2 class="subtitle-category"> ➜  ➜ </h2>
+            <p class="body-tagline"></p>
+            
+        </div>
+
+<div class="section-container" id="value-chain">
+  <h2 class="section-title">Value Chain Analysis</h2>
+  <h3>Value chain stage description</h3>
+  <div class="text-full-width">
+    
+    <br><br>
+    
+    <br>🔢 Strategic Score: <br>DEFENSIBILITY: <br>MARGIN POTENTIAL: <br>GROWTH: <br>SPECIALIZED COMPANIES: <br>STAGE INSIGHT: <br><br>
+    
+    <br><br>
+    
+    <br>🔢 Strategic Score: <br>DEFENSIBILITY: <br>MARGIN POTENTIAL: <br>GROWTH: <br>SPECIALIZED COMPANIES: <br>STAGE INSIGHT: <br><br>
+    
+    <br><br>
+    
+    <br>🔢 Strategic Score: <br>DEFENSIBILITY: <br>MARGIN POTENTIAL: <br>GROWTH: <br>SPECIALIZED COMPANIES: <br>STAGE INSIGHT: <br><br>
+    
+    <br><br>
+    
+    <br>🔢 Strategic Score: <br>DEFENSIBILITY: <br>MARGIN POTENTIAL: <br>GROWTH: <br>SPECIALIZED COMPANIES: <br>STAGE INSIGHT: <br><br>
+    
+    <br><br>
+    
+    <br>🔢 Strategic Score: <br>DEFENSIBILITY: <br>MARGIN POTENTIAL: <br>GROWTH: <br>SPECIALIZED COMPANIES: <br>STAGE INSIGHT: <br><br>
+    
+    <br><br>
+    
+    <br>🔢 Strategic Score: <br>DEFENSIBILITY: <br>MARGIN POTENTIAL: <br>GROWTH: <br>SPECIALIZED COMPANIES: <br>STAGE INSIGHT: <br><br>
+    
+  </div>
+  <hr style="margin: 30px 0;">
+  <h3>Top 3 Strategic Positions</h3>
+  <div class="text-full-width">
+    
+  </div>
+</div>
+
+<div class="section-container" id="market-summary">
+  <h2 class="section-title">Market Summary</h2>
+  <div class="split-container">
+    <div class="text-col">
+      <p>The restaurant technology and logistics space represents a market that looks crowded but is not, as incumbency is being dismantled by structural upheaval and competitive redefinition. Much like how Toast transformed from a simple point-of-sale tool into a comprehensive restaurant operating system, the current market shift involves integrated alliances bypassing traditional aggregators to capture the entire value chain.</p>
+      <h4>ATTRACTIVE MARKET</h4>
+      <ul>
+        <li>The sector is experiencing a <a href="#">False Start</a>, which is a period where initial business models fail to gain sustainable traction until a specific catalyst enables a more efficient second attempt.</li>
+        <li>The catalyst for this shift is the emergence of integrated distribution channels where platforms like Square and DoorDash bypass intermediaries to create direct, high-margin delivery and operations workflows.</li>
+      </ul>
+      <h4>WINNABLE MARKET</h4>
+      <ul>
+        <li>The structural unfair advantage is found in <a href="#">Counter-positioning</a>, a strategy where a newcomer adopts a superior business model that incumbents cannot copy without damaging their existing revenue streams.</li>
+        <li>By controlling critical infrastructure like virtual kitchens or specialized packaging, a firm creates dependency risks for competitors that rely on fragmented, legacy supply chains.</li>
+      </ul>
+      <p>While the market realignment presents a generational opportunity, the current risk profile around execution and unit economics necessitates a cautious approach.</p>
+    </div>
+    <div class="img-col">
+      <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-8fe6ed91b917cc310d62dd5e5c551b4e-pckhxzzo.jpg">
+    </div>
+  </div>
+</div>
+<div class="section-container" id="competition-ma">
+  <h2 class="section-title">Competition M&A Quadrant</h2>
+  <div class="split-container">
+    <div class="text-col">
+      <h3>Predators</h3>
+      <div class="competitor-block">
+        <strong>Glovo</strong>
+        <p>On-demand delivery platform with a strong presence in Southern Europe and LATAM, expanding rapidly into groceries and dark stores.</p>
+        <p>Website : <a href="http://glovoapp.com">http://glovoapp.com</a></p>
+        <p>Source : <a href="http://crunchbase.com/glovo">http://crunchbase.com/glovo</a></p>
+      </div>
+      <h3>Giants</h3>
+      <h3>Aspirants</h3>
+      <div class="competitor-block">
+        <strong>LogiDeliver</strong>
+        <p>Last-mile logistics specialist focusing on dense urban areas, offering a white-label service for restaurants and retailers.</p>
+        <p>Website : <a href="http://logideliver.co">http://logideliver.co</a></p>
+      </div>
+      <h3>Targets</h3>
+      <div class="competitor-block">
+        <strong>CloudKitchens</strong>
+        <p>Provides ghost kitchen infrastructure for restaurants, enabling them to expand delivery operations without a traditional storefront.</p>
+        <p>Website : <a href="http://cloudkitchens.com">http://cloudkitchens.com</a></p>
+        <p>Source : <a href="http://crunchbase.com/cloudkitchens">http://crunchbase.com/cloudkitchens</a></p>
+      </div>
+    </div>
+    <div class="img-col">
+      <img class="sticky-img" src="">
+    </div>
+  </div>
+</div>
+
+<div class="section-container" id="scenarios">
+<h2 class="section-title">Strategic Scenarios</h2>
+<div class="split-container">
+<div class="text-col">
+</div>
+<div class="img-col">
+<img class="sticky-img" src="">
+</div>
+</div>
+</div>
+<div class="section-container" id="synergies">
+<h2 class="section-title">Synergies between players</h2>
+<div class="table-container">
+<table class="synergies-table">
+</table>
+</div>
+<div class="split-container" style="margin-top:40px;">
+<div class="text-col">
+<h3>Synergy Legend</h3>
+</div>
+<div class="img-col">
+<img src="" class="sticky-img" alt="Synergy Diagram">
+</div>
+</div>
+</div>
+
+<div class="section-container" id="company">
+    <h2 class="section-title">Company Deep Dive</h2>
+    <div class="split-container">
+        <div class="text-col">
+            <h3 id="value-proposition">Value Proposition</h3>
+            <p></p>
+            
+            <h3 id="product">Product</h3>
+            <p></p>
+            
+            <h3 id="business-model">Business Model</h3>
+            <p></p>
+            
+            <h3 id="team">Team</h3>
+            <p></p>
+            
+            <h3 id="ceo">CEO</h3>
+            <p></p>
+            
+            <h3 id="company-summary">Company Summary</h3>
+            Quick Analysis:  
+        </div>
+        <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-106f9bac9f52486914ee2cef923ae605-7srzmsjc.jpg" alt="Company Analysis">
+        </div>
+    </div>
+</div>
+
+<div class="section-container" id="swot">
+    <h2 class="section-title">SWOT Analysis</h2>
+    <div class="swot-grid">
+        <div class="swot-item s-green">
+            <h3>Strengths</h3>
+            <ul><li>Data not provided.</li></ul>
+        </div>
+        <div class="swot-item s-red">
+            <h3>Weaknesses</h3>
+            <ul><li>Data not provided.</li></ul>
+        </div>
+        <div class="swot-item s-blue">
+            <h3>Opportunities</h3>
+            <ul><li>Data not provided.</li></ul>
+        </div>
+        <div class="swot-item s-orange">
+            <h3>Threats</h3>
+            <ul><li>Data not provided.</li></ul>
+        </div>
+    </div>
+</div>
+
+<div class="section-container" id="action-plan">
+    <h2 class="section-title">Action Plan</h2>
+    <h3>Defense</h3>
+    <p></p>
+    <h3>Offense</h3>
+    <p></p>
+    <h3>Kill Shot</h3>
+    <p></p>
+    <h3>Remediation</h3>
+    <p></p>
+</div>
+
+<div class="section-container" id="conviction">
+    <h2 class="section-title">Our Conviction</h2>
+    <div class="conviction-text">
+        <b>🧠 Synthetic GP Conviction: </b><br><br>
+        <h3>Market</h3>
+        The restaurant technology and logistics space represents a market that looks crowded but is not, as incumbency is being dismantled by structural upheaval and competitive redefinition.<br><br>Much like how Toast transformed from a simple point-of-sale tool into a comprehensive restaurant operating system, the current market shift involves integrated alliances bypassing traditional aggregators to capture the entire value chain.<br><br>
+        <h3>Timing</h3>
+        The sector is experiencing a False Start, which is a period where initial business models fail to gain sustainable traction until a specific catalyst enables a more efficient second attempt.<br><br>The catalyst for this shift is the emergence of integrated distribution channels where platforms like Square and DoorDash bypass intermediaries to create direct, high-margin delivery and operations workflows.<br><br>
+        <h3>Company</h3>
+        The structural unfair advantage is found in Counter-positioning, a strategy where a newcomer adopts a superior business model that incumbents cannot copy without damaging their existing revenue streams.<br><br>By controlling critical infrastructure like virtual kitchens or specialized packaging, a firm creates dependency risks for competitors that rely on fragmented, legacy supply chains.<br><br>
+        <h3>Founder</h3>
+        Success in this high-conflict environment requires a Missionary founder, defined as an individual driven by a deep conviction to re-architect the market rather than simply seeking a short-term exit.<br><br>While specific founder data is limited, the strategic complexity of this market necessitates a team with the domain secrets to navigate aggressive acquisition battles and form non-obvious alliances.<br><br>
+        <h3>Thesis-fit</h3>
+        The opportunity aligns with a mandate for Vertical AI and infrastructure control but requires deeper validation of individual unit economics.<br><br>Triggers a Service Business warning if the model relies too heavily on manual logistics rather than automated software orchestration.<br><br>
+        <h3>Verdict</h3>
+        While the market realignment presents a generational opportunity, the current risk profile around execution and unit economics necessitates a cautious approach.<br><br>🟡 RISK_SIGNAL: High score is misleading due to RISK_KEYWORD: Margin Compression. NARRATIVE_INSIGHT: The shift toward integrated alliances is strategically sound, but we need to see if the target can maintain software-level margins while managing physical infrastructure dependencies.
+    </div>
+</div>
+
+<div class="section-container" id="sources">
+    <h2 class="section-title">Sources & Data Quality</h2>
+    <div class="source-list">
+        <h3>Value Chain Sources</h3>
+        <p>No sources provided.</p>
+        
+        <h3>Market Sources</h3>
+        <p>No sources provided.</p>
+        
+        <h3>Competition Magic Quadrant methodology</h3>
+        <p></p>
+        
+        <h3>Company Sources</h3>
+        <p>No sources provided.</p>
+    </div>
+</div>
+
+</div><!-- Close content-area -->
+</div><!-- Close main-wrapper -->
+</body>
+</html>
