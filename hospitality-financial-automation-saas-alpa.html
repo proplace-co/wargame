@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mémo Alpa</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+:root { --bg-app: #f8fafc; --text-main: #1e293b; --yellow-menu: #FEF9C3; --green-menu: #DCFCE7; --grey-menu: #F1F5F9; --blue-menu: #DBEAFE; }
+* { box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-app); color: var(--text-main); margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+a { color: #2563eb; text-decoration: none; cursor: pointer; word-break: break-all; } 
+a:hover { text-decoration: underline; }
+p, li { line-height: 1.6; margin-bottom: 10px; }
+strong, b { font-weight: 700; color: #0f172a; }
+h3 { scroll-margin-top: 40px; font-size: 1.4em; color: #000000; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px; }
+
+/* BULLETPROOF LAYOUT FIX: FIXED SIDEBAR, CENTERED PADDED BODY */
+.main-wrapper { display: block; width: 100%; max-width: 100vw; overflow: visible !important; padding-left: 300px; box-sizing: border-box; }
+.sidebar { position: fixed; top: 0; left: 0; width: 300px; height: 100vh; overflow-y: auto; border-right: 1px solid #e2e8f0; background: #fff; padding: 25px 0; z-index: 1000; }
+.content-area { display: block; margin: 0 auto; padding: 40px; width: 100%; max-width: 1400px; min-height: 100vh; box-sizing: border-box; }
+
+.section-container { background: #fff; padding: 30px; margin-bottom: 30px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; scroll-margin-top: 40px; overflow: visible; display: block; clear: both; }
+.section-title { font-size: 1.8em; font-weight: 700; color: #000000; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 25px; }
+.subtitle-category { font-size: 0.95em; font-weight: 700; color: #1e293b; margin-top: 0; margin-bottom: 5px; line-height: 1.4; }
+.body-tagline { font-size: 0.95em; color: #334155; margin-top: 0; margin-bottom: 30px; line-height: 1.6; }
+
+.split-container { display: flex; gap: 40px; align-items: flex-start; margin-bottom: 40px; position: relative; }
+.text-col { flex: 1; font-size: 1.05em; line-height: 1.7; color: #334155; min-width: 0; word-wrap: break-word; overflow-wrap: anywhere; }
+.img-col { flex: 1; position: sticky; top: 20px; align-self: flex-start; height: fit-content; min-width: 0; max-height: calc(100vh - 40px); overflow: visible; }
+.sticky-img { width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; display: block; object-fit: contain; }
+
+.meta-block { padding: 0 25px 25px; border-bottom: 1px solid #e2e8f0; margin-bottom: 15px; }
+.sidebar-company-name { font-size: 1.8em; margin: 0 0 10px 0; padding: 0; color: #0f172a; font-weight: 800; border-bottom: none; }
+.sb-top-data { padding: 0 0 15px 0; display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 0; }
+.sb-tag { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.85em; color: #475569; }
+.sb-score, .score-green { background: #16a34a !important; color: white !important; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.85em; }
+.contact-row { display: flex; flex-direction: column; gap: 5px; font-size: 0.9em; margin-top: 0; }
+.nav-item { display: block; padding: 8px 25px; color: #475569; font-weight: 600; font-size: 0.9em; border-left: 4px solid transparent; margin-bottom: 2px; }
+.nav-item:hover { background: rgba(0,0,0,0.05); color: #0f172a; border-left-color: #94a3b8; }
+.bg-yellow { background: var(--yellow-menu); } .bg-green { background: var(--green-menu); } .bg-grey { background: var(--grey-menu); }
+.bg-blue { background: var(--blue-menu); }
+.bg-light-purple { background: #f3e8ff; }
+
+.battlefield-legend { margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 6px; font-size: 0.9em; }
+.legend-row { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; margin-bottom: 5px; }
+.label-cap { background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-weight: 600; border: 1px solid #bbf7d0; white-space: nowrap; }
+.label-white { background: #fff; border: 1px solid #e2e8f0; padding: 2px 6px; border-radius: 4px; font-weight: 600; color: #334155; }
+.posture-legend { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; line-height: 1.2; margin-right: 10px; }
+
+.battlefield-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 15px; width: 100%; margin-bottom: 40px; }
+.battlefield-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.stage-header { font-size: 0.85em; font-weight: 700; text-transform: uppercase; color: #64748b; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; min-height: 40px; }
+
+.actor-card { background: #fff; border: 1px solid #cbd5e0; border-radius: 6px; overflow: hidden; font-size: 0.9em; border-left-width: 4px; margin-bottom: 8px; transition: all 0.2s; }
+.border-hunter { border-left-color: #dc2626 !important; }
+.border-hunted { border-left-color: #ca8a04 !important; }
+.border-fortress { border-left-color: #2563eb !important; }
+.border-opportunistic { border-left-color: #16a34a !important; }
+.border-distressed { border-left-color: #9333ea !important; }
+.actor-card summary { padding: 10px; cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; align-items: center; background: #fff; }
+.actor-card summary::after { content: "+"; font-size: 1.2em; color: #94a3b8; }
+.actor-card[open] summary::after { content: "−"; color: #1e293b; }
+.actor-summary-content { display: flex; flex-direction: column; gap: 2px; width: 90%; }
+.actor-name { font-weight: 800; color: #0f172a; font-size: 1em; }
+.actor-meta { font-size: 0.8em; color: #64748b; display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.label-tier { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.85em; color: #475569; white-space: nowrap; border: 1px solid #e2e8f0; }
+
+.actor-body { padding: 12px; border-top: 1px solid #f1f5f9; background: #fafafa; overflow-wrap: break-word; }
+.ws-box { background: #fffbeb; border: 1px solid #fcd34d; padding: 8px; border-radius: 6px; margin: 10px 0; font-size: 0.85em; color: #92400e; border: 1px solid #fcd34d; }
+.ws-box ul { padding-left: 20px; margin: 0; }
+.ws-box li { margin-bottom: 5px; }
+
+.swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+.swot-grid-small { display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 10px; }
+.swot-item { padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; }
+.swot-item h3 { margin-top: 0; font-size: 1.2em; border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: 10px; margin-bottom: 10px; }
+.swot-item ul { padding-left: 20px; margin: 0; }
+.swot-item li { margin-bottom: 8px; }
+
+.sg-box { padding: 6px; border-radius: 4px; font-size: 0.8em; line-height: 1.3; }
+.sg-box ul { padding-left: 20px; margin: 5px 0 0 0; }
+.sg-box li { margin-bottom: 4px; }
+.s-green { background: #dcfce7; color: #14532d; border: 1px solid #bbf7d0; } 
+.s-red { background: #fee2e2; color: #7f1d1d; border: 1px solid #fecaca; } 
+.s-blue { background: #dbeafe; color: #1e3a8a; border: 1px solid #bfdbfe; } 
+.s-orange { background: #ffedd5; color: #9a3412; border: 1px solid #fdba74; }
+.strat-inv-box { background: #f3e8ff; border: 1px solid #e9d5ff; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 0.85em; color: #6b21a8; }
+
+.actor-grid-info { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; font-size: 0.85em; }
+.actor-grid-info div { display: flex; flex-direction: column; }
+.actor-grid-info strong { font-size: 0.9em; color: #64748b; margin-bottom: 2px; }
+.label-diff { background: #e2e8f0; color: #1e293b; padding: 2px 6px; border-radius: 4px; font-weight: 700; width: fit-content; border: 1px solid #cbd5e1; }
+.label-posture-card { padding: 2px 6px; border-radius: 4px; font-weight: 700; color: #fff; width: fit-content; }
+.bg-hunter { background: #dc2626; } 
+.bg-hunted { background: #ca8a04; } 
+.bg-fortress { background: #2563eb; } 
+.bg-opportunistic { background: #16a34a; }
+.bg-distressed { background: #9333ea; }
+
+.competitor-block { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0; }
+.competitor-block strong { color: #1e293b; font-size: 1.05em; }
+
+details.scenario-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
+details.scenario-card summary { padding: 15px; font-weight: 500; font-size: 1.05em; line-height: 1.5; color: #334155; }
+.scen-logic-grid { display: inline-flex; flex-wrap: wrap; gap: 5px; margin-left: 10px; }
+.logic-tag { font-size: 0.75em; background: #f1f5f9; padding: 2px 8px; border-radius: 12px; border: 1px solid #cbd5e1; color: #475569; font-weight: 600; }
+.scen-details-body { padding: 20px; border-top: 1px solid #f1f5f9; background: #fcfcfc; }
+
+.table-container { width: 100%; overflow-x: auto; }
+.synergies-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.9em; }
+.synergies-table th { background: #f8fafc; padding: 12px; text-align: left; border-bottom: 2px solid #cbd5e1; white-space: nowrap; }
+.synergies-table td { padding: 12px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+.col-summary { width: 45%; min-width: 350px; } 
+
+.source-list { font-size: 0.9em; color: #64748b; }
+
+/* Sidebar CTA Elements */
+.section { margin: 0 25px 24px; }
+.section h3 { font-size: 15px; font-weight: 700; margin: 0 0 8px 0; border: none; padding: 0; color: #000000; }
+.meta-text { font-size: 12px; color: #94A3B8; margin-bottom: 16px; font-style: italic; }
+.meta-desc { font-size: 13px; color: #64748B; margin: 0 0 16px 0; line-height: 1.5; }
+.divider { height: 1px; background-color: #E2E8F0; margin: 24px 25px; }
+/* Sidebar Lists */
+.cta-list { list-style: none; padding: 0; margin: 0 0 16px 0; }
+.cta-list li { font-size: 13px; color: #475569; margin-bottom: 12px; padding-left: 20px; position: relative; line-height: 1.4; }
+.cta-list li::before { content: "→"; position: absolute; left: 0; color: #3B82F6; font-weight: bold; }
+.cta-list strong { color: #1E293B; }
+/* Enhanced Buttons */
+.btn { display: block; width: 100%; padding: 10px 14px; font-size: 14px; font-weight: 600; text-align: center; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; box-sizing: border-box; margin-bottom: 10px; white-space: normal; word-break: break-word; line-height: 1.4; }
+.btn-secondary { background-color: #F8FAFC; color: #0F172A; border: 1px solid #E2E8F0; }
+.btn-secondary:hover { background-color: #E2E8F0; text-decoration: none; border-color: #CBD5E1; }
+.btn-primary { background-color: #1E293B; color: #FFFFFF; border: none; }
+.btn-primary:hover { background-color: #0F172A; text-decoration: none; }
+
+/* Status Action Buttons (Solid Background, White Text) */
+.btn-status { display: block; width: 100%; padding: 8px; font-size: 13px; font-weight: 700; border-radius: 4px; text-decoration: none; cursor: pointer; text-align: center; color: #ffffff; margin-bottom: 6px; box-sizing: border-box; transition: all 0.2s; border: none; }
+.status-call { background-color: #16a34a; }
+.status-call:hover { background-color: #15803d; }
+.status-consider { background-color: #eab308; }
+.status-consider:hover { background-color: #ca8a04; }
+.status-monitor { background-color: #3b82f6; }
+.status-monitor:hover { background-color: #2563eb; }
+.status-pass { background-color: #ef4444; }
+.status-pass:hover { background: #dc2626; }
+
+@media (max-width: 1000px) {
+    body { overflow-x: hidden; }
+    .main-wrapper { display: block; width: 100%; padding-left: 0; }
+    .sidebar { position: relative; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #e2e8f0; }
+    .content-area { margin: 0; width: 100%; padding: 15px; box-sizing: border-box; min-height: auto; }
+    .battlefield-grid { display: flex !important; flex-direction: column !important; width: 100%; gap: 20px; }
+    .split-container { flex-direction: column; }
+    .img-col { position: static; width: 100%; margin-top: 20px; max-height: none; }
+    .actor-card { width: 100% !important; }
+    .table-container { display: block; overflow-x: auto; }
+    .synergies-table { min-width: 700px; }
+    .swot-grid { grid-template-columns: 1fr; }
+}
+    </style>
+</head>
+<body>
+    <div class="main-wrapper">
+        <div class="sidebar">
+            <div class="meta-block">
+                <div class="sb-top-data">
+                    <span class="sb-score score-green">74</span>
+                    <span class="sb-tag">United Kingdom</span>
+                    <span class="sb-tag">Pre-Seed</span>
+                    <span class="sb-tag">FinTech</span>
+                    <span class="sb-tag">B2B</span>
+                </div>
+                <h3 class="sidebar-company-name">Alpa</h3>
+                <p class="meta-desc" style="margin-bottom: 15px;">La couche financière en temps réel pour les opérateurs hôteliers.</p>
+                <div class="contact-row">
+                    <span><i class="fas fa-globe fa-fw"></i> <a href="https://www.getalpa.com" target="_blank">https://www.getalpa.com</a></span>
+                    
+                        <span><i class="fas fa-envelope fa-fw"></i> <a href="mailto:anton@getalpa.com">anton@getalpa.com</a></span>
+                    
+                </div>
+            </div>
+            <nav class="navigation">
+                <a href="#market-summary" class="nav-item bg-yellow">Résumé du marché</a>
+                <a href="#value-proposition" class="nav-item bg-green">Proposition de valeur</a>
+                <a href="#product" class="nav-item bg-green">Produit</a>
+                <a href="#business-model" class="nav-item bg-green">Modèle économique</a>
+                <a href="#team" class="nav-item bg-green">Équipe</a>
+                
+                <a href="#company-summary" class="nav-item bg-green">Résumé de l'entreprise</a>
+                <a href="#swot" class="nav-item bg-green">Analyse SWOT</a>
+                <a href="#action-plan" class="nav-item bg-green">Plan d'action</a>
+                <a href="#synergies-custom" class="nav-item bg-light-purple">Synergies avec S4BT</a>
+                <a href="#conviction" class="nav-item bg-blue">Conviction</a>
+                <a href="#sources" class="nav-item bg-blue">Sources</a>
+            </nav>
+            <div class="divider"></div>
+            <div class="section">
+                <h3>Explorer Alpa plus en détail ?</h3>
+                <p class="meta-text">Actuellement affiché : Mémo Rapide (Généré le 27/02/2026 pour S4BT)</p>
+                <ul class="cta-list">
+                    <li><strong>Mémo Rapide :</strong> Ajoute l'analyse de la taille du marché, l'analyse de la chaîne de valeur, le quadrant magique de la concurrence et les synergies avec votre entreprise.</li>
+                    <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Alpa&website=https://www.getalpa.com&product_url=unavailable&team_url=https://www.getalpa.com/about&pricing_url=https://www.getalpa.com/pricing&linkedin=&first_name=Anton&last_name=Soulier&memo=quick" class="btn btn-secondary" target="_blank">Générer un Mémo Rapide</a>
+                    <li style="margin-top: 16px;"><strong>Mémo Détaillé :</strong> Ajoute le quadrant de M&A compétitive, les scénarios stratégiques, les synergies entre les acteurs de l'écosystème et les synergies avec votre entreprise.</li>
+                    <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Alpa&website=https://www.getalpa.com&product_url=unavailable&team_url=https://www.getalpa.com/about&pricing_url=https://www.getalpa.com/pricing&linkedin=&first_name=Anton&last_name=Soulier&memo=detailed" class="btn btn-secondary" target="_blank">Générer un Mémo Détaillé</a>
+                </ul>
+                <a href="http://forms.proplace.co/meet" class="btn btn-secondary" target="_blank">Planifier un appel stratégique sur Alpa</a>
+            </div>
+            <div class="divider"></div>
+            <div class="section">
+                <h3>🧠 Décision du GP synthétique</h3>
+                <p class="meta-text"></p>
+
+                <h3>🗣 Votre décision</h3>
+                <p class="meta-text">Acceptez ou mettez à jour la décision du GP synthétique. Expliquez pourquoi avec vos propres mots : cela améliorera les capacités de sourcing et de qualification de votre GP synthétique.</p>
+
+                <a href="https://forms.proplace.co/t/c2246dXQEVus?status=CALL&action_timestamp=2026-02-27T12:01:20.519Z&user_action_log=CALL&feedback_reason=no%20feedback&thesis_impact_status=processed&id=recQngFcb11KM2T90" class="btn-status status-call" target="_blank">🟢 APPELER</a>
+                <p class="meta-text" style="margin-top: 0; margin-bottom: 15px;">Cela signifie "Je suis intéressé". Cela correspond à ma thèse ou j'aime vraiment ça.</p>
+
+                <a href="https://forms.proplace.co/t/c2246dXQEVus?status=CONSIDER&action_timestamp=2026-02-27T12:01:20.519Z&user_action_log=CONSIDER&feedback_reason=no%20feedback&thesis_impact_status=processed&id=recQngFcb11KM2T90" class="btn-status status-consider" target="_blank">🟡 CONSIDÉRER</a>
+                <p class="meta-text" style="margin-top: 0; margin-bottom: 15px;">Cela signifie "J'ai des doutes." Données critiques manquantes. Je sélectionnerai Appeler ou Surveiller dans les 7 jours.</p>
+
+                <a href="https://forms.proplace.co/t/c2246dXQEVus?status=MONITOR&action_timestamp=2026-02-27T12:01:20.519Z&user_action_log=MONITOR&feedback_reason=no%20feedback&thesis_impact_status=processed&id=recQngFcb11KM2T90" class="btn-status status-monitor" target="_blank">🔵 SURVEILLER</a>
+                <p class="meta-text" style="margin-top: 0; margin-bottom: 15px;">Cela signifie "Pas maintenant." Trop tôt (reste dans le pipeline) ou trop tard mais pertinent pour ma thèse.</p>
+
+                <a href="https://forms.proplace.co/t/c2246dXQEVus?status=PASS&action_timestamp=2026-02-27T12:01:20.520Z&user_action_log=PASS&feedback_reason=no%20feedback&thesis_impact_status=processed&id=recQngFcb11KM2T90" class="btn-status status-pass" target="_blank">🔴 PASSER</a>
+                <p class="meta-text" style="margin-top: 0; margin-bottom: 15px;">Cela signifie "Jamais". Mauvaise adéquation ou concurrent dans le portefeuille ou toute autre raison de passer.</p>
+            </div>
+            <div class="divider"></div>
+            <div class="section">
+                <h3>Analyser une autre entreprise ?</h3>
+                <a href="https://forms.proplace.co/t/qS5aEtNxkAus" class="btn btn-primary" target="_blank">Obtenir une première analyse par IA</a>
+            </div>
+            <div class="section">
+                <h3>Envie de suivre notre deal flow ?</h3>
+                <p class="meta-desc">Recevez chaque jour des startups d'IA européennes que nous évaluons du point de vue d'un VC.</p>
+                <a href="https://77f02b89.sibforms.com/serve/MUIFAMr0ADjDfIUWLc56STos70j4OXPiOTJqugyAa45YfGyt9zW6Tokz3iXWLNiTAw6oxjbrMnjs424k46IvwOQlWjaMIsbgexAk95FvzqzgLa56TkHas6WASK4VKs684XcZhacqMYTYQGuIfzJmBmCkmHwhNeB0yHifmrxC1PUhNMS1ZbiW1xF18IZy7tJP9BIWjDcM5VoH6VEVCw==" class="btn btn-primary" target="_blank">S'abonner au deal flow</a>
+            </div>
+            <div class="section">
+                <h3>Vous voulez un deal flow propriétaire ?</h3>
+                <p class="meta-desc">Recevez quotidiennement des cibles hautement qualifiées pour votre stratégie d'acquisition.</p>
+                <a href="http://forms.proplace.co/meet" class="btn btn-primary" target="_blank">Planifier un appel stratégique</a>
+            </div>
+            <div class="section" style="text-align: center; margin-bottom: 0; padding-top: 10px;">
+                <img src="https://183wcnoqvi.ucarecd.net/6a1ef507-976c-4a60-a8e5-1b0199825d36/sforbt_solutions_for_business_travel_logo.jpg" alt="Proplace Logo" style="max-width: 120px; height: auto;">
+                <p class="meta-text" style="margin-top: 10px; margin-bottom: 0; font-size: 11px; line-height: 1.4; word-break: break-word;">Généré par <a href="https://www.proplace.co" target="_blank">Proplace.co</a> pour S4BF. Proplace est une IA et peut faire des erreurs.<br><br>Contactez-nous à <a href="mailto:alexandre@proplace.co">alexandre@proplace.co</a> pour demander des mises à jour, ajouter des informations manquantes ou suggérer des améliorations.</p>
+            </div>
+        </div>
+        <div class="content-area">
+            <h1>Mémo Interactif Alpa</h1>
+            <h2 class="subtitle-category">FinTech ➜ SaaS d'automatisation financière hôtelière ➜ SaaS d'automatisation P&L en temps réel avec intégrations POS pour les opérateurs de restaurants multi-sites basés au Royaume-Uni/UE gérant un chiffre d'affaires annuel de plus de 1M£.</h2>
+            <p class="body-tagline">La couche financière en temps réel pour les opérateurs hôteliers.</p>
+
+<div class="section-container" id="value-chain"></div>
+
+<div class="section-container" id="market-summary">
+<h2 class="section-title">Résumé du marché</h2>
+<div class="split-container">
+<div class="text-col">
+<p>MARKET OPPORTUNITY SCORE<br>FinTech > Hospitality Financial Automation SaaS<br>B2B > SaaS</p>
+<p>═════════════════════════════════════════════════</p>
+<p>IS IT AN ATTRACTIVE MARKET ? (Dynamics): 85/100 × 25% = 21.25 points<br>IS IT A WINNABLE MARKET ? (Competition): 75/100 × 25% = 18.75 points<br>IS IT A PENETRABLE MARKET ? (GTM): 80/100 × 25% = 20.00 points<br>IS IT A REWARDING MARKET ? (Exits): 82/100 × 25% = 20.5 points</p>
+<p>─────────────────────────────────────────────────<br>TOTAL MARKET ATTRACTIVITY SCORE: 80.5/100</p>
+<p>═════════════════════════════════════════════════ </p>
+<h4>❓ Définition du marché</h4>
+<p>SaaS d'automatisation des P&L en temps réel avec intégrations POS pour les opérateurs de restaurants multi-sites basés au Royaume-Uni/UE gérant plus de 1 million de livres sterling de revenus annuels. ➜ Ce marché couvre la couche financière 'middleware' pour l'hôtellerie, se situant entre le Point de Vente (POS) et le logiciel comptable final (Xero/Quickbooks). Il cible l'écart financier opérationnel dans le marché mondial des logiciels de gestion de restaurants de 15 milliards de dollars.</p>
+<h4>💬 Notre thèse de marché</h4>
+<p>POINT D'INFLEXION DU MARCHÉ : Le centre de gravité des données sur le marché de la technologie hôtelière de 15 milliards de dollars est en train de changer en raison de la compression des marges post-inflationnistes. Ce changement rend les plateformes comptables existantes à clôture mensuelle obsolètes pour la prise de décision opérationnelle et crée un besoin urgent d'une nouvelle architecture centrée sur la visibilité financière en temps réel, ouvrant la porte à un nouveau leader du marché.</p>
+<h4>🧠 Notre conviction et notre pari sur ce marché:</h4>
+<ul>
+<li>MEDIUM: Notre conviction est moyenne, car la thèse repose entièrement sur une question de timing. Nous pensons que le catalyseur du « contrôle des coûts en temps réel » est réel en raison de l'envolée des coûts de l'alimentation et de la main-d'œuvre, mais la courbe d'adoption parmi les groupes de restaurants traditionnels est naissante et sa vitesse est inconnue. Notre pari est que le marché vient de franchir le point d'inflexion, ce qui en fait la fenêtre précise et étroite pour entrer avant que l'opportunité ne soit soit prématurée, soit trop encombrée par des acteurs traditionnels comme Fourth.</li>
+</ul>
+<p>═════════════════════════════════════════════════</p>
+<h4>🌊 MARCHÉ ATTRACTIF (Dynamique du marché) | Score: 85/100</h4>
+<ul>
+<li>Taille du marché (21/25): TAM: 15 milliards $ (logiciels de gestion hôtelière) • SAM: 2,5 milliards $ (opérations du marché intermédiaire UE/RU) • TCAC: 14,5%</li>
+<li>Facteurs de croissance (22/25): Pression sur les marges nettes (désormais 3-5% pour les opérateurs moyens) • Numérisation de la pile de restaurants multi-sites • Maturité de l'Open Banking.</li>
+<li>Timing Pourquoi maintenant (23/25): L'efficacité opérationnelle post-pandémie est la priorité absolue des PDG; « l'hôtellerie axée sur les données » est la nouvelle norme de l'industrie.</li>
+<li>Risques de marché (19/25): Taux de désabonnement élevé dans le secteur de la restauration • Cycles de vente longs pour les franchises internationales.</li>
+</ul>
+<h4>⚔️ MARCHÉ GAGNABLE (Paysage concurrentiel) | Score: 75/100</h4>
+<ul>
+<li>Incumbents (18/25): Fourth (évaluation 1 milliard $+ , force: distribution) • Oracle Micros (force: intégrations profondes/part de marché)</li>
+<li>Challengers (20/25): Tenzo (10 millions $+ levés, focus: analyse/prévisions) • Apicbase (focus: inventaire/gestion des stocks)</li>
+<li>Espace blanc (19/25): Catégorisation des transactions automatisée en temps réel qui comble l'écart entre la « réalité bancaire » et les « ventes POS ».</li>
+<li>Défendibilité (18/25): Principal fossé: coûts de changement grâce à une intégration profonde dans la routine financière quotidienne de l'opérateur.</li>
+</ul>
+<h4>🎯 MARCHÉ PÉNÉTRABLE (Mise sur le marché et économie unitaire) | Score: 80/100</h4>
+<ul>
+<li>Modèle GTM (20/25): Ventes directes aux entreprises + intégrations stratégiques avec les fournisseurs de POS. Accent sur les ventes « top-down » aux directeurs financiers de groupe.</li>
+<li>Modèle de prix (20/25): Abonnement SaaS (79 £+/mois par emplacement). Métrique principale: ARR par emplacement.</li>
+<li>Économie unitaire (20/25): LTV/CAC: estimé à 3,5x basé sur les repères de l'industrie • Récupération: 10-14 mois • Transaction typique: 10k-50k £ pour les groupes multi-sites.</li>
+<li>Évolutivité (20/25): Élevée. L'intégration numérique permet une mise à l'échelle paneuropéenne sans bureaux locaux.</li>
+</ul>
+<h4>💰 MARCHÉ RÉMUNÉRATEUR (Financement et Sortie) | Score: 82/100</h4>
+<ul>
+<li>Activité de financement (21/25): Activité significative dans la fintech/opérations hôtelières; plus de 1 milliard de dollars investis dans la catégorie plus large en 2024-2025.</li>
+<li>Multiples de sortie (20/25): Public: 6-8x les revenus (Lightspeed/Toast) • M&A: 10x+ pour les plateformes « système d'enregistrement » à forte rétention.</li>
+<li>Acheteurs stratégiques (21/25): Toast (synergie: expansion UE) • Oracle (synergie: modernisation du middleware) • Xero/Intuit (synergie: approfondissement des données financières verticales).</li>
+</ul>
+<p>─────────────────────────────────────────────────<br>🌐 CONFIANCE DES DONNÉES: Élevée sur la taille du marché et les repères de sortie. Faible sur l'économie unitaire interne spécifique d'Alpa. 8 URL au total ont été utilisées.</p>
+</div>
+<div class="img-col">
+<img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-fea330dc788521b2caf0457f9aa4b3e1-sspz5faz.jpg">
+</div>
+</div>
+</div>
+
+
+<div class="section-container" id="company">
+    <h2 class="section-title">Analyse Approfondie de l'Entreprise</h2>
+    <div class="split-container">
+        <div class="text-col">
+            <h3 id="value-proposition">Proposition de Valeur</h3>
+            <b>Proposition de Valeur</b><br>
+            Alpa (Alpacap) fournit une couche financière en temps réel pour permettre aux exploitants de restaurants de connaître leurs profits, de contrôler les coûts et de surpasser leurs pairs grâce à des P&L automatisés et des informations sur les données en direct. Tableau de bord intelligent pour les propriétaires de restaurants qui se connecte automatiquement aux caisses enregistreuses et aux comptes bancaires. Plateforme d'automatisation financière qui transforme les données POS, bancaires et de facturation en P&L en direct et en rapports exploitables.
+            <br><br>
+            <b>Profil Client Idéal (ICP)</b><br>
+            Exploitants de l'hôtellerie-restauration ambitieux, y compris les indépendants prospères, les petites chaînes en croissance, les groupes multi-sites et les franchisés. Services de restauration tels que les restaurants, cafés et hôtels gérant un chiffre d'affaires annuel de plus d'un million de livres sterling.
+            <br><br>
+            <b>B2B ou B2C</b><br>
+            B2B. Conçu spécifiquement pour les opérateurs de services alimentaires.
+            <br><br>
+            <b>Industrie</b><br>
+            Fintech / Technologie de l'Hôtellerie (Hospitality Tech). SaaS d'automatisation financière pour la restauration.
+            <br><br>
+            <h3 id="product">Produit</h3>
+            <b>Solution de base</b><br>
+            Une plateforme d'automatisation financière qui transforme les données des points de vente (POS), des banques et des factures en P&L en direct.
+            <ul>
+                <li>Catégorisation des transactions alimentée par l'IA</li>
+                <li>Suivi du P&L et des flux de trésorerie en temps réel</li>
+                <li>Recommandations et alertes pour les dépenses anormales</li>
+                <li>Automatisation pré-comptable</li>
+                <li>Analyse comparative du secteur (Benchmarking)</li>
+                <li>Suivi du budget et des prévisions</li>
+                <li>Reporting multi-sites</li>
+                <li>P&L "Flash" automatisés</li>
+            </ul>
+            <br>
+            <b>Capacités techniques</b><br>
+            <ul>
+                <li>Plus de 20 intégrations POS</li>
+                <li>Open Banking sécurisé (agent Plaid)</li>
+                <li>OCR pour le traitement des factures</li>
+                <li>IA exclusive de catégorisation des transactions</li>
+                <li>Conformité RGPD et cryptage standard</li>
+            </ul>
+
+            <h3 id="business-model">Modèle d'Affaires</h3>
+            <b>Analyse du Modèle économique</b><br>
+            Abonnement SaaS (par emplacement). Le prix par emplacement assure des revenus d'expansion à mesure que les clients se développent. Modèle SaaS pur.
+            <br><br>
+            <b>Flux de revenus et niveaux de prix</b><br>
+            <b>Plan Growth :</b> 79 £/mois par emplacement. Inclut les intégrations POS, les données bancaires, les P&L flash hebdomadaires et les prévisions.<br>
+            <b>Plan Scale :</b> Tarification personnalisée pour les chaînes internationales et les franchises. Inclut le reporting multi-sites, le contrôle centralisé et le support prioritaire.
+
+            <h3 id="team">Équipe</h3>
+            <b>Culture d'entreprise</b><br>
+            Axée sur les données, la discipline financière et l'expertise de l'hôtellerie. Basée à Londres.
+            <br><br>
+            <b>Analyse de l'équipe</b><br>
+            <b>Anton Soulier (Co-fondateur & CEO) :</b> Ancien cadre de Deliveroo (UK), fondateur de Taster (a levé plus de 100M$).<br>
+            <b>Jean-François Moy (Co-fondateur & CTO) :</b> Ancien leader ingénierie chez Vestiaire Collective.<br>
+            <b>Jérôme Tafani (Membre du CA) :</b> Ancien CFO de McDonald's Europe et CEO de Burger King France.
+
+            <h3 id="company-summary">Résumé de l'Entreprise</h3>
+            <b>FinTech > SaaS d'automatisation financière pour l'hôtellerie</b><br>
+            <b>B2B > SaaS</b><br>
+            <b>2,9M€ levés auprès de Daphni, True Capital, 2100 Ventures, Firedrop, Kima Ventures (Février 2026)</b><br>
+            <br>
+            <b>L'OPPORTUNITÉ EN BREF :</b> Alpa est un système d'exploitation financier qui automatise l'ingestion des données POS et bancaires pour offrir une visibilité P&L en temps réel.<br><br>
+            <b>LE PROBLÈME :</b> Les restaurateurs s'appuient sur des données comptables tardives, ce qui empêche de réagir aux gaspillages alimentaires ou aux pics de coûts de main-d'œuvre en temps réel.<br><br>
+            <b>LA SOLUTION :</b> Plateforme intégrant 20+ systèmes POS avec l'Open Banking. L'idée forte est que le "fossé comptable" est un échec opérationnel nécessitant une couche logicielle en temps réel.<br><br>
+            <b>RATIONNEL & ADÉQUATION À LA THÈSE :</b>
+            Alpa présente un "Founder-Market Fit" d'élite avec Anton Soulier et Jérôme Tafani. La société vise à devenir le "cerveau financier" du restaurant. Cependant, par rapport à la thèse S4BF, il s'agit d'un décalage vertical significatif : Alpa cible la restauration opérationnelle et non le Business Travel Tech (TMC, réservations d'entreprise). Malgré la qualité de l'équipe, cela ne s'aligne pas avec le mandat de consolidation Travel Tech.
+            <br><br>
+            <b>KEY COMPETITIVE ADVANTAGES:</b>
+            <ul>
+                <li>Unmatched Founder-Market Fit (Anton Soulier + Jérôme Tafani).</li>
+                <li>Real-time data synthesis across POS and Open Banking (Plaid).</li>
+                <li>Automated 'Flash P&Ls' replacing cumbersome weekly Excel reporting.</li>
+                <li>Deep focus on the 'Multi-site Operator' persona often ignored by localized tools.</li>
+                <li>Direct involvement of enterprise-level hospitality CFOs in product design.</li>
+            </ul>
+            <br>
+            <b>🧱 MOAT: MODERATE</b>
+            <ul>
+                <li>Coûts de changement : Une fois intégré dans le flux POS/Banque de 50 unités, Alpa devient la couche de reporting quotidien essentielle.</li>
+                <li>Avantage de données : Les données de benchmarking agrégées fournissent des informations que les solutions ponctuelles ne peuvent pas répliquer.</li>
+            </ul>
+            <br>
+            <b>🚩 RED FLAGS</b>
+            <ul>
+                <li>Le prix d'entrée (79 £/mois) suggère un jeu de volume qui pourrait avoir du mal à soutenir le support haut de gamme requis par les grandes franchises.</li>
+                <li><b>THE KILL SWITCH :</b> Ce n'est pas du Business Travel Tech. Notre fonds se concentre sur les plateformes de transactions hôtelières et TMC. Alpa n'a aucune synergie avec Trevium FOS.</li>
+            </ul>
+            <br>
+            <b>🔢 THESIS ALIGNMENT SCORE MODIFIER</b>
+            <b>Vertical Mismatch (-10%) :</b> Bien qu'Alpa soit une startup de premier plan, elle opère dans le secteur opérationnel de la restauration plutôt que dans le secteur du voyage d'affaires défini dans notre thèse.
+            <br><br>
+            <b>🌐 DATA CONFIDENCE : HIGH</b>
+        </div>
+        <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-854669f70c29c5f62d79bea2ea2da6f0-3dm2w941.jpg" alt="Company Analysis">
+        </div>
+    </div>
+</div>
+
+<div class="section-container" id="swot">
+    <h2 class="section-title">Analyse SWOT</h2>
+    <div class="swot-grid">
+        <div class="swot-item s-green">
+            <h3>Forces</h3>
+            <ul>
+                <li>ADN de fondateur d'élite : Anton Soulier (ex-Deliveroo) apporte une exécution prouvée.</li>
+                <li>Forte traction pré-seed : 2,9 M€ auprès de Daphni et du CFO de McDonald's au CA.</li>
+                <li>Moat produit : P&L par IA en temps réel, 20+ intégrations POS, Open Banking.</li>
+                <li>PMF ciblé : Les opérateurs multi-sites ont un besoin critique de visibilité financière.</li>
+            </ul>
+        </div>
+        <div class="swot-item s-red">
+            <h3>Faiblesses</h3>
+            <ul>
+                <li>Stade très précoce : Entreprise récente (2024/2026), manque de métriques ARR consolidées.</li>
+                <li>Petite équipe : Environ 12-21 personnes, manque de puissance commerciale pour les grands comptes.</li>
+                <li>Friction tarifaire : Le prix de 79 £/mois peut freiner les indépendants aux marges serrées.</li>
+                <li>Concentration étroite : Uniquement hôtellerie/restauration ; expansion géographique à prouver.</li>
+            </ul>
+        </div>
+        <div class="swot-item s-blue">
+            <h3>Opportunités</h3>
+            <ul>
+                <li>Marché fragmenté de 4T$ : Les opérateurs manquent d'outils financiers en temps réel.</li>
+                <li>Explosion du multi-site : Les chaînes et franchises cherchent à centraliser le contrôle.</li>
+                <li>Effet réseau de données : Les benchmarks agrégés créent une valeur unique pour le secteur.</li>
+                <li>Expansion verticale : Cafés, hôtels et traiteurs peuvent utiliser la couche sans changer de POS.</li>
+            </ul>
+        </div>
+        <div class="swot-item s-orange">
+            <h3>Menaces</h3>
+            <ul>
+                <li>Géants du POS : Toast ou Lightspeed pourraient intégrer ces modules Nativement.</li>
+                <li>Conjoncture macro : Les faillites de restaurants augmentent en période de récession.</li>
+                <li>Acteurs comptables : Xero/Quickbooks pourraient ajouter des fonctionnalités P&L IA.</li>
+                <li>Risques d'intégration : Les pannes de flux POS ou bancaires érodent la confiance immédiatement.</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div class="section-container" id="action-plan">
+    <h2 class="section-title">Plan d'Action</h2>
+    <h3>Défense</h3>
+    <p>Construire des effets de réseau à partir des benchmarks agrégés et s'appuyer sur l'exécution des fondateurs pour distancer les acteurs POS ; prioriser des intégrations impeccables.</p>
+    <h3>Offensive</h3>
+    <p>Utiliser la crédibilité d'Anton Soulier et le moat de l'IA temps réel pour verrouiller les chaînes multi-sites via des partenariats POS, viser 1 000 sites pour dominer les données.</p>
+    <h3>Kill Shot</h3>
+    <p>Des pannes d'intégration majeures pendant une récession combinées à un taux d'attrition élevé signifieraient la fin immédiate dans ce secteur chaotique.</p>
+    <h3>Remédiation</h3>
+    <p>Valider rapidement les métriques de traction (ARR, churn) pour financer la montée en puissance commerciale ; prouver le ROI réel au-delà de l'effet d'annonce.</p>
+</div>
+
+<div class="section-container" id="synergies-custom">
+    <h2 class="section-title">Synergies entre Alpa et S4BT</h2>
+    <h3>Résumé</h3>
+    <div class="text-block">
+        Mésalignement Stratégique Évident : L'acquisition d'Alpa par S4BT représente un important mésalignement sectoriel et stratégique. S4BT, un groupe de consolidation technologique de voyages d'affaires soutenu par le capital-investissement, se concentre sur l'hôtellerie, la réservation, le paiement et la réconciliation en Europe. Alpa est une FinTech pour l'automatisation financière des restaurants, sans aucune synergie claire en termes de marché, de produit ou de clientèle directe.<br><br>
+        <ul>
+            <li>Absence de 'Giant Killing' ou 'Aspirant Leap' : S4BT opère déjà au niveau d'une 'Fortune 500' en volume de transactions, tandis qu'Alpa est une petite startup en pré-revenu.</li>
+            <li>Mésalignement sectoriel critique : L'expertise d'Alpa est dans la restauration, un vertical distinct de la gestion des voyages d'affaires de S4BT.</li>
+            <li>Aucune solution aux faiblesses clés : Les forces de S4BT dans les voyages ne résolvent pas les défis d'Alpa liés à la restauration.</li>
+            <li>Aucune synergie structurelle : Il n'y a pas de chevauchement des étapes de la chaîne de valeur.</li>
+        </ul>
+        <br><br>
+        Mésalignement sectoriel et dilution de l'orientation stratégique : Le plus grand risque est la dilution de la stratégie 'Buy-and-Build' paneuropéenne de S4BT dans le voyage d'affaires. L'acquisition d'Alpa détournerait des ressources et du capital de l'intégration de Trevium FOS.<br><br>
+    </div>
+    <h3>Tableau détaillé des synergies potentielles</h3>
+    <div class="table-container">
+        <table class="synergies-table">
+            <thead>
+                <tr>
+                    <th>Rang</th>
+                    <th>Nom de la Synergie</th>
+                    <th>Type</th>
+                    <th>Hypothèse d'Action</th>
+                    <th>Impact Financier Est.</th>
+                    <th>Délai de Valeur</th>
+                    <th>Difficulté</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>1</td>
+                    <td>Aucune Synergie Directe - Mésalignement Sectoriel</td>
+                    <td>Defensive Moat</td>
+                    <td>Le manque de chevauchement des marchés entre S4BT (voyages) et Alpa (restaurants) crée un risque de divergence stratégique.</td>
+                    <td>Faible</td>
+                    <td>Long terme (>18m)</td>
+                    <td>Élevée</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <h3>Analyse détaillée des synergies potentielles</h3>
+    <div class="text-block">
+        <b>Aucune Synergie Directe - Mésalignement Sectoriel</b>
+        <ul>
+            <li>Type : Moat Défensif</li>
+            <li>Mécanisme : Absence de toute adéquation stratégique. S4BT se concentre sur l'unification des services de voyage d'affaires. Alpa offre des systèmes de P&L aux restaurateurs.</li>
+            <li>Rationnel : Les opportunités d'Alpa (croissance de l'hospitalité fragmentée) ne s'alignent pas avec le plan d'offensive de S4BT qui est de consolider les marchés de l'hôtellerie d'affaires.</li>
+            <li>Évaluation de l'impact : L'acquisition aurait un impact financier faible, voire négatif, en raison des coûts d'intégration inutiles.</li>
+            <li>Vérification de la faisabilité : L'intégration technique serait difficile car les plateformes résolvent des problèmes différents avec des piles technologiques différentes.</li>
+        </ul><br><br>
+    </div>
+</div>
+
+<div class="section-container" id="conviction">
+    <h2 class="section-title">Conviction Synthétique du GP</h2>
+    <div class="conviction-text">
+        <h3>Marché</h3>
+        <p>Le marché de l'automatisation financière pour la restauration semble de niche, mais il est en réalité un vaste marché mal desservi, dont les solutions génériques ne parviennent pas à répondre aux besoins. Tout comme Deel a transformé la conformité mondiale en une solution indispensable, Alpa transforme la gestion financière complexe de la restauration en un avantage concurrentiel.</p>
+        
+        <h3>Timing</h3>
+        <p>Le moment est un parfait exemple de "Boomerang". Le catalyseur est la pression post-inflationniste et les pénuries de main-d'œuvre, qui ont transformé le contrôle des marges en temps réel d'un 'nice-to-have' en une nécessité de survie pour les restaurateurs.</p>
+        
+        <h3>Entreprise</h3>
+        <p>Alpa construit un avantage concurrentiel en devenant la source de vérité financière unifiée pour les restaurants, créant des coûts de changement élevés. Cependant, pour l'acquéreur potentiel S4BT, cette acquisition est un échec stratégique ; les synergies sont inexistantes car Alpa se concentre sur les opérations de restauration tandis que S4BT est dans la technologie du voyage d'affaires.</p>
+        
+        <h3>Fondateur</h3>
+        <p>L'équipe fondatrice, dirigée par Anton Soulier de Deliveroo et Taster, possède un "ajustement fondateur-marché" exceptionnel. Leur expérience directe de l'industrie leur confère des secrets de domaine profonds et un avantage injuste en termes d'accès au marché.</p>
+        
+        <h3>Adéquation à la thèse</h3>
+        <p>L'accord est bloqué par notre filtre de secteur binaire, car Alpa est une FinTech pour l'hôtellerie (restauration) et non une "technologie pour les voyages d'affaires" comme l'exige notre thèse. Il n'y a aucun alignement avec notre mandat narratif de consolidation autour de Trevium FOS.</p>
+        
+        <h3>Verdict</h3>
+        <p>Le verdict est un rejet catégorique pour l'acquisition ; malgré la grande qualité de l'entreprise cible Alpa, le désalignement stratégique et sectoriel complet avec S4BT rendrait l'opération destructrice de valeur pour l'acquéreur.</p>
+        <p>🔴 SYNERGY_BLOCK_SIGNAL: Rejected because M&A synergies are WEAK_SYNERGY: 'Mésalignement sectoriel complet (voyages d'affaires vs restauration)'.</p>
+    </div>
+</div>
+
+<div class="section-container" id="sources">
+    <h2 class="section-title">Sources & Qualité des Données</h2>
+    <div class="source-list">
+        <h3>Sources de la Chaîne de Valeur</h3>
+        <p>Données non disponibles pour cette section.</p>
+        
+        <h3>Sources du Marché</h3>
+        <ul>
+            <li>Taille du marché et segment client : <a href="https://www.getalpa.com">https://www.getalpa.com</a></li>
+            <li>Levée de fonds et vision stratégique : <a href="https://www.eu-startups.com/2026/02/taster-founders-uk-fintech-startup-alpa-raises-e2-9-million/">EU Startups</a></li>
+            <li>Analyse concurrentielle (Tenzo) : <a href="https://www.tenzo.ai">https://www.tenzo.ai</a></li>
+            <li>Détails du tour pré-seed : <a href="https://techfundingnews.com/ex-deliveroo-exec-launches-alpa-with-3-5m-to-close-hospitalitys-financial-visibility-gap/">Tech Funding News</a></li>
+        </ul>
+
+        <h3>Methodologie du Magic Quadrant</h3>
+        <p>L'analyse comparative repose sur une évaluation de la capacité d'exécution et de la vision produit. Les critères incluent la profondeur des intégrations POS, la précision de la catégorisation IA et l'adoption par des groupes multi-sites de grande envergure.</p>
+
+        <h3>Sources de l'Entreprise</h3>
+        <ul>
+            <li>Vérification du fondateur et rôle : <a href="https://www.getalpa.com/about">https://www.getalpa.com/about</a></li>
+            <li>Liste des intégrations et analyse P&L : <a href="https://www.getalpa.com">https://www.getalpa.com</a></li>
+            <li>Vérification du prix (79 GBP) : <a href="https://www.getalpa.com">Site officiel d'Alpa</a></li>
+            <li>Informations juridiques : Alpacap Limited (No. 15894953), Londres.</li>
+        </ul>
+    </div>
+</div>
+
+<div class="footer">
+    <div class="footer-content">
+        <div>Propulsé par <strong>Strategy4Business</strong> | Lead : alexandre.busson@gmail.com</div>
+        <div>Dernière mise à jour : 27.02.2026 12:57 | Type de fonds : S4BF</div>
+    </div>
+</div>
+
+</div></div></body></html>
+<</CODE>>>
