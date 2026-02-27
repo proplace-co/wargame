@@ -1,0 +1,554 @@
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+<style>
+:root { --bg-app: #f8fafc; --text-main: #1e293b; --yellow-menu: #FEF9C3; --green-menu: #DCFCE7; --grey-menu: #F1F5F9; --blue-menu: #DBEAFE; }
+* { box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-app); color: var(--text-main); margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+a { color: #2563eb; text-decoration: none; cursor: pointer; word-break: break-all; } 
+a:hover { text-decoration: underline; }
+p, li { line-height: 1.6; margin-bottom: 10px; }
+strong, b { font-weight: 700; color: #0f172a; }
+h3 { scroll-margin-top: 40px; font-size: 1.4em; color: #000000; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px; }
+
+/* BULLETPROOF LAYOUT FIX: FIXED SIDEBAR, CENTERED PADDED BODY */
+.main-wrapper { display: block; width: 100%; max-width: 100vw; overflow: visible !important; padding-left: 300px; box-sizing: border-box; }
+.sidebar { position: fixed; top: 0; left: 0; width: 300px; height: 100vh; overflow-y: auto; border-right: 1px solid #e2e8f0; background: #fff; padding: 25px 0; z-index: 1000; }
+.content-area { display: block; margin: 0 auto; padding: 40px; width: 100%; max-width: 1400px; min-height: 100vh; box-sizing: border-box; }
+
+.section-container { background: #fff; padding: 30px; margin-bottom: 30px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; scroll-margin-top: 40px; overflow: visible; display: block; clear: both; }
+.section-title { font-size: 1.8em; font-weight: 700; color: #000000; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 25px; }
+.subtitle-category { font-size: 0.95em; font-weight: 700; color: #1e293b; margin-top: 0; margin-bottom: 5px; line-height: 1.4; }
+.body-tagline { font-size: 0.95em; color: #334155; margin-top: 0; margin-bottom: 30px; line-height: 1.6; }
+
+.split-container { display: flex; gap: 40px; align-items: flex-start; margin-bottom: 40px; position: relative; }
+.text-col { flex: 1; font-size: 1.05em; line-height: 1.7; color: #334155; min-width: 0; word-wrap: break-word; overflow-wrap: anywhere; }
+.img-col { flex: 1; position: sticky; top: 20px; align-self: flex-start; height: fit-content; min-width: 0; max-height: calc(100vh - 40px); overflow: visible; }
+.sticky-img { width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; display: block; object-fit: contain; }
+
+.meta-block { padding: 0 25px 25px; border-bottom: 1px solid #e2e8f0; margin-bottom: 15px; }
+.sidebar-company-name { font-size: 1.8em; margin: 0 0 10px 0; padding: 0; color: #0f172a; font-weight: 800; border-bottom: none; }
+.sb-top-data { padding: 0 0 15px 0; display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 0; }
+.sb-tag { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.85em; color: #475569; }
+.sb-score, .score-green { background: #16a34a !important; color: white !important; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.85em; }
+.contact-row { display: flex; flex-direction: column; gap: 5px; font-size: 0.9em; margin-top: 0; }
+.nav-item { display: block; padding: 8px 25px; color: #475569; font-weight: 600; font-size: 0.9em; border-left: 4px solid transparent; margin-bottom: 2px; }
+.nav-item:hover { background: rgba(0,0,0,0.05); color: #0f172a; border-left-color: #94a3b8; }
+.bg-yellow { background: var(--yellow-menu); } .bg-green { background: var(--green-menu); } .bg-grey { background: var(--grey-menu); }
+.bg-blue { background: var(--blue-menu); }
+.bg-light-purple { background: #f3e8ff; }
+
+.battlefield-legend { margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 6px; font-size: 0.9em; }
+.legend-row { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; margin-bottom: 5px; }
+.label-cap { background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-weight: 600; border: 1px solid #bbf7d0; white-space: nowrap; }
+.label-white { background: #fff; border: 1px solid #e2e8f0; padding: 2px 6px; border-radius: 4px; font-weight: 600; color: #334155; }
+.posture-legend { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; line-height: 1.2; margin-right: 10px; }
+
+.battlefield-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 15px; width: 100%; margin-bottom: 40px; }
+.battlefield-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.stage-header { font-size: 0.85em; font-weight: 700; text-transform: uppercase; color: #64748b; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; min-height: 40px; }
+
+.actor-card { background: #fff; border: 1px solid #cbd5e0; border-radius: 6px; overflow: hidden; font-size: 0.9em; border-left-width: 4px; margin-bottom: 8px; transition: all 0.2s; }
+.border-hunter { border-left-color: #dc2626 !important; }
+.border-hunted { border-left-color: #ca8a04 !important; }
+.border-fortress { border-left-color: #2563eb !important; }
+.border-opportunistic { border-left-color: #16a34a !important; }
+.border-distressed { border-left-color: #9333ea !important; }
+.actor-card summary { padding: 10px; cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; align-items: center; background: #fff; }
+.actor-card summary::after { content: "+"; font-size: 1.2em; color: #94a3b8; }
+.actor-card[open] summary::after { content: "−"; color: #1e293b; }
+.actor-summary-content { display: flex; flex-direction: column; gap: 2px; width: 90%; }
+.actor-name { font-weight: 800; color: #0f172a; font-size: 1em; }
+.actor-meta { font-size: 0.8em; color: #64748b; display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.label-tier { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.85em; color: #475569; white-space: nowrap; border: 1px solid #e2e8f0; }
+
+.actor-body { padding: 12px; border-top: 1px solid #f1f5f9; background: #fafafa; overflow-wrap: break-word; }
+.ws-box { background: #fffbeb; border: 1px solid #fcd34d; padding: 8px; border-radius: 6px; margin: 10px 0; font-size: 0.85em; color: #92400e; border: 1px solid #fcd34d; }
+.ws-box ul { padding-left: 20px; margin: 0; }
+.ws-box li { margin-bottom: 5px; }
+
+.swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+.swot-grid-small { display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 10px; }
+.swot-item { padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; }
+.swot-item h3 { margin-top: 0; font-size: 1.2em; border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: 10px; margin-bottom: 10px; }
+.swot-item ul { padding-left: 20px; margin: 0; }
+.swot-item li { margin-bottom: 8px; }
+
+.sg-box { padding: 6px; border-radius: 4px; font-size: 0.8em; line-height: 1.3; }
+.sg-box ul { padding-left: 20px; margin: 5px 0 0 0; }
+.sg-box li { margin-bottom: 4px; }
+.s-green { background: #dcfce7; color: #14532d; border: 1px solid #bbf7d0; } 
+.s-red { background: #fee2e2; color: #7f1d1d; border: 1px solid #fecaca; } 
+.s-blue { background: #dbeafe; color: #1e3a8a; border: 1px solid #bfdbfe; } 
+.s-orange { background: #ffedd5; color: #9a3412; border: 1px solid #fdba74; }
+.strat-inv-box { background: #f3e8ff; border: 1px solid #e9d5ff; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 0.85em; color: #6b21a8; }
+
+.actor-grid-info { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; font-size: 0.85em; }
+.actor-grid-info div { display: flex; flex-direction: column; }
+.actor-grid-info strong { font-size: 0.9em; color: #64748b; margin-bottom: 2px; }
+.label-diff { background: #e2e8f0; color: #1e293b; padding: 2px 6px; border-radius: 4px; font-weight: 700; width: fit-content; border: 1px solid #cbd5e1; }
+.label-posture-card { padding: 2px 6px; border-radius: 4px; font-weight: 700; color: #fff; width: fit-content; }
+.bg-hunter { background: #dc2626; } 
+.bg-hunted { background: #ca8a04; } 
+.bg-fortress { background: #2563eb; } 
+.bg-opportunistic { background: #16a34a; }
+.bg-distressed { background: #9333ea; }
+
+.competitor-block { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0; }
+.competitor-block strong { color: #1e293b; font-size: 1.05em; }
+
+details.scenario-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
+details.scenario-card summary { padding: 15px; font-weight: 500; font-size: 1.05em; line-height: 1.5; color: #334155; }
+.scen-logic-grid { display: inline-flex; flex-wrap: wrap; gap: 5px; margin-left: 10px; }
+.logic-tag { font-size: 0.75em; background: #f1f5f9; padding: 2px 8px; border-radius: 12px; border: 1px solid #cbd5e1; color: #475569; font-weight: 600; }
+.scen-details-body { padding: 20px; border-top: 1px solid #f1f5f9; background: #fcfcfc; }
+
+.table-container { width: 100%; overflow-x: auto; }
+.synergies-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.9em; }
+.synergies-table th { background: #f8fafc; padding: 12px; text-align: left; border-bottom: 2px solid #cbd5e1; white-space: nowrap; }
+.synergies-table td { padding: 12px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+.col-summary { width: 45%; min-width: 350px; } 
+
+.source-list { font-size: 0.9em; color: #64748b; }
+
+/* Sidebar CTA Elements */
+.section { margin: 0 25px 24px; }
+.section h3 { font-size: 15px; font-weight: 700; margin: 0 0 8px 0; border: none; padding: 0; color: #000000; }
+.meta-text { font-size: 12px; color: #94A3B8; margin-bottom: 16px; font-style: italic; }
+.meta-desc { font-size: 13px; color: #64748B; margin: 0 0 16px 0; line-height: 1.5; }
+.divider { height: 1px; background-color: #E2E8F0; margin: 24px 25px; }
+/* Sidebar Lists */
+.cta-list { list-style: none; padding: 0; margin: 0 0 16px 0; }
+.cta-list li { font-size: 13px; color: #475569; margin-bottom: 12px; padding-left: 20px; position: relative; line-height: 1.4; }
+.cta-list li::before { content: "→"; position: absolute; left: 0; color: #3B82F6; font-weight: bold; }
+.cta-list strong { color: #1E293B; }
+/* Enhanced Buttons */
+.btn { display: block; width: 100%; padding: 10px 14px; font-size: 14px; font-weight: 600; text-align: center; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; box-sizing: border-box; margin-bottom: 10px; white-space: normal; word-break: break-word; line-height: 1.4; }
+.btn-secondary { background-color: #F8FAFC; color: #0F172A; border: 1px solid #E2E8F0; }
+.btn-secondary:hover { background-color: #E2E8F0; text-decoration: none; border-color: #CBD5E1; }
+.btn-primary { background-color: #1E293B; color: #FFFFFF; border: none; }
+.btn-primary:hover { background-color: #0F172A; text-decoration: none; }
+
+/* Status Action Buttons (Solid Background, White Text) */
+.btn-status { display: block; width: 100%; padding: 8px; font-size: 13px; font-weight: 700; border-radius: 4px; text-decoration: none; cursor: pointer; text-align: center; color: #ffffff; margin-bottom: 6px; box-sizing: border-box; transition: all 0.2s; border: none; }
+.status-call { background-color: #16a34a; }
+.status-call:hover { background-color: #15803d; }
+.status-consider { background-color: #eab308; }
+.status-consider:hover { background-color: #ca8a04; }
+.status-monitor { background-color: #3b82f6; }
+.status-monitor:hover { background-color: #2563eb; }
+.status-pass { background-color: #ef4444; }
+.status-pass:hover { background: #dc2626; }
+
+@media (max-width: 1000px) {
+    body { overflow-x: hidden; }
+    .main-wrapper { display: block; width: 100%; padding-left: 0; }
+    .sidebar { position: relative; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #e2e8f0; }
+    .content-area { margin: 0; width: 100%; padding: 15px; box-sizing: border-box; min-height: auto; }
+    .battlefield-grid { display: flex !important; flex-direction: column !important; width: 100%; gap: 20px; }
+    .split-container { flex-direction: column; }
+    .img-col { position: static; width: 100%; margin-top: 20px; max-height: none; }
+    .actor-card { width: 100% !important; }
+    .table-container { display: block; overflow-x: auto; }
+    .synergies-table { min-width: 700px; }
+    .swot-grid { grid-template-columns: 1fr; }
+}
+</style>
+<div class="main-wrapper">
+    <div class="sidebar">
+        <div class="meta-block">
+            <div class="sb-top-data">
+                <span class="sb-score score-green">88</span>
+                <span class="sb-tag">United Kingdom</span>
+                <span class="sb-tag">Series C</span>
+                <span class="sb-tag">FinTech</span>
+                <span class="sb-tag">B2B</span>
+            </div>
+            <h3 class="sidebar-company-name">Aurum Solutions</h3>
+            <p class="meta-desc" style="margin-bottom: 15px;">Defy financial complexity with next-gen reconciliation.</p>
+            <div class="contact-row">
+                <a href="https://aurum.solutions" target="_blank"><i class="fas fa-globe"></i> https://aurum.solutions</a>
+                <a href="https://www.linkedin.com/in/tiagoveiga" target="_blank"><i class="fab fa-linkedin"></i> Tiago Veiga</a>
+                <a href="mailto:tiago.veiga@aurum.solutions"><i class="fas fa-envelope"></i> tiago.veiga@aurum.solutions</a>
+            </div>
+        </div>
+        <a href="#market-summary" class="nav-item bg-yellow">Market Summary</a>
+        <a href="#value-proposition" class="nav-item bg-green">Value Proposition</a>
+        <a href="#product" class="nav-item bg-green">Product</a>
+        <a href="#business-model" class="nav-item bg-green">Business Model</a>
+        <a href="#team" class="nav-item bg-green">Team</a>
+        <a href="#ceo" class="nav-item bg-green">CEO</a>
+        <a href="#company-summary" class="nav-item bg-green">Company Summary</a>
+        <a href="#swot" class="nav-item bg-green">SWOT Analysis</a>
+        <a href="#action-plan" class="nav-item bg-green">Action Plan</a>
+        <a href="#synergies-custom" class="nav-item bg-light-purple">Synergies with S4BT</a>
+        <a href="#conviction" class="nav-item bg-blue">Conviction</a>
+        <a href="#sources" class="nav-item bg-blue">Sources</a>
+        <div class="divider"></div>
+<div class="section">
+    <h3>Explore Aurum Solutions further?</h3>
+    <p class="meta-text">Currently viewing: Fast Memo (Generated 02/27/2026 for S4BT)</p>
+    <ul class="cta-list">
+        <li><strong>Quick Memo:</strong> Adds Market Sizing, Value Chain Analysis, Competition Magic Quadrant & Synergies with your company.</li>
+        <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Aurum Solutions&website=https://aurum.solutions&product_url=https://aurum.solutions/&team_url=https://aurum.solutions/about&pricing_url=unavailable&linkedin=https://www.linkedin.com/in/tiagoveiga&first_name=Tiago&last_name=Veiga&memo=quick" class="btn btn-secondary" target="_blank">Generate Quick Memo</a>
+        <li style="margin-top: 16px;"><strong>Detailed Memo:</strong> Adds Competitive M&A quadrant, Strategic Scenarios, Synergies between ecosystem players & Synergies with your company.</li>
+        <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Aurum Solutions&website=https://aurum.solutions&product_url=https://aurum.solutions/&team_url=https://aurum.solutions/about&pricing_url=unavailable&linkedin=https://www.linkedin.com/in/tiagoveiga&first_name=Tiago&last_name=Veiga&memo=detailed" class="btn btn-secondary" target="_blank">Generate Detailed Memo</a>
+    </ul>
+    <a href="http://forms.proplace.co/meet" class="btn btn-secondary" target="_blank">Schedule a strategy call on Aurum Solutions</a>
+</div>
+<div class="divider"></div>
+<div class="section">
+    <h3>🧠 Synthetic GP decision</h3>
+    <p class="meta-text"><b>🧠 Condamnation du GP Synthétique: </b><br><br><b>Marché</b><br>Le marché du SaaS de réconciliation financière est un exemple classique de "l'ennuyeux est un avantage", où la complexité croissante des paiements crée une opportunité massive que les acteurs généralistes ignorent.<br><br>Tout comme Deel a transformé la gestion de la paie internationale, Aurum Solutions prend un processus de back-office fastidieux mais critique et le transforme en une couche d'intelligence de données automatisée, créant un avantage concurrentiel difficile à répliquer.<br><br><b>Timing</b><br>Le timing est un "Boomerang", une dynamique où le marché devient soudainement réceptif à une solution existante, déclenché ici par la maturation des technologies d'IA et d'open banking qui rendent possible une automatisation à 99% de précision.<br><br>Ce catalyseur est amplifié par la fragmentation des systèmes de paiement et une pression réglementaire accrue, forçant les entreprises à adopter des plateformes de réconciliation spécialisées.<br><br><b>Entreprise</b><br>L'avantage d'Aurum est une combinaison de coûts de changement prohibitifs et d'un effet de réseau de données provenant de sa bibliothèque de plus de 600 connecteurs.<br><br>Pour l'acquéreur S4BT, les synergies sont transformatrices ; l'intégration du moteur de réconciliation d'Aurum dans la plateforme Trevium n'est pas une simple addition de fonctionnalités, mais la brique technologique fondamentale qui permet à S4BT de devenir un système d'exploitation financier complet pour les voyages d'affaires, capturant des revenus à plus forte marge en aval.<br><br><b>Fondateur</b><br>Le PDG, Tiago Veiga, démontre une adéquation fondateur-marché exceptionnelle, ayant passé huit ans au sein de l'entreprise et gravi les échelons depuis la direction des ventes.<br><br>Son expertise approfondie des points de douleur des clients et sa vision commerciale éprouvée lui confèrent la crédibilité et la connaissance du domaine nécessaires pour diriger l'entreprise sur ce marché de niche mais critique.<br><br><b>Adéquation à la thèse</b><br>L'opportunité passe tous les filtres binaires (Géographie Europe, Secteur Paiements/Réconciliation) et active plusieurs signaux positifs sémantiques, notamment "réconciliation de paiement" et "entreprise +10M€ de budgets".<br><br>L'alignement avec l'alpha narratif est parfait, car Aurum représente la pièce maîtresse manquante pour la stratégie de consolidation du FOS Trevium de S4BT.<br><br><b>Verdict</b><br>L'acquisition est fortement recommandée car les synergies sont hautement stratégiques et transformatrices, permettant à S4BT de passer d'un simple fournisseur de technologie de voyage à une plateforme financière intégrée.<br><br>🟢 SYNERGY_CALL_SIGNAL: L'acquisition d'Aurum Solutions par S4BT est hautement stratégique. SYNERGY_KEYWORD: Intégration FOS Trevium. NARRATIVE_INSIGHT: L'acquisition fournit le moteur de réconciliation manquant, transformant S4BT d'un fournisseur de technologie de voyage en un système d'exploitation financier complet pour les voyages d'affaires en Europe.</p>
+
+    <h3>🗣 Your decision</h3>
+    <p class="meta-text">Accept or update the synthetic GP decision. Explain why in your own words : it will improve your synthetic GP sourcing & qualification capabilities.</p>
+
+    <a href="https://forms.proplace.co/t/c2246dXQEVus?status=CALL&action_timestamp=2026-02-27T14:41:14.150Z&user_action_log=CALL&feedback_reason=no%20feedback&thesis_impact_status=processed&id=recV2nyh9fUesejPz" class="btn-status status-call" target="_blank">🟢 CALL</a>
+    <p class="meta-text" style="margin-top: 0; margin-bottom: 15px;">It means "I am interested". It fits my thesis or I really like it.</p>
+
+    <a href="https://forms.proplace.co/t/c2246dXQEVus?status=CONSIDER&action_timestamp=2026-02-27T14:41:14.150Z&user_action_log=CONSIDER&feedback_reason=no%20feedback&thesis_impact_status=processed&id=recV2nyh9fUesejPz" class="btn-status status-consider" target="_blank">🟡 CONSIDER</a>
+    <p class="meta-text" style="margin-top: 0; margin-bottom: 15px;">It means "I have doubts." Missing critical data. I will select Call or Monitor within 7 days.</p>
+
+    <a href="https://forms.proplace.co/t/c2246dXQEVus?status=MONITOR&action_timestamp=2026-02-27T14:41:14.150Z&user_action_log=MONITOR&feedback_reason=no%20feedback&thesis_impact_status=processed&id=recV2nyh9fUesejPz" class="btn-status status-monitor" target="_blank">🔵 MONITOR</a>
+    <p class="meta-text" style="margin-top: 0; margin-bottom: 15px;">It means "Not Now." Too early (stays in pipeline) or too late but relevant to my thesis.</p>
+
+    <a href="https://forms.proplace.co/t/c2246dXQEVus?status=PASS&action_timestamp=2026-02-27T14:41:14.150Z&user_action_log=PASS&feedback_reason=no%20feedback&thesis_impact_status=processed&id=recV2nyh9fUesejPz" class="btn-status status-pass" target="_blank">🔴 PASS</a>
+    <p class="meta-text" style="margin-top: 0; margin-bottom: 15px;">It means "Never". Bad fit or competitor in portfolio or any other reason to pass.</p>
+</div>
+<div class="divider"></div>
+<div class="section">
+    <h3>Analyze another company?</h3>
+    <a href="https://forms.proplace.co/t/qS5aEtNxkAus" class="btn btn-primary" target="_blank">Get an AI-powered first-look</a>
+</div>
+<div class="section">
+    <h3>Want to follow our deal flow?</h3>
+    <p class="meta-desc">Receive European AI startups we assess every day from a VC perspective.</p>
+    <a href="https://77f02b89.sibforms.com/serve/MUIFAMr0ADjDfIUWLc56STos70j4OXPiOTJqugyAa45YfGyt9zW6Tokz3iXWLNiTAw6oxjbrMnjs424k46IvwOQlWjaMIsbgexAk95FvzqzgLa56TkHas6WASK4VKs684XcZhacqMYTYQGuIfzJmBmCkmHwhNeB0yHifmrxC1PUhNMS1ZbiW1xF18IZy7tJP9BIWjDcM5VoH6VEVCw==" class="btn btn-primary" target="_blank">Subscribe to deal flow</a>
+</div>
+<div class="section">
+    <h3>Want a proprietary deal flow?</h3>
+    <p class="meta-desc">Receive daily highly qualified targets for your acquisition strategy.</p>
+    <a href="http://forms.proplace.co/meet" class="btn btn-primary" target="_blank">Schedule a strategy call</a>
+</div>
+<div class="section" style="text-align: center; margin-bottom: 0; padding-top: 10px;">
+    <img src="https://183wcnoqvi.ucarecd.net/6a1ef507-976c-4a60-a8e5-1b0199825d36/sforbt_solutions_for_business_travel_logo.jpg" alt="Proplace Logo" style="max-width: 120px; height: auto;">
+</div>
+    </div>
+    <div class="content-area">
+        <h1>Aurum Solutions Interactive Memo</h1>
+        <h2 class="subtitle-category">FinTech ➜ SaaS de Réconciliation Financière Automatisée ➜ Automated reconciliation SaaS for financial data integrity and compliance in B2B organizations handling bank statements, PSP transactions, and regulatory audits in UK/EU markets.</h2>
+        <p class="body-tagline">Defy financial complexity with next-gen reconciliation.</p>
+
+
+<div class="section-container" id="market-summary">
+<h2 class="section-title">Market Summary</h2>
+<div class="split-container">
+<div class="text-col">
+<h4>MARKET OPPORTUNITY SCORE</h4>
+<p>FinTech > Automated Financial Reconciliation SaaS<br>B2B > SaaS</p>
+<p>═════════════════════════════════════════════════</p>
+<p>IS IT AN ATTRACTIVE MARKET ? (Dynamics): 88/100 × 25% = 22.0 points<br>IS IT A WINNABLE MARKET ? (Competition): 75/100 × 25% = 18.75 points<br>IS IT A PENETRABLE MARKET ? (GTM): 82/100 × 25% = 20.5 points<br>IS IT A REWARDING MARKET ? (Exits): 85/100 × 25% = 21.25 points</p>
+<p>─────────────────────────────────────────────────<br>TOTAL MARKET ATTRACTIVITY SCORE: 82.5/100</p>
+<p>═════════════════════════════════════════════════ </p>
+<h4>❓ Market DEFINITION</h4>
+<p>Le marché de la réconciliation automatisée SaaS s'adresse aux directions financières gérant des flux transactionnels massifs (banques, PSP, marketplaces). Il assure la cohérence entre les enregistrements internes et externes pour la conformité et le reporting, avec une valeur critique dans les secteurs à haute vélocité monétaire comme le travel tech et la fintech. ➜ Ce marché est en pleine mutation, passant d'outils de niche à des systèmes de record transversaux.</p>
+<h4>💬 Our Market THESIS</h4>
+<p>MARKET INFLECTION : La modification non-négociable des exigences de conformité et la fragmentation des rails de paiement (Open Banking, Real-time payments) forcent une transition des systèmes hérités vers une nouvelle architecture centrée sur l'intégrité des données en temps réel, permettant à un nouvel acteur de devenir le système de record de l'industrie.</p>
+<h4>🧠 Our CONVICTION & WAGER on this Market:</h4>
+<p>🟢 HIGH: Notre conviction est haute car ce marché présente un alignement rare entre timing réglementaire et structure technologique. L'explosion du volume de données financières a ouvert une fenêtre temporaire pour qu'un fondateur décisif construise un moat de données propriétaire et capture le marché avant que l'opportunité ne devienne consensuelle. C'est une véritable conquête de territoire.</p>
+<p>═════════════════════════════════════════════════</p>
+<h4>🌊 ATTRACTIVE MARKET (Market Dynamics) | Score: 88/100</h4>
+<ul>
+<li>︎ Market Size (22/25): TAM Global Financial Automation: 15B$ • SAM Reconciliation: 3B$ • CAGR: 14%.</li>
+<li>︎ Growth Drivers (23/25): Complexité multi-PSP • Régulations de type CASS/MGA • Besoin de clôture financière continue.</li>
+<li>︎ Timing Why Now (22/25): Adoption massive de l'open banking • Maturité des technologies d'IA pour le matching automatique.</li>
+<li>︎ Market Risks (21/25): Consolidation des ERP (SAP/Oracle) qui absorbent certaines fonctionnalités basiques.</li>
+</ul>
+<h4>⚔️ WINNABLE MARKET (Competitive Landscape) | Score: 75/100</h4>
+<ul>
+<li>︎ Incumbents (18/25): BlackLine (8B$ val.) • Trintech • Fiserv. Forces: Distribution massive et ancrage historique.</li>
+<li>︎ Challengers (20/25): ReconArt • Gresham Tech. Focus: Flexibilité accrue et prix compétitifs.</li>
+<li>︎ White Space (19/25): Réconciliation en temps réel pour l'économie à la demande et le voyage d'affaires.</li>
+<li>︎ Defensibility (18/25): Effets de réseau via les connecteurs bancaires et coûts de commutation élevés.</li>
+</ul>
+<h4>🎯 PENETRABLE MARKET (Go-to-Market & Unit Economics) | Score: 82/100</h4>
+<ul>
+<li>︎ GTM Model (20/25): Mix de vente directe Enterprise et partenariats avec des cabinets d'audit.</li>
+<li>︎ Pricing Model (21/25): Abonnement annuel basé sur le volume de fichiers de données et le nombre de comptes.</li>
+<li>︎ Unit Economics (20/25): LTV/CAC estimé à 4x+ • Cycle de vente de 6-9 mois pour les grands comptes.</li>
+<li>︎ Scalability (21/25): Expansion géographique facilitée par la nature 'data-agnostic' du produit.</li>
+</ul>
+<h4>💰 REWARDING MARKET (Funding & Exit) | Score: 85/100</h4>
+<ul>
+<li>︎ Funding Activity (21/25): Forte activité M&A dans le secteur (ex: rachat d'Anytime par Orange Bank, consolidation Trintech).</li>
+<li>︎ Exit Multiples (22/25): Multiples de 8x-12x ARR pour les leaders technologiques SaaS.</li>
+<li>︎ Strategic Buyers (22/25): Editeurs d'ERP (Coupa, Workday) • Grandes banques de réseau • Agrégateurs de Travel Tech (Trevium).</li>
+</ul>
+</div>
+<div class="img-col">
+<img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-c7420c3543f89b79943d2df070698f2c-0hi55dx9.jpg">
+</div>
+</div>
+</div>
+
+
+
+<div class="section-container" id="company">
+    <h2 class="section-title">Analyse Approfondie de l'Entreprise</h2>
+    <div class="split-container">
+        <div class="text-col">
+            <h3 id="value-proposition">Proposition de Valeur</h3>
+            <b>Value Proposition :</b><br> Aurum Solutions aide les équipes financières ambitieuses à défier la complexité financière grâce à un logiciel de réconciliation de nouvelle génération qui assure l'intégrité des données et des insights actionnables. Aurum aide les entreprises à vérifier automatiquement que l'argent qui entre et sort de leurs comptes correspond exactement à leurs factures et ventes, évitant ainsi les erreurs humaines et les fraudes. 'Defy financial complexity with next-gen reconciliation.'<br><br>
+            <b>Ideal Customer Profile (ICP) :</b><br> CFOs, Financial Controllers, Accountants, et Finance Managers dans des organisations allant des startups aux entreprises globales (FTE100). Équipes financières gérant des flux transactionnels massifs (banques, PSP, marketplaces). Secteurs ultra-régulés comme iGaming, Fintech, banking, financial services.<br><br>
+            <b>B2B or B2C :</b><br> B2B - L'entreprise fournit un logiciel financier spécialisé et des services de réconciliation pour les départements financiers des entreprises.<br><br>
+            <b>Industry :</b><br> Fintech / Financial Software | FinTech > Automated Financial Reconciliation SaaS | FinTech / Enterprise Software.
+
+            <h3 id="product">Produit</h3>
+            <b>Core Solution :</b><br> Plateforme de réconciliation automatisée haute performance conçue pour centraliser les données et éliminer le traitement manuel. Plateforme SaaS de réconciliation financière automatisée qui permet aux directeurs financiers de garantir l'intégrité des données financières en automatisant le matching de transactions complexes multi-sources. Centralise les flux bancaires, PSP et ERP via 600+ intégrations.<br><br>
+            <b>Feature Encyclopedia :</b><br>
+            <ul>
+                <li>Importations automatiques de données</li>
+                <li>Règles de matching personnalisées</li>
+                <li>Générateur de règles par glisser-déposer</li>
+                <li>Outils de collaboration d'équipe</li>
+                <li>Tableaux de bord personnalisés</li>
+                <li>Écritures de journal automatisées</li>
+                <li>Piste d'audit complète</li>
+                <li>Suivi au niveau des transactions</li>
+                <li>Gestion des exceptions</li>
+                <li>Taux de matching de 99%</li>
+            </ul>
+
+            <h3 id="business-model">Modèle d'Affaires</h3>
+            <b>Revenue Streams & Pricing :</b><br> Modèle SaaS récurrent à haute valeur. Abonnement annuel basé sur le volume de fichiers de données et le nombre de comptes. Revenus purement SaaS/Abonnement stables avec expansion via l'ajout de comptes et de volumes. Tiers de prix basés sur la complexité et le volume.
+
+            <h3 id="team">Équipe</h3>
+            <b>Company Culture :</b><br> Entreprise office-first, approche collaborative, engagée pour la diversité et la résilience. Valeurs : Précision, Intégrité et autonomisation holistique des équipes financières. Culture de haute performance.
+
+            <h3 id="ceo">CEO</h3>
+            <b>Founder Archetype :</b><br> Tiago Veiga correspond au profil d'un "Sales Operator" devenu PDG stratégique. Ayant débuté son parcours entrepreneurial par la co-fondation d'une agence de marketing et progressé par des rôles de direction commerciale, il a tiré parti de son sens des affaires et de son expertise en développement commercial pour mettre à l'échelle des entreprises et stimuler la croissance des revenus.<br><br>
+            <b>Pedigree Signal :</b><br> Diplômé en gestion de l'Universidade do Minho (Portugal). Son leadership a été validé par plusieurs distinctions de l'industrie, notamment le titre de "Fintech Company of the Year" à plusieurs reprises.
+
+            <h3 id="company-summary">Résumé de l'Entreprise</h3>
+            <b>THESIS ALIGNMENT SCORE MODIFIER : +5%</b><br>
+            <b>TEAM EXCELLENCE : 82/100</b><br>
+            <b>MARKET OPPORTUNITY : 85/100</b><br>
+            <b>PRODUCT INNOVATION : 88/100</b><br><br>
+            
+            <b>🗝️ KEY COMPETITIVE ADVANTAGES:</b>
+            <ul>
+                <li>Bibliothèque d'intégrations ultra-vaste (600+ PSP, banques, ERP).</li>
+                <li>Expertise verticale profonde dans les secteurs à régulation complexe (CASS, MGA).</li>
+                <li>Plateforme agnostique capable de traiter des données non structurées.</li>
+                <li>Support client basé au Royaume-Uni avec des temps de résolution records (24h).</li>
+                <li>Solution 'Full Audit Trail' garantissant une conformité totale pour les régulateurs.</li>
+            </ul>
+
+            <b>🧱 MOAT: STRONG</b>
+            <ul>
+                <li>Switching Costs: Une fois la réconciliation automatisée et intégrée aux flux ERP, le coût et le risque opérationnel d'un changement sont prohibitifs.</li>
+                <li>Data Network Advantage: L'accumulation de règles de matching pour des centaines de types de transactions crée un moteur de matching plus intelligent que les nouveaux entrants.</li>
+            </ul>
+
+            <b>🚩 RED FLAGS</b>
+            <ul>
+                <li>Manque de visibilité sur les métriques financières précises (ARR, NRR) dû au statut de société privée.</li>
+                <li>Risque de dispersion de l'attention produit sur trop de verticales (iGaming vs Travel).</li>
+            </ul>
+
+            <b>🌐 DATA CONFIDENCE : MEDIUM</b>
+        </div>
+        <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-de698e815e020dfab8b53d9317adccdd-ulxz9ylf.jpg" alt="Company Analysis">
+        </div>
+    </div>
+</div>
+
+<div class="section-container" id="swot">
+    <h2 class="section-title">Analyse SWOT</h2>
+    <div class="swot-grid">
+        <div class="swot-item s-green">
+            <h3>Forces</h3>
+            <ul>
+                <li>Expertise commerciale du CEO Tiago Veiga : trajectoire prouvée en scaling revenue et leadership sales dans fintech.</li>
+                <li>Base clients premium : Betfred, British Land, Imperial Brands, validant traction B2B.</li>
+                <li>Produit robuste : 600+ intégrations, 99% matching, audit trail complet.</li>
+                <li>Reconnaissance marché : Fintech Company of the Year multiple fois.</li>
+                <li>Équipe C-suite solide : nominations récentes, culture office-first.</li>
+            </ul>
+        </div>
+        <div class="swot-item s-red">
+            <h3>Faiblesses</h3>
+            <ul>
+                <li>Absence funding public : potentiellement bootstrappé, limitant scale agressif.</li>
+                <li>Pédigree académique régional : Univ. Minho, non Tier 1 global.</li>
+                <li>Manque transparence pricing : modèle SaaS implicite sans tiers détaillés.</li>
+                <li>Dépendance ventes manuelles : historique sales-heavy.</li>
+                <li>Marché niche reconciliation : exposé à consolidation fintech.</li>
+            </ul>
+        </div>
+        <div class="swot-item s-blue">
+            <h3>Opportunités</h3>
+            <ul>
+                <li>Expansion Amérique du Nord : opportunité massive iGaming/finance déclarée.</li>
+                <li>Partenariats écosystème : ERP/PSP/gateways pour accélérer l'adoption.</li>
+                <li>Compliance réglementaire : besoins croissants FCA CASS, MGA.</li>
+                <li>Automatisation finance : PME et entreprises cherchant l'intégrité des données.</li>
+                <li>Croissance iGaming/e-commerce : réconciliation stocks/paiements digitaux.</li>
+            </ul>
+        </div>
+        <div class="swot-item s-orange">
+            <h3>Menaces</h3>
+            <ul>
+                <li>Concurrents établis : BlackLine, Adra, solutions enterprise dominantes.</li>
+                <li>Ralentissement économique : budgets finance serrés en récession.</li>
+                <li>Évolution IA : matching rules surpassés par IA native.</li>
+                <li>Risques cyber/privacy : l'approche data agnostic expose aux violations de données.</li>
+                <li>Churn clients : support 24h critique, perte de confiance en cas d'échec.</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div class="section-container" id="action-plan">
+    <h2 class="section-title">Plan d'Action</h2>
+    <h3>Défense</h3>
+    <p>Creuser les moats avec les 600+ intégrations et l'audit trail contre les concurrents ; la loyauté du CEO (8 ans) ancre l'exécution face à la récession.</p>
+    <h3>Offense</h3>
+    <p>Lever l'expertise sales de Veiga et la base clients pour dominer l'iGaming/NA via partenariats PSP/ERP, scaler à 10x le revenu sur la conformité et l'automatisation.</p>
+    <h3>Kill Shot</h3>
+    <p>Churn de clients majeurs (iGaming) + absence de capital = stagnation face aux concurrents utilisant l'IA native, entraînant un effondrement des revenus.</p>
+    <h3>Remédiation</h3>
+    <p>Sécuriser un financement de Série A pour booster l'ingénierie et l'équipe, pallier le pédigree régional par la traction des prix et des clients.</p>
+</div>
+
+<div class="section-container" id="synergies-custom">
+    <h2 class="section-title">Synergies entre S4BT et Aurum Solutions</h2>
+    <h3>Résumé</h3>
+    <div class="text-block">
+        Alliance Stratégique et Rapprochement Financier Essentiel<br><br>
+        <ul>
+            <li>L'acquisition d'Aurum Solutions par S4BT transforme S4BT en une puissance européenne de la gestion des voyages d'affaires, en intégrant nativement la réconciliation financière et la conformité fiscale dans sa plateforme Trevium.</li>
+            <li>Aurum, en tant que cible, élimine le risque de rester sous-capitalisé en acquérant l'accès aux ressources et à la base de clients de S4BT.</li>
+        </ul>
+        <br><br>
+        Le risque principal est l'intégration technique de la plateforme d'Aurum avec les piles technologiques héritées de S4BT, ainsi que le maintien de la culture d'innovation 'office-first'.<br><br>
+    </div>
+    <h3>Tableau détaillé des synergies potentielles</h3>
+    <div class="table-container">
+        <table class="synergies-table">
+            <thead>
+                <tr>
+                    <th>Rang</th>
+                    <th>Nom de la Synergie</th>
+                    <th>Type</th>
+                    <th>Hypothèse d'Action</th>
+                    <th>Impact Financier Est.</th>
+                    <th>Time to Value</th>
+                    <th>Difficulté</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>1</td>
+                    <td>Intégration et Monétisation du FOS Trevium</td>
+                    <td>Soft Revenue</td>
+                    <td>Intégration du moteur Aurum dans Trevium pour monétiser les flux hybrides (SaaS + transaction).</td>
+                    <td>High</td>
+                    <td>Mid-Term (6-18m)</td>
+                    <td>Medium</td>
+                </tr>
+                <tr>
+                    <td>2</td>
+                    <td>Accélération de la Stratégie de Consolidation UE</td>
+                    <td>Hard Cost</td>
+                    <td>Utilisation de l'expertise transfrontalière pour accélérer les acquisitions en Europe.</td>
+                    <td>Medium</td>
+                    <td>Long-Term (>18m)</td>
+                    <td>Medium</td>
+                </tr>
+                <tr>
+                    <td>3</td>
+                    <td>Renforcement de la Défense face aux Hyerscalers</td>
+                    <td>Defensive Moat</td>
+                    <td>Renforcement de la proposition de valeur face à Navan et TravelPerk avec une réconciliation profonde.</td>
+                    <td>Medium</td>
+                    <td>Mid-Term (6-18m)</td>
+                    <td>Low</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <h3>Analyse approfondie des synergies</h3>
+    <div class="text-block">
+        <b>Intégration et Monétisation du FOS Trevium</b>
+        <ul>
+            <li>Type : Soft Revenue</li>
+            <li>Mécanisme : Aurum fournit un moteur de réconciliation data-agnostic précis à 99% qui deviendra le cœur de Trevium.</li>
+            <li>Raisonnement : Corrige le risque de S4BT de manquer une capacité interne robuste essentielle pour capturer les clients à 10M€+ de budget.</li>
+            <li>Évaluation de l'impact : Impact très élevé sur les revenus à long terme (estimé 25-35% de croissance dans les services financiers).</li>
+            <li>Vérification de faisabilité : Moyenne en raison de la complexité de l'adaptation aux flux GDS.</li>
+        </ul><br><br>
+        <b>Accélération de la Stratégie de Consolidation UE</b>
+        <ul>
+            <li>Type : Hard Cost</li>
+            <li>Mécanisme : Déploiement de la réconciliation transfrontalière dans les futures acquisitions de S4BT pour un back-office homogène.</li>
+            <li>Raisonnement : Uniformise l'intégration des nouvelles marques et réduit les coûts de back-office.</li>
+            <li>Évaluation de l'impact : -10% de coûts d'intégration par acquisition future.</li>
+            <li>Vérification de faisabilité : Très faisable car améliore les processus d'acquisition existants.</li>
+        </ul><br><br>
+    </div>
+</div>
+
+<div class="section-container" id="conviction">
+    <h2 class="section-title">Conviction GP Synthétique</h2>
+    <div class="conviction-text">
+        <h3>Marché</h3>
+        <p>Le marché du SaaS de réconciliation financière est un exemple classique de "l'ennuyeux est un avantage", où la complexité croissante des paiements crée une opportunité massive que les acteurs généralistes ignorent. Tout comme Deel a transformé la gestion de la paie internationale, Aurum Solutions prend un processus de back-office fastidieux mais critique et le transforme en une couche d'intelligence de données automatisée.</p>
+        
+        <h3>Timing</h3>
+        <p>Le timing est un "Boomerang", une dynamique où le marché devient soudainement réceptif à une solution existante, déclenché ici par la maturation des technologies d'IA et d'open banking qui rendent possible une automatisation à 99% de précision. Ce catalyseur est amplifié par la fragmentation des systèmes de paiement et une pression réglementaire accrue.</p>
+
+        <h3>Entreprise</h3>
+        <p>L'avantage d'Aurum est une combinaison de coûts de changement prohibitifs et d'un effet de réseau de données provenant de sa bibliothèque de plus de 600 connecteurs. Pour l'acquéreur S4BT, les synergies sont transformatrices ; l'intégration du moteur d'Aurum dans Trevium n'est pas une simple addition de fonctionnalités, mais la brique technologique fondamentale.</p>
+
+        <h3>Fondateur</h3>
+        <p>Le PDG, Tiago Veiga, démontre une adéquation fondateur-marché exceptionnelle, ayant passé huit ans au sein de l'entreprise. Son expertise approfondie des points de douleur des clients et sa vision commerciale éprouvée lui confèrent la crédibilité nécessaire pour diriger l'entreprise.</p>
+
+        <h3>Adéquation à la thèse</h3>
+        <p>L'opportunité passe tous les filtres binaires (Géographie Europe, Secteur Paiements/Réconciliation). L'alignement est parfait, car Aurum représente la pièce maîtresse manquante pour la stratégie de consolidation du FOS Trevium de S4BT.</p>
+
+        <h3>Verdict</h3>
+        <p>L'acquisition est fortement recommandée car les synergies sont hautement stratégiques, permettant à S4BT de passer d'un simple fournisseur de technologie de voyage à une plateforme financière intégrée. 🟢 SYNERGY_CALL_SIGNAL: Hautement stratégique. SYNERGY_KEYWORD: Intégration FOS Trevium.</p>
+    </div>
+</div>
+
+<div class="section-container" id="sources">
+    <h2 class="section-title">Sources & Qualité des Données</h2>
+    <div class="source-list">
+        <h3>Sources de la chaîne de valeur</h3>
+        <p>Données non fournies.</p>
+        
+        <h3>Sources du marché</h3>
+        <ul>
+            <li>Taille du marché et CAGR : <a href="https://www.grandviewresearch.com/industry-analysis/financial-reconciliation-software-market">Grand View Research</a></li>
+            <li>Impact des normes de paiement : <a href="https://www.paymentsassociation.org">Payments Association</a></li>
+            <li>Benchmark concurrentiel : <a href="https://www.blackline.com">BlackLine</a></li>
+            <li>Retours utilisateurs : <a href="https://www.capterra.com/p/162804/Aurum-Solutions-Financial-Reconciliation/">Capterra Aurum</a></li>
+        </ul>
+
+        <h3>Sources de l'entreprise</h3>
+        <ul>
+            <li>Profil CEO : <a href="https://www.linkedin.com/in/tiagoveiga">LinkedIn Tiago Veiga</a></li>
+            <li>Expansion Amérique du Nord : <a href="https://sbcamericas.com/2022/02/28/aurum-solutions-north-america-presents-enormous-business-opportunity/">SBC Americas</a></li>
+            <li>Transformation de marque : <a href="https://next.io/news/b2b-news/aurum-solutions-brand-transformation/">Next.io Aurum</a></li>
+            <li>Connecteurs et intégrations : <a href="https://aurum.solutions/integrations">Site officiel Aurum</a></li>
+        </ul>
+    </div>
+</div>
+
+<div class="footer" style="text-align: center; padding: 20px; border-top: 1px solid #eee; margin-top: 40px; color: #666; font-size: 12px;">
+    Mémorandum généré le 27.02.2026 03:37 pour S4BF | Contact : alexandre.busson@gmail.com
+</div>
+
+</div></div></body></html>
