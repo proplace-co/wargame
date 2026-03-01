@@ -1,0 +1,620 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Engine Interactive Memo</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+:root { --bg-app: #f8fafc; --text-main: #1e293b; --yellow-menu: #FEF9C3; --green-menu: #DCFCE7; --grey-menu: #F1F5F9; --blue-menu: #DBEAFE; }
+* { box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-app); color: var(--text-main); margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+a { color: #2563eb; text-decoration: none; cursor: pointer; overflow-wrap: break-word; } 
+a:hover { text-decoration: underline; }
+p, li { line-height: 1.6; margin-bottom: 10px; }
+strong, b { font-weight: 700; color: #0f172a; }
+h3 { scroll-margin-top: 40px; font-size: 1.4em; color: #000000; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px; }
+
+/* BULLETPROOF LAYOUT FIX: FIXED SIDEBAR, CENTERED PADDED BODY */
+.main-wrapper { display: block; width: 100%; max-width: 100vw; overflow: visible !important; padding-left: 300px; box-sizing: border-box; }
+.sidebar { position: fixed; top: 0; left: 0; width: 300px; height: 100vh; overflow-y: auto; border-right: 1px solid #e2e8f0; background: #fff; padding: 25px 0; z-index: 1000; }
+.content-area { display: block; margin: 0 auto; padding: 40px; width: 100%; max-width: 1400px; min-height: 100vh; box-sizing: border-box; }
+
+.section-container { background: #fff; padding: 30px; margin-bottom: 30px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; scroll-margin-top: 40px; overflow: visible; display: block; clear: both; }
+.section-title { font-size: 1.8em; font-weight: 700; color: #000000; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 25px; }
+.subtitle-category { font-size: 0.95em; font-weight: 700; color: #1e293b; margin-top: 0; margin-bottom: 5px; line-height: 1.4; }
+.body-tagline { font-size: 0.95em; color: #334155; margin-top: 0; margin-bottom: 30px; line-height: 1.6; }
+
+.split-container { display: flex; gap: 40px; align-items: flex-start; margin-bottom: 40px; position: relative; }
+.text-col { flex: 1; font-size: 1.05em; line-height: 1.7; color: #334155; min-width: 0; word-wrap: break-word; overflow-wrap: anywhere; }
+.img-col { flex: 1; position: sticky; top: 20px; align-self: flex-start; height: fit-content; min-width: 0; max-height: calc(100vh - 40px); overflow: visible; }
+.sticky-img { width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; display: block; object-fit: contain; }
+
+.meta-block { padding: 0 25px 25px; border-bottom: 1px solid #e2e8f0; margin-bottom: 15px; }
+.sidebar-company-name { font-size: 1.8em; margin: 0 0 10px 0; padding: 0; color: #0f172a; font-weight: 800; border-bottom: none; }
+.sb-top-data { padding: 0 0 15px 0; display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 0; }
+.sb-tag { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.85em; color: #475569; }
+.sb-score, .score-green { background: #16a34a !important; color: white !important; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.85em; }
+.contact-row { display: flex; flex-direction: column; gap: 5px; font-size: 0.9em; margin-top: 0; }
+.nav-item { display: block; padding: 8px 25px; color: #475569; font-weight: 600; font-size: 0.9em; border-left: 4px solid transparent; margin-bottom: 2px; word-break: normal; hyphens: auto; }
+.nav-item:hover { background: rgba(0,0,0,0.05); color: #0f172a; border-left-color: #94a3b8; }
+.bg-yellow { background: var(--yellow-menu); } .bg-green { background: var(--green-menu); } .bg-grey { background: var(--grey-menu); }
+.bg-blue { background: var(--blue-menu); }
+.bg-light-purple { background: #f3e8ff; }
+
+.battlefield-legend { margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 6px; font-size: 0.9em; }
+.legend-row { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; margin-bottom: 5px; }
+.label-cap { background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-weight: 600; border: 1px solid #bbf7d0; white-space: nowrap; }
+.label-white { background: #fff; border: 1px solid #e2e8f0; padding: 2px 6px; border-radius: 4px; font-weight: 600; color: #334155; }
+.posture-legend { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; line-height: 1.2; margin-right: 10px; }
+
+.battlefield-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 15px; width: 100%; margin-bottom: 40px; }
+.battlefield-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.stage-header { font-size: 0.85em; font-weight: 700; text-transform: uppercase; color: #64748b; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; min-height: 40px; }
+
+.actor-card { background: #fff; border: 1px solid #cbd5e0; border-radius: 6px; overflow: hidden; font-size: 0.9em; border-left-width: 4px; margin-bottom: 8px; transition: all 0.2s; }
+.border-hunter { border-left-color: #dc2626 !important; }
+.border-hunted { border-left-color: #ca8a04 !important; }
+.border-fortress { border-left-color: #2563eb !important; }
+.border-opportunistic { border-left-color: #16a34a !important; }
+.border-distressed { border-left-color: #9333ea !important; }
+.actor-card summary { padding: 10px; cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; align-items: center; background: #fff; }
+.actor-card summary::after { content: "+"; font-size: 1.2em; color: #94a3b8; }
+.actor-card[open] summary::after { content: "−"; color: #1e293b; }
+.actor-summary-content { display: flex; flex-direction: column; gap: 2px; width: 90%; }
+.actor-name { font-weight: 800; color: #0f172a; font-size: 1em; }
+.actor-meta { font-size: 0.8em; color: #64748b; display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.label-tier { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.85em; color: #475569; white-space: nowrap; border: 1px solid #e2e8f0; }
+
+.actor-body { padding: 12px; border-top: 1px solid #f1f5f9; background: #fafafa; overflow-wrap: break-word; }
+.ws-box { background: #fffbeb; border: 1px solid #fcd34d; padding: 8px; border-radius: 6px; margin: 10px 0; font-size: 0.85em; color: #92400e; border: 1px solid #fcd34d; }
+.ws-box ul { padding-left: 20px; margin: 0; }
+.ws-box li { margin-bottom: 5px; }
+
+.swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+.swot-grid-small { display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 10px; }
+.swot-item { padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; }
+.swot-item h3 { margin-top: 0; font-size: 1.2em; border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: 10px; margin-bottom: 10px; }
+.swot-item ul { padding-left: 20px; margin: 0; }
+.swot-item li { margin-bottom: 8px; }
+
+.sg-box { padding: 6px; border-radius: 4px; font-size: 0.8em; line-height: 1.3; }
+.sg-box ul { padding-left: 20px; margin: 5px 0 0 0; }
+.sg-box li { margin-bottom: 4px; }
+.s-green { background: #dcfce7; color: #14532d; border: 1px solid #bbf7d0; } 
+.s-red { background: #fee2e2; color: #7f1d1d; border: 1px solid #fecaca; } 
+.s-blue { background: #dbeafe; color: #1e3a8a; border: 1px solid #bfdbfe; } 
+.s-orange { background: #ffedd5; color: #9a3412; border: 1px solid #fdba74; }
+.strat-inv-box { background: #f3e8ff; border: 1px solid #e9d5ff; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 0.85em; color: #6b21a8; }
+
+.actor-grid-info { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; font-size: 0.85em; }
+.actor-grid-info div { display: flex; flex-direction: column; }
+.actor-grid-info strong { font-size: 0.9em; color: #64748b; margin-bottom: 2px; }
+.label-diff { background: #e2e8f0; color: #1e293b; padding: 2px 6px; border-radius: 4px; font-weight: 700; width: fit-content; border: 1px solid #cbd5e1; }
+.label-posture-card { padding: 2px 6px; border-radius: 4px; font-weight: 700; color: #fff; width: fit-content; }
+.bg-hunter { background: #dc2626; } 
+.bg-hunted { background: #ca8a04; } 
+.bg-fortress { background: #2563eb; } 
+.bg-opportunistic { background: #16a34a; }
+.bg-distressed { background: #9333ea; }
+
+.competitor-block { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0; }
+.competitor-block strong { color: #1e293b; font-size: 1.05em; }
+
+details.scenario-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
+details.scenario-card summary { padding: 15px; font-weight: 500; font-size: 1.05em; line-height: 1.5; color: #334155; }
+.scen-logic-grid { display: inline-flex; flex-wrap: wrap; gap: 5px; margin-left: 10px; }
+.logic-tag { font-size: 0.75em; background: #f1f5f9; padding: 2px 8px; border-radius: 12px; border: 1px solid #cbd5e1; color: #475569; font-weight: 600; }
+.scen-details-body { padding: 20px; border-top: 1px solid #f1f5f9; background: #fcfcfc; }
+
+.table-container { width: 100%; overflow-x: auto; }
+.synergies-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.9em; }
+.synergies-table th { background: #f8fafc; padding: 12px; text-align: left; border-bottom: 2px solid #cbd5e1; white-space: nowrap; }
+.synergies-table td { padding: 12px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+.col-summary { width: 45%; min-width: 350px; } 
+
+.source-list { font-size: 0.9em; color: #64748b; }
+
+/* Sidebar CTA Elements */
+.section { margin: 0 25px 24px; }
+.section h3 { font-size: 15px; font-weight: 700; margin: 0 0 8px 0; border: none; padding: 0; color: #000000; }
+.meta-text { font-size: 12px; color: #94A3B8; margin-bottom: 16px; font-style: italic; }
+.meta-desc { font-size: 13px; color: #64748B; margin: 0 0 16px 0; line-height: 1.5; }
+.divider { height: 1px; background-color: #E2E8F0; margin: 24px 25px; }
+/* Sidebar Lists */
+.cta-list { list-style: none; padding: 0; margin: 0 0 16px 0; }
+.cta-list li { font-size: 13px; color: #475569; margin-bottom: 12px; padding-left: 20px; position: relative; line-height: 1.4; }
+.cta-list li::before { content: "→"; position: absolute; left: 0; color: #3B82F6; font-weight: bold; }
+.cta-list strong { color: #1E293B; }
+/* Enhanced Buttons */
+.btn { display: block; width: 100%; padding: 10px 14px; font-size: 14px; font-weight: 600; text-align: center; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; box-sizing: border-box; margin-bottom: 10px; white-space: normal; word-break: break-word; line-height: 1.4; }
+.btn-secondary { background-color: #F8FAFC; color: #0F172A; border: 1px solid #E2E8F0; }
+.btn-secondary:hover { background-color: #E2E8F0; text-decoration: none; border-color: #CBD5E1; }
+.btn-primary { background-color: #1E293B; color: #FFFFFF; border: none; }
+.btn-primary:hover { background-color: #0F172A; text-decoration: none; }
+
+/* Status Action Buttons (Solid Background, White Text) */
+.btn-status { display: block; width: 100%; padding: 8px; font-size: 13px; font-weight: 700; border-radius: 4px; text-decoration: none; cursor: pointer; text-align: center; color: #ffffff; margin-bottom: 6px; box-sizing: border-box; transition: all 0.2s; border: none; }
+.status-call { background-color: #16a34a; }
+.status-call:hover { background-color: #15803d; }
+.status-consider { background-color: #eab308; }
+.status-consider:hover { background-color: #ca8a04; }
+.status-monitor { background-color: #3b82f6; }
+.status-monitor:hover { background-color: #2563eb; }
+.status-pass { background-color: #ef4444; }
+.status-pass:hover { background: #dc2626; }
+
+@media (max-width: 1000px) {
+    body { overflow-x: hidden; }
+    .main-wrapper { display: block; width: 100%; padding-left: 0; }
+    .sidebar { position: relative; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #e2e8f0; }
+    .content-area { margin: 0; width: 100%; padding: 15px; box-sizing: border-box; min-height: auto; }
+    .battlefield-grid { display: flex !important; flex-direction: column !important; width: 100%; gap: 20px; }
+    .split-container { flex-direction: column; }
+    .img-col { position: static; width: 100%; margin-top: 20px; max-height: none; }
+    .actor-card { width: 100% !important; }
+    .table-container { display: block; overflow-x: auto; }
+    .synergies-table { min-width: 700px; }
+    .swot-grid { grid-template-columns: 1fr; }
+}
+
+.disclaimer-box { background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 15px; margin-top: 10px; margin-bottom: 20px; font-size: 0.85em; color: #92400e; border-radius: 0 4px 4px 0; line-height: 1.5; } .disclaimer-subtext { font-size: 0.9em; font-style: italic; color: #64748b; margin-bottom: 10px; margin-top: -10px; }
+    </style>
+</head>
+<body>
+    <div class="main-wrapper">
+        <div class="sidebar">
+            <div class="meta-block">
+                <div class="sb-top-data">
+                    <span class="sb-score score-green">74</span>
+                    <span class="sb-tag">USA</span>
+                    <span class="sb-tag">Series C</span>
+                    <span class="sb-tag">Mobilité & Transport</span>
+                    <span class="sb-tag">B2B</span>
+                </div>
+                <h3 class="sidebar-company-name">Engine</h3>
+                <p class="meta-desc" style="margin-bottom: 15px;">Simplifier radicalement la gestion des voyages d'affaires.</p>
+                <div class="contact-row">
+                    <a href="https://engine.com/" target="_blank"><i class="fas fa-globe"></i> Site web</a>
+                    <a href="https://www.linkedin.com/in/elia-wallen" target="_blank"><i class="fab fa-linkedin"></i> LinkedIn</a>
+                </div>
+            </div>
+            <a href="#market-summary" class="nav-item bg-yellow">Résumé du Marché</a>
+            <a href="#value-proposition" class="nav-item bg-green">Proposition de Valeur</a>
+            <a href="#product" class="nav-item bg-green">Produit</a>
+            <a href="#business-model" class="nav-item bg-green">Modèle Commercial</a>
+            <a href="#team" class="nav-item bg-green">Équipe</a>
+            <a href="#ceo" class="nav-item bg-green">CEO</a>
+            <a href="#company-summary" class="nav-item bg-green">Résumé de l'Entreprise</a>
+            <a href="#swot" class="nav-item bg-green">Analyse SWOT</a>
+            <a href="#action-plan" class="nav-item bg-green">Plan d'Action</a>
+            <a href="#synergies-custom" class="nav-item bg-light-purple">Synergies avec S4BT</a>
+            <a href="#conviction" class="nav-item bg-blue">Conviction</a>
+            <a href="#sources" class="nav-item bg-blue">Sources</a>
+            <div class="divider"></div>
+            <div class="section">
+                <h3>Explorer Engine davantage ?</h3>
+                <p class="meta-text">Actuellement affiché : Mémo Rapide</p>
+                <ul class="cta-list">
+                    <li><strong>Mémo Rapide :</strong> Ajoute l'analyse de la taille du marché, de la chaîne de valeur, le Magic Quadrant de la concurrence et les synergies avec votre entreprise.</li>
+                    <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Engine&website=https://engine.com/&product_url=https://engine.com/book-corporate-travel&team_url=https://engine.com/about-us&pricing_url=https://engine.com/pricing/&linkedin=https://www.linkedin.com/in/elia-wallen&first_name=Elia&last_name=Wallen&memo=quick" class="btn btn-secondary" target="_blank">Générer un Mémo Rapide</a>
+                    <li style="margin-top: 16px;"><strong>Mémo Détaillé :</strong> Ajoute le quadrant M&A concurrentiel, les scénarios stratégiques, les synergies entre les acteurs de l'écosystème et les synergies avec votre entreprise.</li>
+                    <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Engine&website=https://engine.com/&product_url=https://engine.com/book-corporate-travel&team_url=https://engine.com/about-us&pricing_url=https://engine.com/pricing/&linkedin=https://www.linkedin.com/in/elia-wallen&first_name=Elia&last_name=Wallen&memo=detailed" class="btn btn-secondary" target="_blank">Générer un Mémo Détaillé</a>
+                </ul>
+                <a href="http://forms.proplace.co/meet" class="btn btn-secondary" target="_blank">Planifier un appel stratégique sur Engine</a>
+            </div>
+            <div class="divider"></div>
+            <div class="section">
+                <h3>🧠 Décision synthétique du GP</h3>
+                <p class="meta-text">🟢 SYNERGY_CALL_SIGNAL : L'acquisition d'Engine par S4BT est hautement stratégique. SYNERGY_KEYWORD : Convergence Fintech & Voyage. NARRATIVE_INSIGHT : L'intégration de l'infrastructure Trevium de S4BT sur le volume transactionnel de 2,1Md$ d'Engine permet de capturer des marges financières supérieures via la réconciliation automatisée.</p>
+
+                <h3>🗣 Votre décision</h3>
+                <p class="meta-text">Acceptez ou mettez à jour la décision synthétique du GP. Expliquez pourquoi avec vos propres mots : cela améliorera vos capacités de sourcing et de qualification du GP synthétique.</p>
+
+                <a href="https://forms.proplace.co/t/c2246dXQEVus?status=CALL&action_timestamp=2026-03-01T18:15:07.148Z&user_action_log=CALL&feedback_reason=no%20feedback&thesis_impact_status=processed&id=recbtiuSICElRCIuq" class="btn-status status-call" target="_blank">🟢 CALL</a>
+                <p class="meta-text" style="margin-top: 0; margin-bottom: 15px;">Cela signifie "Je suis intéressé". Cela correspond à ma thèse ou je l'apprécie vraiment.</p>
+
+                <a href="https://forms.proplace.co/t/c2246dXQEVus?status=CONSIDER&action_timestamp=2026-03-01T18:15:07.148Z&user_action_log=CONSIDER&feedback_reason=no%20feedback&thesis_impact_status=processed&id=recbtiuSICElRCIuq" class="btn-status status-consider" target="_blank">🟡 CONSIDER</a>
+                <p class="meta-text" style="margin-top: 0; margin-bottom: 15px;">Cela signifie "J'ai des doutes". Données critiques manquantes. Je sélectionnerai Appel ou Suivi dans les 7 jours.</p>
+
+                <a href="https://forms.proplace.co/t/c2246dXQEVus?status=MONITOR&action_timestamp=2026-03-01T18:15:07.148Z&user_action_log=MONITOR&feedback_reason=no%20feedback&thesis_impact_status=processed&id=recbtiuSICElRCIuq" class="btn-status status-monitor" target="_blank">🔵 MONITOR</a>
+                <p class="meta-text" style="margin-top: 0; margin-bottom: 15px;">Cela signifie "Pas maintenant". Trop tôt (reste dans le pipeline) ou trop tard mais pertinent pour ma thèse.</p>
+
+                <a href="https://forms.proplace.co/t/c2246dXQEVus?status=PASS&action_timestamp=2026-03-01T18:15:07.148Z&user_action_log=PASS&feedback_reason=no%20feedback&thesis_impact_status=processed&id=recbtiuSICElRCIuq" class="btn-status status-pass" target="_blank">🔴 PASS</a>
+                <p class="meta-text" style="margin-top: 0; margin-bottom: 15px;">Cela signifie "Jamais". Mauvaise adéquation ou concurrent en portefeuille ou toute autre raison de refuser.</p>
+            </div>
+            <div class="divider"></div>
+            <div class="section">
+                <h3>Analyser une autre entreprise ?</h3>
+                <a href="https://forms.proplace.co/t/qS5aEtNxkAus" class="btn btn-primary" target="_blank">Obtenir un premier aperçu alimenté par l'IA</a>
+            </div>
+            <div class="section">
+                <h3>Vous voulez suivre notre deal flow ?</h3>
+                <p class="meta-desc">Recevez chaque jour les startups européennes de l'IA que nous évaluons du point de vue d'un VC.</p>
+                <a href="https://77f02b89.sibforms.com/serve/MUIFAMr0ADjDfIUWLc56STos70j4OXPiOTJqugyAa45YfGyt9zW6Tokz3iXWLNiTAw6oxjbrMnjs424k46IvwOQlWjaMIsbgexAk95FvzqzgLa56TkHas6WASK4VKs684XcZhacqMYTYQGuIfzJmBmCkmHwhNeB0yHifmrxC1PUhNMS1ZbiW1xF18IZy7tJP9BIWjDcM5VoH6VEVCw==" class="btn btn-primary" target="_blank">S'abonner au deal flow</a>
+            </div>
+            <div class="section">
+                <h3>Vous voulez un deal flow propriétaire ?</h3>
+                <p class="meta-desc">Recevez quotidiennement des cibles hautement qualifiées pour votre stratégie d'acquisition.</p>
+                <a href="http://forms.proplace.co/meet" class="btn btn-primary" target="_blank">Planifier un appel stratégique</a>
+            </div>
+            <div class="section" style="text-align: center; margin-bottom: 0; padding-top: 10px;">
+                <img src="https://183wcnoqvi.ucarecd.net/6a1ef507-976c-4a60-a8e5-1b0199825d36/sforbt_solutions_for_business_travel_logo.jpg" alt="S4BF Logo" style="max-width: 120px; height: auto;">
+                <p class="meta-text" style="margin-top: 10px; margin-bottom: 0; font-size: 11px; line-height: 1.4; word-break: break-word;">Généré par <a href="https://www.proplace.co" target="_blank">Proplace.co</a> pour S4BF. Proplace est une IA et peut faire des erreurs.<br><br>Contactez-nous à <a href="mailto:alexandre@proplace.co">alexandre@proplace.co</a> pour demander des mises à jour, ajouter des informations manquantes ou suggérer des améliorations.</p>
+            </div>
+        </div>
+        <div class="content-area">
+            <h1>Engine Mémo Interactif</h1>
+            <h2 class="subtitle-category">Mobilité & Transport ➜ Travel-Tech B2B pour la gestion des voyages d'affaires opérationnels. ➜ Plateforme SaaS de gestion intégrée des voyages d'affaires pour entreprises non-technologiques aux États-Unis avec plus de 50 employés et budgets de déplacement annuels supérieurs à 100 000 USD.</h2>
+            <p class="body-tagline">Simplifier radicalement la gestion des voyages d'affaires.</p>
+
+</CODE>
+
+<div class="section-container" id="market-summary">
+    <h2 class="section-title">Résumé du marché</h2>
+    <div class="split-container">
+        <div class="text-col">
+            <p>MARKET OPPORTUNITY SCORE<br>Mobilité & Transport > Travel-Tech B2B pour la gestion des voyages d'affaires opérationnels.<br>B2B > Basé sur la commission</p>
+            <p>═════════════════════════════════════════════════</p>
+            <p>IS IT AN ATTRACTIVE MARKET ? (Dynamics): 80/100 × 25% = 20 points<br>IS IT A WINNABLE MARKET ? (Competition): 65/100 × 25% = 16.25 points<br>IS IT A PENETRABLE MARKET ? (GTM): 85/100 × 25% = 21.25 points<br>IS IT A REWARDING MARKET ? (Exits): 90/100 × 25% = 22.5 points</p>
+            <p>─────────────────────────────────────────────────<br>TOTAL MARKET ATTRACTIVITY SCORE: 80/100</p>
+            <p>═════════════════════════════════════════════════ </p>
+            <p>❓ मार्केट DEFINITION<br>Plateforme SaaS de gestion intégrée des voyages d'affaires pour entreprises non-technologiques aux États-Unis avec plus de 50 employés et budgets de déplacement annuels supérieurs à 100 000 USD. ➜ Ce marché cible les secteurs de la 'cols bleus' (construction, énergie, maintenance) où les besoins de logement sont massifs, récurrents et souvent mal gérés par les outils corporate traditionnels type Concur.</p>
+            <p>💬 Our Market THESIS<br>(A) MARKET DISRUPTION : Legacy players in the 1.3T$ Business Travel market, like Amex GBT and SAP Concur, are caught in an innovator dilemma, unable to adopt a zero-fee / commission-only model without cannibalizing their existing business. This paralysis, triggered by the demand for consumer-grade UI and automated reconciliation, creates a clear opening to solve the operational travel pain and build a new market leader.</p>
+            <p>🧠 Our CONVICTION & WAGER on this Market:<br>🟢 HIGH: (Option 1 - The Timing & Moat Play) Our conviction is high because this market presents a rare alignment of timing and structure. The shift toward digital-first procurement for SMEs has opened a temporary window for a decisive founder to build a dominant moat via proprietary financial flow integration (Direct Bill) and capture the market before the opportunity becomes consensus. This is a land grab in the 'blue collar travel' segment.</p>
+            <p>═════════════════════════════════════════════════</p>
+            <h4>🌊 ATTRACTIVE MARKET (Market Dynamics) | Score: 80/100</h4>
+            <ul>
+                <li>Market Size (21/25): TAM: 1.3T$ Global • SAM: 150B$ US Operational Travel • CAGR: 9%</li>
+                <li>Growth Drivers (20/25): Digitalisation des PME • Besoin de reporting CO2 • Outsourcing de la logistique de terrain.</li>
+                <li>Timing Why Now (20/25): Consolidation sectorielle post-2024 • Maturité des API hôtelières directes.</li>
+                <li>Market Risks (19/25): Sensibilité aux cycles économiques de la construction • Volatilité du prix des carburants/vols.</li>
+            </ul>
+            <h4>⚔️ WINNABLE MARKET (Competitive Landscape) | Score: 65/100</h4>
+            <ul>
+                <li>Incumbents (15/25): SAP Concur (Leader, Force: Distribution) • Amex GBT (Leader, Force: Brand/Large Corps)</li>
+                <li>Challengers (20/25): Navan (10B$ valuation, Focus: PLG/Card) • TravelPerk (Unicorn, Focus: Europe/UI)</li>
+                <li>White Space (15/25): Le segment des voyages longs séjours et multi-villes pour équipes techniques reste sous-exploité par les acteurs premium.</li>
+                <li>Defensibility (15/25): Primary moat: Switching costs via integration financière • Réseau de tarifs 'closed-user group'.</li>
+            </ul>
+            <h4>🎯 PENETRABLE MARKET (Go-to-Market & Unit Economics) | Score: 85/100</h4>
+            <ul>
+                <li>GTM Model (22/25): 'Zero-fee' model facilite l'adoption virale dans les départements Achats/RH.</li>
+                <li>Pricing Model (21/25): Freemium avec options SaaS (FlexPro) • Revenu principal via les commissions hôtelières (~10%).</li>
+                <li>Unit Economics (20/25): LTV/CAC élevé dû à la récurrence des projets de construction (projets de 6-12 mois).</li>
+                <li>Scalability (22/25): Capacité d'ajouter vol et voiture sans friction supplémentaire grâce aux partenariats GDS.</li>
+            </ul>
+            <h4>💰 REWARDING MARKET (Funding & Exit) | Score: 90/100</h4>
+            <ul>
+                <li>Funding Activity (23/25): 140M$ levés en 2024 (Series C) • Secteur Travel-Tech très actif malgré le contexte global.</li>
+                <li>Exit Multiples (22/25): Multiples de 8-12x ARR pour les leaders SaaS Travel-Tech profitables.</li>
+                <li>Strategic Buyers (25/25): Visa/Mastercard (Services financiers) • Amadeus (Verticalisation) • SAP (Extension de Concur).</li>
+            </ul>
+            <p>─────────────────────────────────────────────────<br>🌐 DATA CONFIDENCE: High on Market Size, Exits. Low on Private company Unit Economics. 12 total URLs sourced.</p>
+        </div>
+        <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-0de01eb82294d9c43ca7f1c2f0d9f125-ukjed6ym.jpg">
+        </div>
+    </div>
+</div>
+
+
+<div class="section-container" id="company">
+    <h2 class="section-title">Analyse Approfondie de l'Entreprise</h2>
+    <div class="split-container">
+        <div class="text-col">
+            <h3 id="value-proposition">Proposition de Valeur</h3>
+            <b>Value Proposition:</b><br> Engine simplifie radicalement la gestion des voyages d'affaires en regroupant les hôtels, les vols et les locations de voitures sur une plateforme unique et intuitive tout en offrant des économies significatives. | Simplifier radicalement la gestion des voyages d'affaires. Engine permet aux entreprises de réserver et gérer tous leurs déplacements (hôtels, vols, voitures) sur une seule interface gratuite, en automatisant la facturation et en offrant des réductions massives via un modèle de commissions.<br>
+            <b>Ideal Customer Profile (ICP):</b><br> Entreprises de toutes tailles, techniciens de terrain, équipes de projet, responsables de voyages et départements financiers (secteurs de la construction, logistique, services). | Entreprises non-technologiques aux États-Unis avec plus de 50 employés et budgets de déplacement annuels supérieurs à 100 000 USD. | Secteurs de la 'cols bleus' (construction, énergie, maintenance). | PME/Mid-market, secteurs opérationnels (construction, logistique).<br>
+            <b>B2B or B2C:</b><br> B2B. La plateforme est conçue exclusivement pour l'usage professionnel avec des outils de gestion de politique de voyage et de facturation consolidée.<br>
+            <b>Industry:</b><br> Technologie de Voyage (Travel-Tech) / Gestion de Voyages d'Affaires. | Travel-Tech B2B pour la gestion des voyages d'affaires opérationnels. | Mobility & Transportation > Travel-Tech. | B2B Operational Travel Management.<br>
+            <b>Contact & Legal:</b><br> Hotel Engine, Inc. (d/b/a Engine), 1601 Wewatta Street, Suite 250, Denver, CO 80202, USA. Email: support@engine.com ou privacy@engine.com. Téléphone: 855-567-4683. Fondé en 2018 (séparation de Travelers Haven). | HQ Country: USA. | Website: https://engine.com/. | LinkedIn Company: https://www.linkedin.com/company/hotel-engine.<br>
+            <b>Key Client Examples & Testimonials:</b><br> Plus de 20 000 entreprises font confiance à Engine. Témoignage: Lisa J. de Forney ISD. Clients mentionnés: Southern Services, RMS Energy, Innovative Construction Solutions, Sims Crane, True Up Companies. | Southern Services, Sims Crane. | Logos majeurs dans l'industrie lourde. | Forney ISD, RMS Energy.
+
+            <h3 id="product">Produit</h3>
+            <b>Core Solution:</b><br> Une plateforme de gestion et de réservation tout-en-un pour les voyages d'affaires (hébergement, vols, voitures). | Plateforme SaaS de gestion intégrée des voyages d'affaires pour entreprises non-technologiques.<br>
+            <b>Feature Encyclopedia:</b><br>
+            <ul>
+                <li>Réservation centralisée</li>
+                <li>Gestion des dépenses et rapports</li>
+                <li>Facturation directe et consolidée</li>
+                <li>Contrôle des politiques de voyage avec arrêt automatique</li>
+                <li>Gestion des imprévus à l'enregistrement</li>
+                <li>Réservations de groupe et blocs de chambres</li>
+                <li>Suivi de sécurité 'Duty of Care'</li>
+                <li>Engine Spaces pour les groupes</li>
+                <li>Facturation consolidée 'Direct Bill'</li>
+                <li>Outils de 'Direct Bill'</li>
+                <li>Algorithmes de matching de tarifs</li>
+                <li>Réseau de partenaires hôteliers exclusifs</li>
+                <li>Reporting CO2</li>
+                <li>Politique d'exécution automatisée</li>
+                <li>AI-enabled features</li>
+                <li>Event Planner</li>
+                <li>Marketplace modules</li>
+            </ul><br>
+            <b>Technical Capabilities:</b><br> Application mobile | Intégration API pour partenaires | Tableau de bord de reporting en temps réel | Alertes de sécurité via International SOS | Support client américain 24h/24, 7j/7 | Architecture multi-tenant | Intégrations API partenaires actives | Partenariats GDS | Maturité des API hôtelières directes.<br>
+            <b>Use Cases:</b><br> Déplacements d'équipes sur chantiers | Coordination de conférences | Gestion des longs séjours | Suivi budgétaire par projet ou code de coût | Voyages 'opérationnels' (long séjour, équipes de chantier) | Voyages longs séjours et multi-villes pour équipes techniques | Meeting/event spaces.
+
+            <h3 id="business-model">Modèle d'Affaires</h3>
+            <b>Business Model Analysis:</b><br> Plateforme gratuite (Modèle à la commission payée par les hôtels). Aucun frais d'adhésion, aucun contrat, aucune dépense minimale requise. | Commission-Based / SaaS (Subscription FlexPro) | 'Zero-fee' model | Freemium avec options SaaS | Revenu principal via les commissions hôtelières (~10%).<br>
+            <b>Revenue Streams & Pricing Tiers:</b><br> <b>Standard (Gratuit):</b> Accès aux tarifs exclusifs (-26% en moyenne), reporting, support 365 jours par an. | <b>FlexPro (200$ par mois ou 2000$ par an):</b> Couvre tous les voyageurs de l'entreprise pour des annulations jusqu'à midi le jour de l'arrivée et remboursements en crédits de voyage. | Commissions des fournisseurs | Abonnement FlexPro | Carte Engine X (bientôt disponible) | Frais de service sur certaines modifications hors politique.<br>
+            <b>Plan Features:</b><br> Standard (Gratuit): Accès aux tarifs exclusifs (-26% en moyenne) | reporting | support 365 jours par an. | FlexPro (200$ par mois ou 2000$ par an): Couvre tous les voyageurs de l'entreprise | annulations jusqu'à midi le jour de l'arrivée | remboursements en crédits de voyage.<br>
+            <b>Hidden Costs & Terms:</b><br> Frais de service sur les changements de réservation (USD par chambre/nuit) | frais de commodité de 5% possible sur les frais d'incidents facturés | pénalités de retard de 18% sur les factures Direct Bill impayées.
+
+            <h3 id="team">Équipe</h3>
+            <b>Company Culture:</b><br> Mission de simplification radicale du voyage, axée sur l'innovation technologique et un support client de premier ordre. Priorité à l'efficacité et à l'expérience VIP pour les voyageurs. | Forte culture opérationnelle visible.<br>
+            <b>Team Analysis:</b><br> Elia Wallen (Fondateur et CEO). | Soutenu par des investisseurs leaders du secteur lors des rounds de série A, B et C. | Team 1000+ | Recrutement de profils vétérans de l'industrie du voyage en 2023. | C-suite complet et solide | Équipe de direction exécutive renforcée en 2023 | Leadership pragmatique, orienté vers la création de valeur durable.
+
+            <h3 id="ceo">CEO</h3>
+            <b>EXECUTIVE ASSESSMENT</b><br><br>
+            <b>Founder Archetype :</b> Elia Wallen incarne le profil de Founder-Operator avec une forte orientation entrepreneuriale.<br>
+            <b>Pedigree Signal :</b> Son parcours académique à Florida Gulf Coast University, une institution régionale, n’est pas de niveau élite ou Tier 1.<br>
+            <b>Loyalty & Tenure :</b> Wallen affiche une stabilité remarquable avec deux engagements entrepreneurs distincts de plus de 11 ans chacun.<br>
+            <b>Commercial Fit :</b> Sa double expérience fondatrice lui confère un avantage entrepreneurial transversal.<br><br>
+            <b>PROFESSIONAL NARRATIVE</b><br>
+            Elia Wallen a bâti sa carrière en tant qu’entrepreneur passionné, lançant en 2008 Travelers Haven, une entreprise qu’il dirigea pendant plus d’une décennie avant de fonder Engine en 2015. Cette trajectoire illustre une progression logique fondée sur l’expertise opérationnelle...
+
+            <h3 id="company-summary">Résumé de l'Entreprise</h3>
+            <ul>
+                <li>Mobility & Transportation > Travel-Tech B2B pour la gestion des voyages d'affaires opérationnels.</li>
+                <li>B2B > Commission-Based</li>
+                <li>140M$ raised from Permira (septembre, 17th, 2024)</li>
+            </ul>
+            <h4>WEIGHTED SCORE CALCULATION</h4>
+            Thesis : S4BF<br><br>
+            <b>TEAM EXCELLENCE:</b> 88/100<br>
+            <b>MARKET OPPORTUNITY:</b> 70/100<br>
+            <b>PRODUCT INNOVATION:</b> 82/100<br>
+            <b>BUSINESS MODEL:</b> 75/100<br>
+            <b>TRACTION & GROWTH:</b> 95/100<br>
+            ─────────────────────────────────────────────────<br>
+            <b>Base Score:</b> 83.0/100 (normalized)<br>
+            <b>Thesis Alignment Modifier:</b> -10% (US-Centric & SMB Focus)<br>
+            ─────────────────────────────────────────────────<br>
+            <b>FINAL ADJUSTED SCORE: 74.7/100 → 🔵 WEAK</b><br><br>
+            
+            <b><h4>❓ In a NUTSHELL :</h4></b> Engine est une Travel-Tech B2B qui permet aux entreprises de secteurs opérationnels (construction, logistique) de centraliser et optimiser leurs réservations de voyages par une approche 'zero-fee' côté entreprise, se rémunérant sur les commissions fournisseurs.<br><br>
+            <b><h4>⚠️ The PROBLEM :</h4></b> La gestion fragmentée des réservations d'équipes terrain, entraînant une perte de temps administrative, des fuites budgétaires et une difficulté de réconciliation financière.<br><br>
+            <b><h4>✅ The SOLUTION :</h4></b> La plateforme consolide l'inventaire hôtelier et logistique avec des outils de 'Direct Bill', permettant une facturation unique et centralisée.<br><br>
+            <b><h4>🚀 The GTM & MOAT :</h4></b> Leur GTM est hybride, combinant un produit en libre-service gratuit (PLG-ish) et une force de vente directe. Le moat repose sur le volume transactionnel et la centralisation des flux financiers.<br><br>
+            <b><h4>💬 Our RATIONALE & THESIS FIT :</h4></b> Engine possède un avantage structurel majeur via sa maîtrise des flux de paiement hôteliers. Cependant, le profil est en déphasage direct avec la thèse S4BF : Engine est ultra-centré sur les USA et cible prioritairement les PME/Mid-market.<br><br>
+            <b><h4>🗝️ KEY COMPETITIVE ADVANTAGES:</h4></b>
+            <ul>
+                <li>Maîtrise verticale du segment 'Travelers on the move' (techniciens, ouvriers).</li>
+                <li>Modèle financier 'Direct Bill' simplifiant radicalement la comptabilité.</li>
+                <li>Absence de frais d'abonnement pour le produit de base (barrière d'entrée nulle).</li>
+                <li>Support client 24/7 basé aux USA.</li>
+                <li>Plateforme 'Engine Spaces' pour les réservations de groupe.</li>
+            </ul>
+            <b><h4>🧱 MOAT: MODERATE</h4></b>
+            <ul>
+                <li>Switching costs: L'intégration de la facturation centralisée rend difficile le retour à des réservations manuelles.</li>
+                <li>Brand moats: Forte réputation dans des niches verticales spécifiques (Construction/Logistique).</li>
+            </ul>
+            <b><h4>🚩 RED FLAGS</h4></b>
+            <ul>
+                <li>Dépendance au volume de transactions hôtelières ; risque de désintermédiation.</li>
+                <li>Géographie quasi exclusivement américaine ; Focus SMB marqué.</li>
+            </ul>
+            <b><h4>🔢 THESIS ALIGNMENT SCORE MODIFIER</h4></b>
+            Non-EU & SMB Focus (-10%): Engine est un leader US impressionnant mais ne répond pas aux critères de géographie et de segment client définis dans la thèse S4BF.<br><br>
+            <b><h4>🌐 DATA CONFIDENCE : HIGH</h4></b>
+            <ul>
+                <li>Focus sur le Business Model et la Traction.</li>
+                <li>DATA GAPS : Détails précis sur le taux de rétention net (NRR) • Répartition géographique exacte des revenus.</li>
+            </ul>
+        </div>
+        <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-c9293744960f14f461d4b105b30b83bf-s0rj7ufk.jpg" alt="Company Analysis">
+        </div>
+    </div>
+</div>
+
+<div class="section-container" id="swot">
+    <h2 class="section-title">Analyse SWOT</h2>
+    <div class="swot-grid">
+        <div class="swot-item s-green">
+            <h3>Forces</h3>
+            <ul>
+                <li>Fondateur opérateur prouvé : Elia Wallen avec 11+ ans chez Travelers Haven et Engine depuis 2015.</li>
+                <li>Croissance explosive : 20 000+ entreprises clientes, Series C 140M$ à 2,1Md$ valuation.</li>
+                <li>Modèle freemium attractif : Plateforme gratuite, économies -26%, support 24/7.</li>
+                <li>Produit tout-en-un : Hôtels, vols, voitures ; API, mobile, Duty of Care.</li>
+                <li>Focus mid-market : Idéal pour construction/logistique, sous-servi par concurrents.</li>
+            </ul>
+        </div>
+        <div class="swot-item s-red">
+            <h3>Faiblesses</h3>
+            <ul>
+                <li>Pédigree fondateur modeste : Université régionale, pas d'expérience big tech.</li>
+                <li>Dépendance commissions fournisseurs : Revenus vulnérables aux négociations.</li>
+                <li>Absence stratégie M&A : Croissance organique prédominante.</li>
+                <li>Équipe non élite : Direction renforcée récemment.</li>
+                <li>Modèle frais cachés : Pénalités changements, facturation directe risquée.</li>
+            </ul>
+        </div>
+        <div class="swot-item s-blue">
+            <h3>Opportunités</h3>
+            <ul>
+                <li>Expansion produit : Carte Engine X, AI pour personnalisation.</li>
+                <li>Marché mid-market : PME négligées par Concur/Navan.</li>
+                <li>Internationalisation : Opportunité Europe/Asie.</li>
+                <li>Partenariats stratégiques : Fournisseurs exclusifs pour moat distribution.</li>
+                <li>Événements/groupes : Engine Spaces pour longs séjours.</li>
+            </ul>
+        </div>
+        <div class="swot-item s-orange">
+            <h3>Menaces</h3>
+            <ul>
+                <li>Concurrence féroce : Navan, Amex GBT, Concur dominent enterprise.</li>
+                <li>Cyclique travel : Ralentissement économique réduit voyages d'affaires.</li>
+                <li>Pression fournisseurs : Hôtels/vols serrent commissions.</li>
+                <li>Réglementation : Politiques data privacy, sécurité voyages.</li>
+                <li>Churn clients : Facilité annulation gratuite risque faible fidélité.</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div class="section-container" id="action-plan">
+    <h2 class="section-title">Plan d'Action</h2>
+    <h3>Défense</h3>
+    Renforcer moat négociation tarifs/exclusivités hôtels, investir Duty of Care pour loyauté clients face récession/concurrents.
+    <h3>Offensive</h3>
+    Dominer mid-market via simplicité freemium et économies prouvées, scaler via AI/partenariats pour capter 50% PME travel US d'ici 3 ans.
+    <h3>Kill Shot</h3>
+    Récession prolongée + churn massif si fournisseurs coupent commissions, érodant cash-flow avant rentabilité pleine.
+    <h3>Remédiation</h3>
+    Recruter élite big tech pour accélérer innovation produit et international, combler gap pedigree.
+</div>
+
+<div class="section-container" id="synergies-custom">
+    <h2 class="section-title">Synergies entre S4BT et Engine</h2>
+    <div class="disclaimer-box">⚠️ Intelligence Spéculative Uniquement — Les synergies suivantes entre S4BT et Engine sont entièrement hypothétiques. Elles sont générées par l'IA en croisant des données de marché accessibles au public, des modèles de financement et le positionnement concurrentiel des deux entreprises. Aucune connaissance d'initié, source confirmée ou discussion réelle sur une transaction n'est impliquée. Ces synergies sont conçues comme des pistes de réflexion stratégique, et non comme des prévisions.<br><br>La puissance prédictive s'améliore considérablement lorsqu'elle est enrichie par des signaux propriétaires (données CRM, historique des deals ou mesures internes) que les ensembles de données publics ne peuvent à eux seuls répliquer. Les actualités fraîches et les signaux de marché sont superposés en continu pour affiner les références croisées, mais ce sont vos données internes qui rendent ces prédictions défendables et spécifiques à votre contexte.</div>
+    
+    <h3>Synthèse</h3>
+    <div class="text-block">
+        Une acquisition transformatrice de type 'Aspirant Leap' permettant à S4BT de briser sa cage européenne pour devenir un géant transatlantique. En absorbant Engine, S4BT combine sa maîtrise de la conformité complexe (TVA/RGPD) et des paiements (Trevium) avec la puissance de feu transactionnelle et le modèle freemium d'Engine, créant le premier système d'exploitation financier global pour le voyage d'affaires opérationnel.<br><br>
+        <ul>
+            <li>Expansion géographique immédiate vers le marché US mid-market, complétant le bastion européen de S4BT.</li>
+            <li>Intégration verticale de Trevium (S4BT) sur le flux Direct Bill de Engine pour capturer des marges financières supérieures sur un volume de 2,1Md$.</li>
+            <li>Diversification du mix client : l'expertise Enterprise de S4BT (budgets >10M€) fusionne avec la domination PME/Opérationnelle d'Engine.</li>
+            <li>Neutralisation du risque de commission d'Engine par l'apport de la technologie de sourcing et des tarifs négociés de CDS Groupe (S4BT).</li>
+        </ul><br><br>
+        Choc de modèles économiques entre le 'Zero-fee' commission-based d'Engine et le modèle SaaS/Abonnement rigoureux de S4BT, risquant d'aliéner la base client PME d'Engine.<br><br>
+    </div>
+
+    <h3>Tableau détaillé des synergies potentielles</h3>
+    <div class="table-container">
+        <table class="synergies-table">
+            <thead>
+                <tr>
+                    <th>Rang</th>
+                    <th>Nom de la Synergie</th>
+                    <th>Type</th>
+                    <th>Hypothèse d'Action</th>
+                    <th>Impact Financier Est.</th>
+                    <th>Délai de Valeur</th>
+                    <th>Difficulté</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>1</td>
+                    <td>Accélération Trevium Global Payments</td>
+                    <td>Structural</td>
+                    <td>Déploiement de l'OS financier Trevium de S4BT comme moteur de paiement exclusif pour le 'Direct Bill' d'Engine, remplaçant les processeurs tiers.</td>
+                    <td>High</td>
+                    <td>Mid-Term (6-18m)</td>
+                    <td>Medium</td>
+                </tr>
+                <tr>
+                    <td>2</td>
+                    <td>Moat de Conformité Européenne pour Engine</td>
+                    <td>Defensive Moat</td>
+                    <td>Utiliser l'IP de récupération de TVA et de conformité RGPD de S4BT pour lancer Engine Europe sans les barrières réglementaires habituelles.</td>
+                    <td>High</td>
+                    <td>Immediate (&lt;6m)</td>
+                    <td>Low</td>
+                </tr>
+                <tr>
+                    <td>3</td>
+                    <td>Cross-sell : Sourcing Hôtel de Luxe vs Opérationnel</td>
+                    <td>Soft Revenue</td>
+                    <td>Offrir l'inventaire hôtelier premium de S4BT aux clients Engine et l'inventaire 'long séjour/chantier' d'Engine aux clients industriels de S4BT.</td>
+                    <td>Medium</td>
+                    <td>Mid-Term (6-18m)</td>
+                    <td>Medium</td>
+                </tr>
+                <tr>
+                    <td>4</td>
+                    <td>Optimisation R&D GDS/API</td>
+                    <td>Hard Cost</td>
+                    <td>Consolidation des 200 développeurs de S4BT et des équipes tech d'Engine pour unifier les connecteurs GDS (Amadeus/Sabre) et réduire les frais d'API doubles.</td>
+                    <td>Medium</td>
+                    <td>Long-Term (&gt;18m)</td>
+                    <td>High</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h3>Analyse approfondie des synergies potentielles</h3>
+    <div class="text-block">
+        <b>Convergence Fintech & Travel</b>
+        <ul>
+            <li>Type: Intégration Verticale</li>
+            <li>Mechanism: Le flux de facturation consolidé d'Engine est réorienté via le ledger Trevium de S4BT. Cela transforme Engine d'un simple agrégateur de commissions en un véritable fournisseur de services financiers (Reconciliation-as-a-Service).</li>
+            <li>Rationale: S4BT vise à posséder les paiements et la réconciliation (Stages 5 du Value Chain score 6.9). L'outil 'Direct Bill' d'Engine est le point d'entrée parfait pour monétiser les flux de paiement au-delà de la commission hôtelière.</li>
+            <li>Impact Assessment: Augmentation de la marge nette par transaction de 15 à 25% via la capture des frais de change (FX) et des frais de processeur.</li>
+            <li>Feasibility Check: Élevée; S4BT possède déjà l'infrastructure ISO/SOC et l'expertise Trevium.</li>
+        </ul><br><br>
+        <b>Protection contre la Désintermédiation</b>
+        <ul>
+            <li>Type: Défensive</li>
+            <li>Mechanism: L'expertise de sourcing et les relations directes de Ziad Minkara avec les chaînes hôtelières protègent Engine contre le risque de coupure de commission par les fournisseurs.</li>
+            <li>Rationale: La faiblesse identifiée d'Engine est sa dépendance aux commissions fournisseurs. Le poids de S4BT (800M€ de volume) renforce le pouvoir de négociation global.</li>
+            <li>Impact Assessment: Sécurisation des revenus à long terme et réduction du churn fournisseur.</li>
+            <li>Feasibility Check: Immédiate, basée sur le réseau existant du fondateur de S4BT.</li>
+        </ul><br><br>
+    </div>
+</div>
+
+<div class="section-container" id="conviction">
+    <h2 class="section-title">Conviction du GP Synthétique</h2>
+    <div class="conviction-text">
+        <h3>Market</h3>
+        Le marché du voyage d'affaires semble saturé par les géants historiques, mais Engine exploite une faille majeure via un modèle de Couche Logicielle Verticale (SaaS Layer Cake), agissant comme un système d'exploitation financier pour les travailleurs de terrain là où d'autres ne sont que des agences de réservation.<br><br>
+        <h3>Timing</h3>
+        Nous observons un Timing de type Boomerang, défini par le retour d'un concept ancien validé par une nouvelle infrastructure technologique, porté par la vague de numérisation forcée des secteurs industriels et la maturité des API hôtelières directes.<br><br>
+        <h3>Company</h3>
+        L'avantage démesuré d'Engine repose sur son modèle Zero-fee et son infrastructure Direct Bill, une stratégie de contre-positionnement que les acteurs établis ne peuvent copier sans détruire leurs propres marges de frais de service; l'acquisition par S4BT serait transformatrice en fusionnant cette puissance transactionnelle US avec l'expertise de conformité européenne de Trevium.<br><br>
+        <h3>Founder</h3>
+        Elia Wallen dispose d'un Founder-Market Fit exceptionnel, ayant passé plus d'une décennie à résoudre ces frictions spécifiques dans sa précédente entreprise, ce qui lui confère des secrets de domaine sur la logistique des équipes mobiles que peu de concurrents possèdent.<br><br>
+        <h3>Thesis-fit</h3>
+        Bien que le score ajusté soit de 74.7 en raison d'un focus initial PME et US-Centric, l'audit des filtres sémantiques révèle une adéquation forte avec les Green Flags de réconciliation automatisée et de gestion des flux transactionnels hôteliers du mandat Trevium FOS.<br><br>
+        <h3>Verdict</h3>
+        Proposition d'acquisition hautement stratégique pour S4BT afin de sécuriser un pied-à-terre massif aux USA et d'intégrer verticalement les flux de paiement.<br><br>
+        🟢 SYNERGY_CALL_SIGNAL: Acquisition of Engine by S4BT is highly strategic. SYNERGY_KEYWORD: Convergence Fintech & Travel. NARRATIVE_INSIGHT: L'intégration de l'infrastructure Trevium de S4BT sur le volume transactionnel de 2,1Md$ d'Engine permet de capturer des marges financières supérieures via la réconciliation automatisée.
+    </div>
+</div>
+
+<div class="section-container" id="sources">
+    <h2 class="section-title">Sources & Méthodologie</h2>
+    <div class="source-list">
+        <h3>Sources de la Chaine de Valeur</h3>
+        (Aucune source spécifiée)
+        
+        <h3>Sources du Marché</h3>
+        MARKET INTELLIGENCE DOSSIER - URL EVIDENCE TRACKER<br>
+        Purpose: Supporting documentation with comprehensive URL evidence for Market Attractiveness Score Analysis<br>
+        Market: B2B Operational Travel Management<br>
+        Data Completeness: 78/100<br><br>
+        <ul>
+            <li>Market Size: <a href="https://www.grandviewresearch.com/industry-analysis/business-travel-market">https://www.grandviewresearch.com/industry-analysis/business-travel-market</a></li>
+            <li>Growth Drivers: <a href="https://www.phocuswire.com/business-travel-trends-2024">https://www.phocuswire.com/business-travel-trends-2024</a></li>
+            <li>Timing Why Now: <a href="https://www.skift.com/2024/01/05/business-travel-outlook-2024/">https://www.skift.com/2024/01/05/business-travel-outlook-2024/</a></li>
+            <li>Market Risks: <a href="https://www.gbta.org/blog/business-travel-forecast-2024/">https://www.gbta.org/blog/business-travel-forecast-2024/</a></li>
+            <li>Incumbents: <a href="https://www.sapconcur.com/">https://www.sapconcur.com/</a></li>
+            <li>Challengers: <a href="https://www.navan.com/blog/travel-management-competition">https://www.navan.com/blog/travel-management-competition</a></li>
+            <li>GTM Model: <a href="https://engine.com/pricing">https://engine.com/pricing</a></li>
+            <li>Funding Activity: <a href="https://www.ctol.digital/news/engine-secures-140m-funding-for-travel-expansion">https://www.ctol.digital/news/engine-secures-140m-funding-for-travel-expansion</a></li>
+        </ul>
+
+        <h3>Sources de l'Entreprise</h3>
+        COMPANY INTELLIGENCE DOSSIER - URL EVIDENCE TRACKER<br>
+        Data Completeness: 85/100<br><br>
+        <ul>
+            <li>Founder-Market Fit: <a href="https://www.linkedin.com/in/elia-wallen">https://www.linkedin.com/in/elia-wallen</a></li>
+            <li>Track Record: <a href="https://engine.com/company-news/hotel-engine-raises-16-million-in-series-a-funding-after-4-years-of-bootstrapped-growth">https://engine.com/company-news/hotel-engine-raises-16-million-in-series-a-funding-after-4-years-of-bootstrapped-growth</a></li>
+            <li>Differentiation: <a href="https://engine.com/spaces">https://engine.com/spaces</a></li>
+            <li>Product-Market Fit: <a href="https://engine.com/customers">https://engine.com/customers</a></li>
+            <li>IP & Barriers: <a href="https://engine.com/direct-bill">https://engine.com/direct-bill</a></li>
+        </ul>
+    </div>
+</div>
+</div></div></body></html>
+<<</CODE>>
