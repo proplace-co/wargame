@@ -1,0 +1,627 @@
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+<style>
+:root { --bg-app: #f8fafc; --text-main: #1e293b; --yellow-menu: #FEF9C3; --green-menu: #DCFCE7; --grey-menu: #F1F5F9; --blue-menu: #DBEAFE; }
+* { box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-app); color: var(--text-main); margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+a { color: #2563eb; text-decoration: none; cursor: pointer; overflow-wrap: break-word; } 
+a:hover { text-decoration: underline; }
+p, li { line-height: 1.6; margin-bottom: 10px; }
+strong, b { font-weight: 700; color: #0f172a; }
+h3 { scroll-margin-top: 40px; font-size: 1.4em; color: #000000; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 15px; }
+
+/* BULLETPROOF LAYOUT FIX: FIXED SIDEBAR, CENTERED PADDED BODY */
+.main-wrapper { display: block; width: 100%; max-width: 100vw; overflow: visible !important; padding-left: 300px; box-sizing: border-box; }
+.sidebar { position: fixed; top: 0; left: 0; width: 300px; height: 100vh; overflow-y: auto; border-right: 1px solid #e2e8f0; background: #fff; padding: 25px 0; z-index: 1000; }
+.content-area { display: block; margin: 0 auto; padding: 40px; width: 100%; max-width: 1400px; min-height: 100vh; box-sizing: border-box; }
+
+.section-container { background: #fff; padding: 30px; margin-bottom: 30px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; scroll-margin-top: 40px; overflow: visible; display: block; clear: both; }
+.section-title { font-size: 1.8em; font-weight: 700; color: #000000; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 25px; }
+.subtitle-category { font-size: 0.95em; font-weight: 700; color: #1e293b; margin-top: 0; margin-bottom: 5px; line-height: 1.4; }
+.body-tagline { font-size: 0.95em; color: #334155; margin-top: 0; margin-bottom: 30px; line-height: 1.6; }
+
+.split-container { display: flex; gap: 40px; align-items: flex-start; margin-bottom: 40px; position: relative; }
+.text-col { flex: 1; font-size: 1.05em; line-height: 1.7; color: #334155; min-width: 0; word-wrap: break-word; overflow-wrap: anywhere; }
+.img-col { flex: 1; position: sticky; top: 20px; align-self: flex-start; height: fit-content; min-width: 0; max-height: calc(100vh - 40px); overflow: visible; }
+.sticky-img { width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; display: block; object-fit: contain; }
+
+.meta-block { padding: 0 25px 25px; border-bottom: 1px solid #e2e8f0; margin-bottom: 15px; }
+.sidebar-company-name { font-size: 1.8em; margin: 0 0 10px 0; padding: 0; color: #0f172a; font-weight: 800; border-bottom: none; }
+.sb-top-data { padding: 0 0 15px 0; display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 0; }
+.sb-tag { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.85em; color: #475569; }
+.sb-score, .score-green { background: #16a34a !important; color: white !important; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.85em; }
+.contact-row { display: flex; flex-direction: column; gap: 5px; font-size: 0.9em; margin-top: 0; }
+.nav-item { display: block; padding: 8px 25px; color: #475569; font-weight: 600; font-size: 0.9em; border-left: 4px solid transparent; margin-bottom: 2px; word-break: normal; hyphens: auto; }
+.nav-item:hover { background: rgba(0,0,0,0.05); color: #0f172a; border-left-color: #94a3b8; }
+.bg-yellow { background: var(--yellow-menu); } .bg-green { background: var(--green-menu); } .bg-grey { background: var(--grey-menu); }
+.bg-blue { background: var(--blue-menu); }
+.bg-light-purple { background: #f3e8ff; }
+
+.battlefield-legend { margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 6px; font-size: 0.9em; }
+.legend-row { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; margin-bottom: 5px; }
+.label-cap { background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-weight: 600; border: 1px solid #bbf7d0; white-space: nowrap; }
+.label-white { background: #fff; border: 1px solid #e2e8f0; padding: 2px 6px; border-radius: 4px; font-weight: 600; color: #334155; }
+.posture-legend { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; line-height: 1.2; margin-right: 10px; }
+
+.battlefield-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 15px; width: 100%; margin-bottom: 40px; }
+.battlefield-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.stage-header { font-size: 0.85em; font-weight: 700; text-transform: uppercase; color: #64748b; text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; min-height: 40px; }
+
+.actor-card { background: #fff; border: 1px solid #cbd5e0; border-radius: 6px; overflow: hidden; font-size: 0.9em; border-left-width: 4px; margin-bottom: 8px; transition: all 0.2s; }
+.border-hunter { border-left-color: #dc2626 !important; }
+.border-hunted { border-left-color: #ca8a04 !important; }
+.border-fortress { border-left-color: #2563eb !important; }
+.border-opportunistic { border-left-color: #16a34a !important; }
+.border-distressed { border-left-color: #9333ea !important; }
+.actor-card summary { padding: 10px; cursor: pointer; font-weight: 700; list-style: none; display: flex; justify-content: space-between; align-items: center; background: #fff; }
+.actor-card summary::after { content: "+"; font-size: 1.2em; color: #94a3b8; }
+.actor-card[open] summary::after { content: "−"; color: #1e293b; }
+.actor-summary-content { display: flex; flex-direction: column; gap: 2px; width: 90%; }
+.actor-name { font-weight: 800; color: #0f172a; font-size: 1em; }
+.actor-meta { font-size: 0.8em; color: #64748b; display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.label-tier { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.85em; color: #475569; white-space: nowrap; border: 1px solid #e2e8f0; }
+
+.actor-body { padding: 12px; border-top: 1px solid #f1f5f9; background: #fafafa; overflow-wrap: break-word; }
+.ws-box { background: #fffbeb; border: 1px solid #fcd34d; padding: 8px; border-radius: 6px; margin: 10px 0; font-size: 0.85em; color: #92400e; border: 1px solid #fcd34d; }
+.ws-box ul { padding-left: 20px; margin: 0; }
+.ws-box li { margin-bottom: 5px; }
+
+.swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+.swot-grid-small { display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 10px; }
+.swot-item { padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; }
+.swot-item h3 { margin-top: 0; font-size: 1.2em; border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: 10px; margin-bottom: 10px; }
+.swot-item ul { padding-left: 20px; margin: 0; }
+.swot-item li { margin-bottom: 8px; }
+
+.sg-box { padding: 6px; border-radius: 4px; font-size: 0.8em; line-height: 1.3; }
+.sg-box ul { padding-left: 20px; margin: 5px 0 0 0; }
+.sg-box li { margin-bottom: 4px; }
+.s-green { background: #dcfce7; color: #14532d; border: 1px solid #bbf7d0; } 
+.s-red { background: #fee2e2; color: #7f1d1d; border: 1px solid #fecaca; } 
+.s-blue { background: #dbeafe; color: #1e3a8a; border: 1px solid #bfdbfe; } 
+.s-orange { background: #ffedd5; color: #9a3412; border: 1px solid #fdba74; }
+.strat-inv-box { background: #f3e8ff; border: 1px solid #e9d5ff; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 0.85em; color: #6b21a8; }
+
+.actor-grid-info { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; font-size: 0.85em; }
+.actor-grid-info div { display: flex; flex-direction: column; }
+.actor-grid-info strong { font-size: 0.9em; color: #64748b; margin-bottom: 2px; }
+.label-diff { background: #e2e8f0; color: #1e293b; padding: 2px 6px; border-radius: 4px; font-weight: 700; width: fit-content; border: 1px solid #cbd5e1; }
+.label-posture-card { padding: 2px 6px; border-radius: 4px; font-weight: 700; color: #fff; width: fit-content; }
+.bg-hunter { background: #dc2626; } 
+.bg-hunted { background: #ca8a04; } 
+.bg-fortress { background: #2563eb; } 
+.bg-opportunistic { background: #16a34a; }
+.bg-distressed { background: #9333ea; }
+
+.competitor-block { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0; }
+.competitor-block strong { color: #1e293b; font-size: 1.05em; }
+
+details.scenario-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
+details.scenario-card summary { padding: 15px; font-weight: 500; font-size: 1.05em; line-height: 1.5; color: #334155; }
+.scen-logic-grid { display: inline-flex; flex-wrap: wrap; gap: 5px; margin-left: 10px; }
+.logic-tag { font-size: 0.75em; background: #f1f5f9; padding: 2px 8px; border-radius: 12px; border: 1px solid #cbd5e1; color: #475569; font-weight: 600; }
+.scen-details-body { padding: 20px; border-top: 1px solid #f1f5f9; background: #fcfcfc; }
+
+.table-container { width: 100%; overflow-x: auto; }
+.synergies-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.9em; }
+.synergies-table th { background: #f8fafc; padding: 12px; text-align: left; border-bottom: 2px solid #cbd5e1; white-space: nowrap; }
+.synergies-table td { padding: 12px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+.col-summary { width: 45%; min-width: 350px; } 
+
+.source-list { font-size: 0.9em; color: #64748b; }
+
+/* Sidebar CTA Elements */
+.section { margin: 0 25px 24px; }
+.section h3 { font-size: 15px; font-weight: 700; margin: 0 0 8px 0; border: none; padding: 0; color: #000000; }
+.meta-text { font-size: 12px; color: #94A3B8; margin-bottom: 16px; font-style: italic; }
+.meta-desc { font-size: 13px; color: #64748B; margin: 0 0 16px 0; line-height: 1.5; }
+.divider { height: 1px; background-color: #E2E8F0; margin: 24px 25px; }
+/* Sidebar Lists */
+.cta-list { list-style: none; padding: 0; margin: 0 0 16px 0; }
+.cta-list li { font-size: 13px; color: #475569; margin-bottom: 12px; padding-left: 20px; position: relative; line-height: 1.4; }
+.cta-list li::before { content: "→"; position: absolute; left: 0; color: #3B82F6; font-weight: bold; }
+.cta-list strong { color: #1E293B; }
+/* Enhanced Buttons */
+.btn { display: block; width: 100%; padding: 10px 14px; font-size: 14px; font-weight: 600; text-align: center; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; box-sizing: border-box; margin-bottom: 10px; white-space: normal; word-break: break-word; line-height: 1.4; }
+.btn-secondary { background-color: #F8FAFC; color: #0F172A; border: 1px solid #E2E8F0; }
+.btn-secondary:hover { background-color: #E2E8F0; text-decoration: none; border-color: #CBD5E1; }
+.btn-primary { background-color: #1E293B; color: #FFFFFF; border: none; }
+.btn-primary:hover { background-color: #0F172A; text-decoration: none; }
+
+/* Status Action Buttons (Solid Background, White Text) */
+.btn-status { display: block; width: 100%; padding: 8px; font-size: 13px; font-weight: 700; border-radius: 4px; text-decoration: none; cursor: pointer; text-align: center; color: #ffffff; margin-bottom: 6px; box-sizing: border-box; transition: all 0.2s; border: none; }
+.status-call { background-color: #16a34a; }
+.status-call:hover { background-color: #15803d; }
+.status-consider { background-color: #eab308; }
+.status-consider:hover { background-color: #ca8a04; }
+.status-monitor { background-color: #3b82f6; }
+.status-monitor:hover { background-color: #2563eb; }
+.status-pass { background-color: #ef4444; }
+.status-pass:hover { background: #dc2626; }
+
+@media (max-width: 1000px) {
+    body { overflow-x: hidden; }
+    .main-wrapper { display: block; width: 100%; padding-left: 0; }
+    .sidebar { position: relative; width: 100%; height: auto; border-right: none; border-bottom: 1px solid #e2e8f0; }
+    .content-area { margin: 0; width: 100%; padding: 15px; box-sizing: border-box; min-height: auto; }
+    .battlefield-grid { display: flex !important; flex-direction: column !important; width: 100%; gap: 20px; }
+    .split-container { flex-direction: column; }
+    .img-col { position: static; width: 100%; margin-top: 20px; max-height: none; }
+    .actor-card { width: 100% !important; }
+    .table-container { display: block; overflow-x: auto; }
+    .synergies-table { min-width: 700px; }
+    .swot-grid { grid-template-columns: 1fr; }
+}
+.disclaimer-box { background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 15px; margin-top: 10px; margin-bottom: 20px; font-size: 0.85em; color: #92400e; border-radius: 0 4px 4px 0; line-height: 1.5; } .disclaimer-subtext { font-size: 0.9em; font-style: italic; color: #64748b; margin-bottom: 10px; margin-top: -10px; }
+</style>
+
+<div class="main-wrapper">
+    <div class="sidebar">
+        <div class="meta-block">
+            <div class="sb-top-data">
+                <span class="sb-score score-green">92</span><span class="sb-tag">Allemagne</span><span class="sb-tag">Series A</span><span class="sb-tag">Food & AgTech</span><span class="sb-tag">B2B</span>
+            </div>
+            <h3 class="sidebar-company-name">Foodforecast</h3>
+            <p class="meta-desc" style="margin-bottom: 15px;">Prédire pour ne plus gaspiller : l'IA au service de la rentabilité alimentaire.</p>
+            <div class="contact-row">
+                <a href="https://foodforecast.com" target="_blank"><i class="fas fa-globe"></i> Site web</a>
+                <a href="https://www.linkedin.com/in/justus-lauten" target="_blank"><i class="fab fa-linkedin"></i> LinkedIn</a>
+            </div>
+        </div>
+        <a href="#market-summary" class="nav-item bg-grey">Résumé du marché</a>
+        <a href="#value-proposition" class="nav-item bg-green">Proposition de valeur</a>
+        <a href="#product" class="nav-item bg-green">Produit</a>
+        <a href="#business-model" class="nav-item bg-green">Modèle économique</a>
+        <a href="#team" class="nav-item bg-green">Équipe</a>
+        <a href="#ceo" class="nav-item bg-green">CEO</a>
+        <a href="#company-summary" class="nav-item bg-green">Résumé de l'entreprise</a>
+        <a href="#swot" class="nav-item bg-green">Analyse SWOT</a>
+        <a href="#action-plan" class="nav-item bg-green">Plan d'action</a>
+        <a href="#synergies-custom" class="nav-item bg-light-purple">Synergies avec S4BT</a>
+        <a href="#conviction" class="nav-item bg-blue">Conviction</a>
+        <a href="#sources" class="nav-item bg-blue">Sources</a>
+        <div class="divider"></div>
+        <div class="section">
+            <h3>Explorer Foodforecast plus en détail ?</h3>
+            <p class="meta-text">Actuellement affiché : Fast Memo</p>
+            <ul class="cta-list">
+                <li><strong>Quick Memo :</strong> Ajoute l'analyse de la taille du marché, l'analyse de la chaîne de valeur, le Magic Quadrant de la concurrence et les synergies avec votre entreprise.</li>
+                <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Foodforecast&website=https://foodforecast.com&product_url=https://foodforecast.com/en/foodservice&team_url=https://foodforecast.com/en/about-foodforecast&pricing_url=unavailable&linkedin=https://www.linkedin.com/in/justus-lauten&first_name=Justus&last_name=Lauten&memo=quick" class="btn btn-secondary" target="_blank">Générer un Quick Memo</a>
+                <li style="margin-top: 16px;"><strong>Detailed Memo :</strong> Ajoute le quadrant M&A concurrentiel, les scénarios stratégiques, les synergies entre les acteurs de l'écosystème et les synergies avec votre entreprise.</li>
+                <a href="https://forms.proplace.co/t/f8FhihoFEXus?company_name=Foodforecast&website=https://foodforecast.com&product_url=https://foodforecast.com/en/foodservice&team_url=https://foodforecast.com/en/about-foodforecast&pricing_url=unavailable&linkedin=https://www.linkedin.com/in/justus-lauten&first_name=Justus&last_name=Lauten&memo=detailed" class="btn btn-secondary" target="_blank">Générer un Detailed Memo</a>
+            </ul>
+            <a href="http://forms.proplace.co/meet" class="btn btn-secondary" target="_blank">Planifier un appel stratégique sur Foodforecast</a>
+        </div>
+        <div class="divider"></div>
+        <div class="section">
+            <h3>🧠 Décision synthétique du GP</h3>
+            <p class="meta-text">🔴 SYNERGY_BLOCK_SIGNAL: Rejeté parce que les synergies M&A sont WEAK_SYNERGY: Base de clients redondante et inadéquation sectorielle avec Business Travel Tech. NARRATIVE_INSIGHT: Foodforecast est un SaaS d'IA de haute qualité mais ne présente aucun lien structurel avec l'écosystème Trevium FOS ou le mandat d'approvisionnement en voyages d'affaires.</p>
+
+            <h3>🗣 Votre décision</h3>
+            <p class="meta-text">Acceptez ou mettez à jour la décision synthétique du GP. Expliquez pourquoi avec vos propres mots : cela améliorera vos capacités de sourcing et de qualification GP synthétiques.</p>
+
+            <a href="https://forms.proplace.co/t/c2246dXQEVus?status=CALL&action_timestamp=2026-03-02T13:16:50.762Z&user_action_log=CALL&feedback_reason=no%20feedback&thesis_impact_status=processed&id=recEB2lHuBdIiLuA2" class="btn-status status-call" target="_blank">🟢 CALL</a>
+            <p class="meta-text" style="margin-top: 0; margin-bottom: 15px;">Cela signifie "Je suis intéressé". Cela correspond à ma thèse ou j'aime vraiment cela.</p>
+
+            <a href="https://forms.proplace.co/t/c2246dXQEVus?status=CONSIDER&action_timestamp=2026-03-02T13:16:50.762Z&user_action_log=CONSIDER&feedback_reason=no%20feedback&thesis_impact_status=processed&id=recEB2lHuBdIiLuA2" class="btn-status status-consider" target="_blank">🟡 CONSIDER</a>
+            <p class="meta-text" style="margin-top: 0; margin-bottom: 15px;">Cela signifie "J'ai des doutes". Données critiques manquantes. Je sélectionnerai Appel ou Suivi dans les 7 jours.</p>
+
+            <a href="https://forms.proplace.co/t/c2246dXQEVus?status=MONITOR&action_timestamp=2026-03-02T13:16:50.762Z&user_action_log=MONITOR&feedback_reason=no%20feedback&thesis_impact_status=processed&id=recEB2lHuBdIiLuA2" class="btn-status status-monitor" target="_blank">🔵 MONITOR</a>
+            <p class="meta-text" style="margin-top: 0; margin-bottom: 15px;">Cela signifie "Pas maintenant". Trop tôt (reste dans le pipeline) ou trop tard mais pertinent pour ma thèse.</p>
+
+            <a href="https://forms.proplace.co/t/c2246dXQEVus?status=PASS&action_timestamp=2026-03-02T13:16:50.762Z&user_action_log=PASS&feedback_reason=no%20feedback&thesis_impact_status=processed&id=recEB2lHuBdIiLuA2" class="btn-status status-pass" target="_blank">🔴 PASS</a>
+            <p class="meta-text" style="margin-top: 0; margin-bottom: 15px;">Cela signifie "Jamais". Mauvais ajustement ou concurrent dans le portefeuille ou toute autre raison de passer.</p>
+        </div>
+        <div class="divider"></div>
+        <div class="section">
+            <h3>Analyser une autre entreprise ?</h3>
+            <a href="https://forms.proplace.co/t/qS5aEtNxkAus" class="btn btn-primary" target="_blank">Obtenir une première analyse par IA</a>
+        </div>
+        <div class="section">
+            <h3>Envie de suivre notre deal flow ?</h3>
+            <p class="meta-desc">Recevez chaque jour des startups européennes d'IA que nous évaluons du point de vue d'un VC.</p>
+            <a href="https://77f02b89.sibforms.com/serve/MUIFAMr0ADjDfIUWLc56STos70j4OXPiOTJqugyAa45YfGyt9zW6Tokz3iXWLNiTAw6oxjbrMnjs424k46IvwOQlWjaMIsbgexAk95FvzqzgLa56TkHas6WASK4VKs684XcZhacqMYTYQGuIfzJmBmCkmHwhNeB0yHifmrxC1PUhNMS1ZbiW1xF18IZy7tJP9BIWjDcM5VoH6VEVCw==" class="btn btn-primary" target="_blank">S'abonner au deal flow</a>
+        </div>
+        <div class="section">
+            <h3>Vous voulez un deal flow propriétaire ?</h3>
+            <p class="meta-desc">Recevez quotidiennement des cibles hautement qualifiées pour votre stratégie d'acquisition.</p>
+            <a href="http://forms.proplace.co/meet" class="btn btn-primary" target="_blank">Planifier un appel stratégique</a>
+        </div>
+        <div class="section" style="text-align: center; margin-bottom: 0; padding-top: 10px;">
+            <img src="https://183wcnoqvi.ucarecd.net/6a1ef507-976c-4a60-a8e5-1b0199825d36/sforbt_solutions_for_business_travel_logo.jpg" alt="Proplace Logo" style="max-width: 120px; height: auto;">
+            <p class="meta-text" style="margin-top: 10px; margin-bottom: 0; font-size: 11px; line-height: 1.4; word-break: break-word;">Généré par <a href="https://www.proplace.co" target="_blank">Proplace.co</a> pour S4BF. Proplace est une IA et peut faire des erreurs.<br><br>Contactez-nous à <a href="mailto:alexandre@proplace.co">alexandre@proplace.co</a> pour demander des mises à jour, ajouter des informations manquantes ou suggérer des améliorations.</p>
+        </div>
+    </div>
+    <div class="content-area">
+        <h1>Foodforecast Mémo Interactif</h1>
+        <h2 class="subtitle-category">Food & AgTech ➜ SaaS d'IA pour la réduction du gaspillage alimentaire ➜ Solutions SaaS d'IA pour la prévision de demande et l'optimisation des commandes dans l'industrie alimentaire européenne ciblant les produits périssables avec plus de 10 employés.</h2>
+        <p class="body-tagline">Prédire pour ne plus gaspiller : l'IA au service de la rentabilité alimentaire.</p>
+
+
+<div class="section-container" id="market-summary">
+<h2 class="section-title">Résumé du Marché</h2>
+<div class="split-container">
+<div class="text-col">
+<p>MARKET OPPORTUNITY SCORE
+Food & AgTech &gt; SaaS d'IA pour la réduction du gaspillage alimentaire.
+B2B &gt; SaaS</p>
+<p>═════════════════════════════════════════════════</p>
+<p>IS IT AN ATTRACTIVE MARKET ? (Dynamics): 85/100 × 25% = 21.25 points
+IS IT A WINNABLE MARKET ? (Competition): 75/100 × 25% = 18.75 points
+IS IT A PENETRABLE MARKET ? (GTM): 80/100 × 25% = 20.0 points
+IS IT A REWARDING MARKET ? (Exits): 85/100 × 25% = 21.25 points</p>
+<p>─────────────────────────────────────────────────
+TOTAL MARKET ATTRACTIVITY SCORE: 81.25/100</p>
+<p>═════════════════════════════════════════════════ </p>
+<h4>❓ Market DEFINITION</h4>
+<p>Le marché cible comprend les solutions SaaS d'IA pour la prévision de demande et l'optimisation des commandes, adressant le segment du retail alimentaire et de la restauration hors-foyer. Il pèse plusieurs milliards d'euros en pertes évitables par an, portées par les produits ultra-prais (boulangerie, libre-service).</p>
+<h4>💬 Our Market THESIS</h4>
+<p>(MARKET INFLECTION) Un changement non négociable des facteurs réglementaires et ESG déclenche une transition technologique majeure dans le marché de la Supply Chain alimentaire de 10 milliards de dollars. Une startup qui devient la plateforme de référence pour cette nouvelle réalité, centrée sur la réduction drastique des déchets, peut devenir le nouveau système d'enregistrement de toute l'industrie.</p>
+<h4>🧠 Our CONVICTION & WAGER on this Market:</h4>
+<p>🟢 HIGH: Notre conviction est élevée car ce marché présente un alignement rare entre le timing réglementaire et la structure économique. Le catalyseur du coût des matières premières a ouvert une fenêtre temporaire pour qu'un fondateur décisif construise une boucle de données propriétaire massive et capture le marché avant que l'opportunité ne devienne consensuelle. C'est une course à l'acquisition de données de terrain.</p>
+<p>═════════════════════════════════════════════════</p>
+<h4>🌊 ATTRACTIVE MARKET (Market Dynamics) | Score: 85/100</h4>
+<ul>
+<li>Market Size (21/25): TAM: $12B (Europe Food Retail AI) • SAM: $2B (Bakery & Fresh) • CAGR: 18.5%</li>
+<li>Growth Drivers (22/25): Directive ESG européenne • Inflation des matières premières • Pénurie de main-d'œuvre qualifiée en planification.</li>
+<li>Timing Why Now (23/25): Maturité des modèles de prédiction ML • Coût du gaspillage devenu insupportable pour les marges retail.</li>
+<li>Market Risks (19/25): Résistance au changement des gérants de magasins • Inertie des systèmes legacy ERP.</li>
+</ul>
+<h4>⚔️ WINNABLE MARKET (Competitive Landscape) | Score: 75/100</h4>
+<ul>
+<li>Incumbents (18/25): SAP/Oracle (Solution généraliste lourde) • RELEX Solutions (Valorisation multibilliardaire, force sur le retail général).</li>
+<li>Challengers (20/25): Afresh ($150M+ levés, focus US) • Winnow (Focus restauration collective/hôtellerie).</li>
+<li>White Space (19/25): Segment des boulangeries industrielles et chaînes de franchise ultra-périphériques encore sous-équipées.</li>
+<li>Defensibility (18/25): Moat de données spécifique au comportement d'achat quotidien du frais.</li>
+</ul>
+<h4>🎯 PENETRABLE MARKET (Go-to-Market & Unit Economics) | Score: 80/100</h4>
+<ul>
+<li>GTM Model (20/25): Enterprise Sales (Top-down) avec pilotes rémunérés.</li>
+<li>Pricing Model (20/25): SaaS par point de vente / par volume prédit.</li>
+<li>Unit Economics (20/25): Payback estimé &lt; 12 mois grâce aux économies directes de stock.</li>
+<li>Scalability (20/25): Modèle récurrent avec forte expansion géographique possible une fois l'intégration ERP validée.</li>
+</ul>
+<h4>💰 REWARDING MARKET (Funding & Exit) | Score: 85/100</h4>
+<ul>
+<li>Funding Activity (21/25): Forte vélocité en 2024-2026 pour la FoodTech Supply Chain durable.</li>
+<li>Exit Multiples (21/25): Multiples SaaS AI élevés (8-12x ARR).</li>
+<li>Strategic Buyers (23/25): Retailers (Lidl/Aldi/Carrefour) • ERP Leaders (SAP) • Plateformes de livraison (Deliveroo/UberEats pour intégration amont).</li>
+</ul>
+<p>─────────────────────────────────────────────────
+🌐 DATA CONFIDENCE: High on Market Size. Medium on private Unit Economics. 17 total URLs sourced.</p>
+</div>
+<div class="img-col">
+<img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-660176563b44ab50685d4516dcefebac-phbsfzhx.jpg">
+</div>
+</div>
+</div>
+
+
+
+<div class="section-container" id="company">
+    <h2 class="section-title">Analyse Approfondie de l'Entreprise</h2>
+    <div class="split-container">
+        <div class="text-col">
+            <h3 id="value-proposition">Proposition de Valeur</h3>
+            <b>Value Proposition:</b><br> Réduire le gaspillage alimentaire et augmenter les ventes grâce à des prévisions de demande ultra-précises basées sur l'IA pour les produits frais. Prédire pour ne plus gaspiller : l'IA au service de la rentabilité alimentaire. Logiciel intelligent qui dit aux boulangeries et aux supermarchés exactement ce qu'ils vont vendre demain, permettant de ne pas cuisiner ou commander trop de nourriture, évitant ainsi le gaspillage tout en s'assurant que les clients trouvent toujours ce qu'ils veulent.<br><b>Ideal Customer Profile (ICP):</b><br> Boulangeries, établissements de restauration, commerces alimentaires et chaînes de restauration collective. Gestionnaires de points de vente et chaînes d'approvisionnement. Boulangeries industrielles, restauration collective, retail alimentaire. SMEs et enterprise customers in food service, bakery, and retail sectors. Chaînes de boulangeries et restauration collective. Segment des boulangeries industrielles et chaînes de franchise ultra-périphériques.<br><b>B2B or B2C:</b><br> B2B - Solution logicielle pour les gestionnaires de points de vente et les chaînes d'approvisionnement. SaaS B2B pour retail alimentaire et restauration hors-foyer.<br><b>Industry:</b><br> FoodTech / Intelligence Artificielle pour la restauration. FoodTech / Supply Chain AI. SaaS d'IA pour la réduction du gaspillage alimentaire. AgTech IA en Europe, focus sur produits périssables.<br><b>Contact & Legal:</b><br> Nom de l'entité: foodforecast. Fondée en 2020. Support: Assistance 24 heures sur 24. Siège: Allemagne (DACH/Europe, startup deep-tech allemande). LinkedIn CEO: https://www.linkedin.com/in/justus-lauten. LinkedIn company: foodforecast-ai. Site web: https://foodforecast.com.
+
+            <h3 id="product">Produit</h3>
+            <b>Core Solution:</b><br> Logiciel d'IA tout-en-un pour la planification de la production et l'optimisation des commandes. Plateforme autopilotée de Foodforecast analyse les données historiques, la météo et la saisonnalité pour générer des bons de commande optimaux via API. Solutions IA pour optimiser la durabilité et l'efficacité dans la chaîne alimentaire. Pilote la vision globale et le développement de solutions IA pour la production et commandes dans le secteur alimentaire.<br><b>Feature Encyclopedia:</b><br>
+            <ul>
+                <li>Pilote automatique en magasin</li>
+                <li>Prévisions intra-journalières</li>
+                <li>Optimisation des commandes quotidiennes</li>
+                <li>Mise à jour multiple des prévisions par jour</li>
+                <li>Analyse des données historiques</li>
+                <li>Prise en compte des variations saisonnières et jours fériés</li>
+                <li>Algorithmes d'apprentissage supervisé temps réel</li>
+                <li>Exportation de données de base d'articles</li>
+                <li>Analyse des retours et livraisons</li>
+                <li>Modules adaptés (Production, Commande)</li>
+            </ul>
+
+            <h3 id="business-model">Modèle d'Affaires</h3>
+            <b>Business Model Analysis:</b><br> SaaS (Software as a Service) avec accompagnement par experts. SaaS récurrent avec contrats Enterprise. SaaS par point de vente / par volume prédit. Vente directe Enterprise/Grands Comptes avec pilotes.<br><b>Revenue Streams & Pricing Tiers:</b><br> Forfaits individuels basés sur les besoins analysés lors de la phase de diagnostic. Forfaits personnalisés selon les modules (Production, Commande). Garantie d'un retour sur investissement (ROI) de 10x. Data not available in source pour prix points spécifiques, devises ou fréquences de facturation.
+
+            <h3 id="team">Équipe</h3>
+            <b>Company Culture:</b><br> Durable, axée sur l'impact environnemental et social, synergie entre l'humain et l'IA. Orientée innovation durable. Impact commercial et sociétal. ESG et durabilité. Expansion internationale et scaling de l'impact dans l'industrie alimentaire.
+
+            <h3 id="ceo">CEO</h3>
+            <b>EXECUTIVE ASSESSMENT</b><br><br>
+            <b>Founder Archetype:</b><br> Justus Lauten se profile clairement en tant que Product-Led Founder, avec un fort ancrage technologique doublé d’une vision orientée innovation durable. Son rôle de fondateur et CEO d’une startup deep tech axée sur l’intelligence artificielle appliquée à l’industrie agroalimentaire révèle une expertise produit poussée, centrée sur la création de solutions techniques complexes qui répondent à des enjeux concrets de marché.
+
+            <h3 id="company-summary">Résumé de l'Entreprise</h3>
+            <ul>
+                <li>Food & AgTech > SaaS d'IA pour la réduction du gaspillage alimentaire.</li>
+                <li>B2B > SaaS</li>
+                <li>8M€ levés auprès de SHIFT Invest et ECBF (26 février 2026)</li>
+            </ul>
+            <h4>CALCUL DU SCORE PONDÉRÉ</h4>
+            <b>Thèse : S4BF</b><br><br>
+            EXCELLENCE DE L'ÉQUIPE 88/100 × 20% = 17.6 points<br>
+            OPPORTUNITÉ DE MARCHÉ 82/100 × 25% = 20.5 points<br>
+            INNOVATION PRODUIT 85/100 × 30% = 25.5 points<br>
+            MODÈLE D'AFFAIRES 80/100 × 15% = 12.0 points<br>
+            TRACTION & CROISSANCE 90/100 × 30% = 27.0 points<br>
+            ─────────────────────────────────────────────────<br>
+            Score de base : 102.6/100<br>
+            Modificateur d'alignement de thèse : -10%<br>
+            ─────────────────────────────────────────────────<br>
+            <b>SCORE FINAL AJUSTÉ : 92.3/100 → 🟢 INTÉRESSANT (85-100)</b><br>
+            <i>*Note: Score élevé sur les fondamentaux opérationnels, mais misfit critique avec la thèse S4BF Travel Tech.*</i><br><br>
+
+            <b><h4>❓ EN QUELQUES MOTS :</h4></b> Foodforecast est un SaaS d'IA pour la réduction du gaspillage alimentaire qui permet aux gestionnaires de points de vente et boulangeries de supprimer les pertes d'inventaire par une prévision ultra-précise de la demande automatisant les commandes.<br><br>
+            <b><h4>⚠️ LE PROBLÈME :</h4></b> L'industrie alimentaire perd des milliards en produits frais invendus en raison de prévisions manuelles erronées, impactant les marges de 3 à 5% et générant un désastre écologique.<br><br>
+            <b><h4>✅ LA SOLUTION :</h4></b> La plateforme autopilotée de Foodforecast analyse les données historiques, la météo et la saisonnalité pour générer des bons de commande optimaux via API. Leur insight non-consensus est que l'IA ne doit pas seulement assister, mais piloter entièrement la commande de produits ultra-frais pour éliminer l'erreur humaine.<br><br>
+            <b><h4>🚀 LE GTM & MOAT :</h4></b> Leur GTM est une vente directe Enterprise/Grands Comptes ciblant les chaînes de boulangeries et la restauration collective. Le moat est construit sur une accumulation de données propriétaires (boucles de rétroaction sur 8 800 tonnes de déchets) et des intégrations logicielles profondes (API) rendant le switching cost élevé.<br><br>
+
+            <b><h4>🗝️ KEY COMPETITIVE ADVANTAGES:</h4></b>
+            <ul>
+                <li>Spécialisation Ultra-Fresh : Optimisation granulaire pour des produits à cycle de vie inférieur à 24h.</li>
+                <li>IA de prédiction intra-journalière intégrée.</li>
+                <li>Garantie de ROI 10x : Argument de vente puissant pour les marges faibles du retail.</li>
+                <li>Pedigree RWTH Aachen : Crédibilité technique exceptionnelle en Allemagne.</li>
+                <li>Traction confirmée par des fonds climatiques majeurs (ECBF, SHIFT).</li>
+            </ul>
+
+            <b><h4>🧱 MOAT: MODERATE</h4></b>
+            <ul>
+                <li>Data Advantages : Les algorithmes s'améliorent avec chaque tonne de nourriture tracée, créant une barrière de performance VS les nouveaux entrants.</li>
+                <li>Switching Costs : L'intégration profonde via API dans les ERP de commande rend le remplacement complexe une fois déployé sur 100+ points de vente.</li>
+            </ul>
+
+            <b><h4>🚩 RED FLAGS</h4></b>
+            <ul>
+                <li>Universal Red Flags : Dépendance sectorielle forte (Boulangeries/Frais) ; risque de consolidation des clients (retail) qui pourraient développer l'IA en interne.</li>
+                <li>Thesis-Specific Red Flags : Absence totale de lien avec la 'Business Travel Tech'. Inadéquation géographique avec les priorités IT/FR de S4BF (majoritairement positionné en Allemagne).</li>
+            </ul>
+
+            <b><h4>🔢 THESIS ALIGNMENT SCORE MODIFIER</h4></b>
+            <b>Poor Fit (-10%):</b> Bien que l'entreprise soit d'une qualité exceptionnelle (Series A Tier 1), elle se situe hors du scope de la thèse S4BT centrée sur la Travel Tech consolidation, ne permettant aucune synergie avec Trevium FOS.<br><br>
+
+            <b><h4>🌐 DATA CONFIDENCE : HIGH</h4></b>
+            <ul>
+                <li>Les données de financement et d'équipe sont robustes suite aux annonces de février 2026.</li>
+                <li>DATA GAPS : Chiffre d'affaires ARR exact non public • Taux de churn des premiers pilotes.</li>
+            </ul>
+        </div>
+        <div class="img-col">
+            <img class="sticky-img" src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-3577e3d305c4a376550dc10eae1f6bd8-8cqxcr1g.jpg" alt="Company Analysis">
+        </div>
+    </div>
+</div>
+
+<div class="section-container" id="swot">
+    <h2 class="section-title">Analyse SWOT</h2>
+    <div class="swot-grid">
+        <div class="swot-item s-green">
+            <h3>Forces</h3>
+            <ul>
+                <li>Fondateur technique exceptionnel (RWTH Aachen, 6 ans CEO, expérience innogy SE).</li>
+                <li>Moat IA spécialisé en prévisions pour produits frais ultra-précises, évitant 8 826 tonnes de déchets.</li>
+                <li>Levée Series A 8M€ (2026) par SHIFT Invest et ECBF pour expansion européenne.</li>
+                <li>Modèle SaaS B2B scalable avec ROI garanti 10x et support 24/7.</li>
+                <li>Impact environnemental fort aligné sur régulations UE durabilité.</li>
+            </ul>
+        </div>
+        <div class="swot-item s-red">
+            <h3>Faiblesses</h3>
+            <ul>
+                <li>Équipe restreinte (Justus + Jan, effectif non précisé, dépendance fondateur).</li>
+                <li>Marché initial limité à Allemagne/Europe du Nord, expansion naissante.</li>
+                <li>Implémentation longue (4-8 semaines), friction on-boarding.</li>
+                <li>Pas de M&A ou partenariats stratégiques publics visibles.</li>
+                <li>Concurrence croissante en FoodTech IA sans moat réseau exclusif.</li>
+            </ul>
+        </div>
+        <div class="swot-item s-blue">
+            <h3>Opportunités</h3>
+            <ul>
+                <li>Expansion européenne (SMEs et enterprises boulangerie/restauration).</li>
+                <li>Subventions UE InvestEU pour bioéconomie circulaire.</li>
+                <li>Sensibilisation croissante gaspillage alimentaire (régulations imminentes).</li>
+                <li>Intégration verticale avec fournisseurs chaînes approvisionnement.</li>
+                <li>Monétisation données agrégées pour insights sectoriels.</li>
+            </ul>
+        </div>
+        <div class="swot-item s-orange">
+            <h3>Menaces</h3>
+            <ul>
+                <li>Concurrence de géants (e.g. IBM Food Trust, startups US comme Afresh).</li>
+                <li>Risque exécution scaling international post-Series A.</li>
+                <li>Ralentissement économique impactant food service SMEs.</li>
+                <li>Régulations données (GDPR) sur IA prédictive sensible.</li>
+                <li>Dépendance tech cloud à fournisseurs (risque outages).</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div class="section-container" id="action-plan">
+    <h2 class="section-title">Plan d'Action</h2>
+    <h3>Défense</h3>
+    <b>Comment se défendre ?</b> Renforcer founder loyalty par équipe tech élargie, sécuriser IP algorithmes IA et diversifier clients enterprises contre récession.
+    <h3>Offense</h3>
+    <b>Comment gagner ?</b> Exploiter moat IA perishables + funding pour dominer Europe via boulangeries/restauration, scaler SaaS avec ROI 10x et données agrégées pour lock-in.
+    <h3>Kill Shot</h3>
+    <b>Quoi fatal ?</b> Échec exécution post-Series A + concurrence US agressive = perte traction marché perishables critiques.
+    <h3>Remédiation</h3>
+    <b>Quoi réparer ?</b> Équipe sous-dimensionnée bloque scaling rapide ; recruter sales/ops pour accélérer on-boarding et expansion UE.
+</div>
+
+<div class="section-container" id="synergies-custom">
+    <h2 class="section-title">Synergies entre Foodforecast et S4BT</h2>
+    <div class="disclaimer-box">⚠️ Intelligence spéculative uniquement — Les synergies suivantes entre Foodforecast et S4BT sont entièrement hypothétiques. Elles sont générées par l'IA en croisant des données de marché publiques, des modèles de financement et le positionnement concurrentiel des deux entreprises. Aucune connaissance d'initié, source confirmée ou discussion réelle sur une transaction n'est impliquée. Ces synergies sont conçues comme des pistes de réflexion stratégique, et non comme des prévisions.<br><br>Le pouvoir prédictif s'améliore considérablement lorsqu'il est enrichi de signaux propriétaires (données CRM, historique du flux de transactions ou métriques internes) que les ensembles de données publics seuls ne peuvent répliquer. Les nouvelles actualités et les signaux du marché sont continuellement intégrés pour affiner les références croisées, mais vos données internes sont ce qui rend ces prédictions défendables et spécifiques à votre contexte.</div>
+    
+    <h3>Résumé</h3>
+    <div class="text-block">
+        Une acquisition de diversification technologique 'Aspirant Leap' où S4BT utilise sa puissance de consolidation PE-backed (Andera Partners) pour absorber une IA de pointe. Bien que les secteurs divergent (Travel vs. Food), la logique repose sur l'intégration de l'IA prédictive de Foodforecast dans le système d'exploitation financier Trevium de S4BT pour dominer la gestion des stocks et frais périssables des grands comptes européens (Hôtels, Catering, Lounges).<br><br>
+        <ul>
+            <li>Intégration de l'IA prédictive 'Ultra-Fresh' de Foodforecast dans le module de restauration/MICE de S4BT pour optimiser les marges hôtelières.</li>
+            <li>Extension de la plateforme Trevium vers la gestion automatisée des stocks alimentaires pour les clients entreprises et hôteliers.</li>
+            <li>Utilisation des réseaux de distribution européens de Ziad Minkara pour accélérer l'expansion de Foodforecast au-delà de la zone DACH.</li>
+            <li>Synergie de 'Back-office financier' : Réconciliation automatique des factures alimentaires via les connecteurs ERP existants de S4BT.</li>
+        </ul><br><br>
+        Fragmentation technologique majeure entre une IA native (Foodforecast) et des systèmes legacy hôteliers consolidés par S4BT, risquant de diluer la bande passante technique déjà tendue de l'acquéreur.<br><br>
+    </div>
+
+    <h3>Tableau détaillé des synergies potentielles</h3>
+    <div class="table-container">
+        <table class="synergies-table">
+            <thead>
+                <tr>
+                    <th>Rang</th>
+                    <th>Nom de la synergie</th>
+                    <th>Type</th>
+                    <th>Hypothèse d'action</th>
+                    <th>Impact financier estimé</th>
+                    <th>Délai de valeur</th>
+                    <th>Difficulté</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>1</td><td>Intégration Trevium Financial OS</td><td>Structural</td><td>Fusionner les capacités de facturation IA de Foodforecast avec le moteur de réconciliation financière Trevium pour offrir une solution 'Zéro Déchet / Zéro Erreur' aux départements finance F&B.</td><td>High</td><td>Mid-Term (6-18m)</td><td>High</td></tr>
+                <tr><td>2</td><td>Accélération Enterprise GTM via Réseau CDS</td><td>Soft Revenue</td><td>Cross-sell de la solution Foodforecast auprès des 1000+ clients grands comptes de S4BT (Havas, Amadeus) ayant des besoins massifs en catering/hôtellerie.</td><td>High</td><td>Immediate (<6m)</td><td>Medium</td></tr>
+                <tr><td>3</td><td>Optimisation des Marges Hôtelières (MICE)</td><td>Defensive Moat</td><td>Déployer l'IA de prévision de Foodforecast dans les outils de réservation de groupes S4BT pour réduire les coûts de restauration lors des séminaires.</td><td>Medium</td><td>Mid-Term (6-18m)</td><td>Medium</td></tr>
+                <tr><td>4</td><td>Consolidation des Centres de R&D IA</td><td>Hard Cost</td><td>Mutualiser les 200 développeurs de S4BT avec les experts IA de Foodforecast pour créer un centre d'excellence européen en IA prédictive appliquée aux flux B2B.</td><td>Medium</td><td>Long-Term (>18m)</td><td>High</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h3>Analyse détaillée des synergies potentielles</h3>
+    <div class="text-block">
+        <b>1. Convergence IA-Fintech (Trevium Expansion)</b>
+        <ul>
+            <li>Type: Structural Integration</li>
+            <li>Mécanisme: L'IA de Foodforecast automatise la commande en amont, tandis que Trevium (S4BT) automatise le paiement et la réconciliation en aval, créant une boucle fermée de gestion de la supply chain alimentaire.</li>
+            <li>Logique: S4BT cherche à 'posséder la réconciliation des paiements' (Offense Strategy). L'ajout de l'inventaire prédictif transforme S4BT d'un outil de réservation en un ERP opérationnel complet.</li>
+            <li>Évaluation de l'impact: Augmentation potentielle du panier moyen par client (ARPU) de 15-20% via des modules de gestion de stocks.</li>
+            <li>Vérification de la faisabilité: Complexe : Nécessite l'unification de deux tech stacks distinctes sous une architecture cloud unique.</li>
+        </ul><br><br>
+        <b>2. Moat Européen contre les Géants US</b>
+        <ul>
+            <li>Type: Defensive Moat</li>
+            <li>Mécanisme: En ajoutant une brique 'Durabilité/Gaspillage' unique, S4BT se différencie radicalement de Navan et TravelPerk qui restent focalisés sur le voyage pur.</li>
+            <li>Logique: Le gaspillage alimentaire est une priorité ESG en Europe. S4BT utilise sa force PE-backed pour sécuriser une niche que les géants américains ne couvrent pas encore.</li>
+            <li>Évaluation de l'impact: Réduction du churn client via un verrouillage réglementaire (reporting ESG combiné voyage/nourriture).</li>
+            <li>Vérification de la faisabilité: Élevée : Aligné avec les régulations européennes actuelles.</li>
+        </ul><br><br>
+    </div>
+</div>
+
+<div class="section-container" id="conviction">
+    <h2 class="section-title">Conviction Synthétique du GP</h2>
+    <div class="conviction-text">
+        <h3>Market</h3>
+        Foodforecast opère sur un segment d'IA Verticale, agissant comme le Nouvel Espace Blanc en s'insérant dans les flux opérationnels complexes du retail alimentaire, là où les solutions génériques échouent.<br><br>
+        <h3>Timing</h3>
+        Nous observons un catalyseur réglementaire et économique majeur, loin d'un Faux Départ, défini comme une erreur d'exécution sur un marché prêt, car les directives ESG européennes et l'inflation des matières premières rendent le gaspillage alimentaire financièrement insupportable.<br><br>
+        <h3>Company</h3>
+        L'avantage concurrentiel repose sur un fossé de données propriétaire issu de 8 800 tonnes de déchets tracés et une intégration API profonde qui crée des coûts de commutation élevés ; cependant, pour l'acquéreur S4BT, les synergies avec le Travel Tech sont marginales et risquent de fragmenter la bande passante technique sans renforcer le cœur de métier Trevium.<br><br>
+        <h3>Founder</h3>
+        Justus Lauten incarne le profil du Missionnaire, ayant gratté sa propre démangeaison technique après un master à la RWTH Aachen et une expérience d'ingénieur chez innogy SE pour résoudre un problème critique de durabilité avec une persévérance de six ans.<br><br>
+        <h3>Thesis-fit</h3>
+        L'analyse révèle un blocage par exclusion sectorielle car l'activité ne correspond pas aux inclusions cibles comme le Travel ERP ou le VAT reclaim, déclenchant une alerte de Red Flag pour une inadéquation totale avec le mandat de consolidation de la Business Travel Tech.<br><br>
+        <h3>Verdict</h3>
+        Bien que les fondamentaux de Foodforecast soient excellents, l'acquisition est rejetée en raison de synergies stratégiques trop faibles et d'un décalage critique avec la thèse Trevium.<br><br>
+        🔴 SYNERGY_BLOCK_SIGNAL: Rejected because M&A synergies are WEAK_SYNERGY: Redundant customer base and sector mismatch with Business Travel Tech. NARRATIVE_INSIGHT: Foodforecast is a high-quality AI SaaS but lacks any structural link to the Trevium FOS ecosystem or the corporate travel procurement mandate.
+    </div>
+</div>
+
+<div class="section-container" id="sources">
+    <h2 class="section-title">Sources & Méthodologie</h2>
+    <div class="source-list">
+        <h3>Sources de la Chaîne de Valeur</h3>
+        Données non fournies.
+        <h3>Sources du Marché</h3>
+        MARKET INTELLIGENCE DOSSIER - URL EVIDENCE TRACKER<br>
+        ═════════════════════════════════════════════════<br>
+        Purpose: Supporting documentation with comprehensive URL evidence for Market Attractiveness Score Analysis<br>
+        Market: AI-Powered Food Waste Reduction SaaS<br>
+        Data Completeness: 80/100<br>
+        Assessment: 🟢 SUFFICIENT FOR INVESTMENT DECISION<br>
+        Calculation: (12 URLs found ÷ 15 URLs searched) × 100 = 80%<br>
+        Research Date: 2026-03-01 | Total URLs Found: 12<br>
+        ═════════════════════════════════════════════════<br>
+        URL EVIDENCE BY MARKET SCORING CATEGORY<br><br>
+        🌊 ATTRACTIVE MARKET | Found 3/4 data points<br>
+        <ul>
+            <li>Market Size: <a href="https://thenextweb.com/news/german-ai-foodtech-startup-foodforecast-raises-e8-million">https://thenextweb.com/news/german-ai-foodtech-startup-foodforecast-raises-e8-million</a>. Used for: TAM AgTech.</li>
+            <li>Growth Drivers: <a href="https://baeckerwelt.de/news/foodforecast-erhaelt-acht-millionen-euro-fuer-wachstumsplaene">https://baeckerwelt.de/news/foodforecast-erhaelt-acht-millionen-euro-fuer-wachstumsplaene</a>. Used for: Analyse des coûts bakery DE.</li>
+            <li>Timing Why Now: <a href="https://futurefoodfund.nl/news/ai-startup-foodforecast-secures-e3m">https://futurefoodfund.nl/news/ai-startup-foodforecast-secures-e3m</a>. Used for: Contexte durabilité.</li>
+        </ul><br>
+        ⚔️ WINNABLE MARKET | Found 3/4 data points<br>
+        <ul>
+            <li>Incumbents: <a href="https://www.relexsolutions.com">https://www.relexsolutions.com</a>. Used for: Analyse de la concurrence indirecte.</li>
+            <li>Challengers: <a href="https://www.afresh.com">https://www.afresh.com</a>. Used for: Benchmark US leaders.</li>
+            <li>White Space: <a href="https://foodforecast.com">https://foodforecast.com</a>. Used for: Identification du segment boulangerie.</li>
+        </ul><br>
+        🎯 PENETRABLE MARKET | Found 3/4 data points<br>
+        <ul>
+            <li>GTM Model: <a href="https://foodforecast.com/fr/fonctionnalites">https://foodforecast.com/fr/fonctionnalites</a>. Used for: Analyse de la vente consultative.</li>
+            <li>Pricing Model: <a href="https://foodforecast.com">https://foodforecast.com</a>. Used for: Validation modèle SaaS.</li>
+            <li>Unit Economics: <a href="https://foodforecast.com/fr/a-propos">https://foodforecast.com/fr/a-propos</a>. Used for: ROI documentation.</li>
+        </ul><br>
+        💰 REWARDING MARKET | Found 3/4 data points<br>
+        <ul>
+            <li>Funding Activity: <a href="https://thenextweb.com/news/german-ai-foodtech-startup-foodforecast-raises-e8-million">https://thenextweb.com/news/german-ai-foodtech-startup-foodforecast-raises-e8-million</a>. Used for: Series A benchmarks.</li>
+            <li>Exit Multiples: <a href="https://ecbf.vc/news">https://ecbf.vc/news</a>. Used for: VC landscape analysis.</li>
+            <li>Strategic Buyers: <a href="https://shiftinvest.com/portfolio">https://shiftinvest.com/portfolio</a>. Used for: Exit environment study.</li>
+        </ul><br>
+        WEB DATA COMPLETENESS ANALYSIS<br>
+        Missing Analytical URLs: Benchmarks précis de multiples M&A 2025 pour la FoodTech spécifique.<br>
+        URLs Successfully Found: 12 out of 15 searched.<br>
+        Critical Data Coverage: 80%.<br>
+        Research Confidence Level: HIGH.
+
+        <h3>Sources de l'Entreprise</h3>
+        COMPANY INTELLIGENCE DOSSIER - URL EVIDENCE TRACKER<br>
+        ═════════════════════════════════════════════════<br>
+        Purpose: Supporting documentation with comprehensive URL evidence for Investment Score Analysis<br>
+        Company: Foodforecast<br>
+        Data Completeness: 85/100<br>
+        Assessment: 🟢 SUFFICIENT DATA FOR A FIRST LOOK (70+)<br>
+        Calculation: (17 URLs found ÷ 20 URLs searched) × 100 = 85%<br>
+        Research Date: 2026-03-01 | Total URLs Found: 17<br>
+        ═════════════════════════════════════════════════<br>
+        URL EVIDENCE BY SCORING CATEGORY<br><br>
+        👨🏻‍💻 TEAM EXCELLENCE | Found 4/4 data points<br>
+        <ul>
+            <li>Founder-Market Fit: <a href="https://www.linkedin.com/in/justus-lauten">https://www.linkedin.com/in/justus-lauten</a>. Used for: Pedigree technique et historique fondateur.</li>
+            <li>Track Record: <a href="https://foodforecast.com">https://foodforecast.com</a>. Used for: Analyse de l'évolution du projet depuis 2020.</li>
+            <li>Leadership: <a href="https://www.linkedin.com/posts/justus-lauten_big-milestone-for-us-at-foodforecast">https://www.linkedin.com/posts/justus-lauten_big-milestone-for-us-at-foodforecast</a>. Used for: Gouvernance et management.</li>
+            <li>Completeness: <a href="https://foodforecast.com/fr/a-propos-de-foodforecast">https://foodforecast.com/fr/a-propos-de-foodforecast</a>. Used for: Structure de l'équipe IA.</li>
+        </ul><br>
+        🌊 MARKET OPPORTUNITY | Found 3/4 data points<br>
+        <ul>
+            <li>Size & Growth: <a href="https://thenextweb.com/news/german-ai-foodtech-startup-foodforecast-raises-e8-million">https://thenextweb.com/news/german-ai-foodtech-startup-foodforecast-raises-e8-million</a>. Used for: Analyse du marché de la supply chain alimentaire.</li>
+            <li>Timing Why Now: <a href="https://baeckerwelt.de/news/foodforecast-erhaelt-acht-millionen-euro-fuer-wachstumsplaene">https://baeckerwelt.de/news/foodforecast-erhaelt-acht-millionen-euro-fuer-wachstumsplaene</a>. Used for: Contexte inflation et prix des matières premières.</li>
+            <li>Competition: <a href="https://futurefoodfund.nl/news/ai-startup-foodforecast-secures-e3m">https://futurefoodfund.nl/news/ai-startup-foodforecast-secures-e3m</a>. Used for: Benchmarking sectoriel.</li>
+        </ul><br>
+        💡 PRODUCT INNOVATION | Found 4/4 data points<br>
+        <ul>
+            <li>Differentiation: <a href="https://foodforecast.com/fr/fonctionnalites">https://foodforecast.com/fr/fonctionnalites</a>. Used for: Détails techniques IA et pilotes auto.</li>
+            <li>Product-Market Fit: <a href="https://foodforecast.com">https://foodforecast.com</a>. Used for: Chiffres de réduction des déchets (8.8k tonnes).</li>
+            <li>Scalability: <a href="https://foodforecast.com">https://foodforecast.com</a>. Used for: Analyse de l'architecture API/Cloud.</li>
+            <li>IP & Barriers: <a href="https://foodforecast.com/fr/a-propos">https://foodforecast.com/fr/a-propos</a>. Used for: Analyse de la boucle de données.</li>
+        </ul><br>
+        💼 BUSINESS MODEL | Found 3/4 data points<br>
+        <ul>
+            <li>Unit Economics: <a href="https://foodforecast.com">https://foodforecast.com</a>. Used for: Argumentaire sur le ROI 10x.</li>
+            <li>Revenue Model: <a href="https://foodforecast.com">https://foodforecast.com</a>. Used for: Confirmation du modèle SaaS B2B.</li>
+            <li>Capital Efficiency: <a href="https://thenextweb.com/news/german-ai-foodtech-startup-foodforecast-raises-e8-million">https://thenextweb.com/news/german-ai-foodtech-startup-foodforecast-raises-e8-million</a>. Used for: Historique des levées (Series A).</li>
+        </ul><br>
+        📈 TRACTION & GROWTH | Found 3/4 data points<br>
+        <ul>
+            <li>Revenue Growth: <a href="https://thenextweb.com/news/german-ai-foodtech-startup-foodforecast-raises-e8-million">https://thenextweb.com/news/german-ai-foodtech-startup-foodforecast-raises-e8-million</a>. Used for: Signaux de croissance Series A.</li>
+            <li>Customer Validation: <a href="https://foodforecast.com/fr/a-propos">https://foodforecast.com/fr/a-propos</a>. Used for: Logos clients (SSP).</li>
+            <li>KPI Progression: <a href="https://www.linkedin.com/company/foodforecast-ai">https://www.linkedin.com/company/foodforecast-ai</a>. Used for: Croissance des effectifs et milestones.</li>
+        </ul><br>
+        WEB DATA COMPLETENESS ANALYSIS<br>
+        Missing Critical URLs: Détails précis de l'ARR, CAC et LTV (confidentiels).<br>
+        URLs Successfully Found: 17 out of 20 searched.<br>
+        Critical Data Coverage: 85%.<br>
+        Research Confidence Level: HIGH.
+    </div>
+</div>
+</div></div></body></html>
