@@ -196,7 +196,6 @@
         '<span style="font-family:\'DM Mono\',monospace;font-size:0.55rem;color:#9eaaba;padding:3px 6px;">' + name + '</span>';
       secs[j].insertBefore(ctrl, secs[j].firstChild);
     }
-    plShowToast("Mode édition actif — cliquez sur n'importe quel texte");
   }
 
   window.plToggleSection = function(btn) {
