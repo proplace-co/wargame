@@ -1,11 +1,6 @@
 /* PROPLACE LIVE EDITOR - v2.0
-   Usage: <script src="proplace-editor.js"
-     data-webhook="WEBHOOK_URL"
-     data-deal="DEAL_ID"
-     data-status="STATUS_PROFUND">
-   </script>
-
-   status values: SOURCED | CALL | CONSIDER | MONITOR | PASS | IN_PORTFOLIO
+   Fixes: custom modal (no native prompt), bold styling, mobile UX
+   Usage: <script src="proplace-editor.js" data-webhook="WEBHOOK_URL" data-deal="DEAL_ID"></script>
 */
 (function() {
   var currentScript = document.currentScript || (function() {
@@ -14,360 +9,298 @@
   })();
 
   var WEBHOOK_URL = currentScript.getAttribute("data-webhook") || "";
-  var DEAL_ID     = currentScript.getAttribute("data-deal")    || "";
-  var STATUS      = (currentScript.getAttribute("data-status") || "").toUpperCase();
+  var DEAL_ID     = currentScript.getAttribute("data-deal") || "";
+  var editMode    = false;
+  var savedHTML   = "";
 
-  var editMode = false;
-  var savedHTML = "";
+  /* ── STYLES ── */
+  var style = document.createElement("style");
+  style.textContent = [
+    /* Floating action bar */
+    "#plEditor{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;align-items:flex-end;gap:8px;font-family:'EB Garamond',Georgia,serif;}",
+    "#plToggle{background:#0f1f33;color:#fff;border:none;padding:11px 20px;font-size:13px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(15,31,51,0.25);font-family:'DM Mono','Courier New',monospace;letter-spacing:0.08em;text-transform:uppercase;}",
+    "#plActions{display:none;flex-direction:column;gap:6px;align-items:flex-end;}",
+    ".pl-action-btn{border:none;padding:9px 16px;font-size:11px;font-weight:500;cursor:pointer;font-family:'DM Mono','Courier New',monospace;letter-spacing:0.08em;text-transform:uppercase;transition:opacity 0.15s;}",
+    ".pl-btn-save{background:#185c38;color:#fff;}",
+    ".pl-btn-pdf{background:#183460;color:#fff;}",
+    ".pl-btn-section{background:#5a3a90;color:#fff;}",
+    ".pl-btn-cancel{background:#f4f5f7;color:#0b1929;border:1px solid #d4d9e2;}",
+    "#plToast{position:fixed;bottom:100px;right:24px;z-index:9999;background:#0f1f33;color:#fff;padding:11px 18px;font-size:12px;opacity:0;transition:opacity 0.25s;pointer-events:none;max-width:280px;font-family:'EB Garamond',Georgia,serif;font-style:italic;}",
+    /* Edit mode highlighting */
+    "[contenteditable]:focus{outline:2px solid #8fa8c8;outline-offset:2px;background:rgba(143,168,200,0.06);}",
+    "[contenteditable]:hover{outline:1px dashed #c0ccd8;}",
+    /* Section controls */
+    ".pl-section-ctrl{display:flex;gap:6px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px dashed #e4e7ed;}",
+    ".pl-ctrl-btn{padding:3px 10px;font-size:10px;border-radius:0;border:1px solid;background:#fff;cursor:pointer;font-family:'DM Mono','Courier New',monospace;letter-spacing:0.06em;text-transform:uppercase;}",
+    ".pl-hide-btn{color:#526070;border-color:#d4d9e2;}.pl-hide-btn:hover{background:#0f1f33;color:#fff;border-color:#0f1f33;}",
+    ".pl-del-btn{color:#7a1824;border-color:#ddb8be;}.pl-del-btn:hover{background:#7a1824;color:#fff;}",
+    ".pl-label-btn{color:#9eaaba;border-color:transparent;background:transparent;cursor:default;font-size:9px;}",
+    /* Custom modal */
+    "#plModal{position:fixed;inset:0;background:rgba(11,25,41,0.65);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;}",
+    "#plModalBox{background:#fff;padding:28px;max-width:440px;width:100%;box-shadow:0 8px 40px rgba(11,25,41,0.2);border-top:3px solid #0f1f33;}",
+    "#plModalTitle{font-family:'EB Garamond',Georgia,serif;font-size:1.2rem;font-weight:600;color:#0f1f33;margin:0 0 14px;}",
+    ".pl-modal-label{font-family:'DM Mono','Courier New',monospace;font-size:0.6rem;letter-spacing:0.14em;text-transform:uppercase;color:#526070;display:block;margin-bottom:5px;}",
+    ".pl-modal-input{width:100%;padding:9px 12px;border:1px solid #d4d9e2;font-size:14px;font-family:'EB Garamond',Georgia,serif;box-sizing:border-box;margin-bottom:14px;outline:none;}",
+    ".pl-modal-input:focus{border-color:#0f1f33;}",
+    ".pl-modal-input option{font-family:Georgia,serif;}",
+    "#plModalActions{display:flex;gap:8px;justify-content:flex-end;}",
+    ".pl-modal-ok{background:#0f1f33;color:#fff;border:none;padding:9px 18px;font-size:11px;font-weight:500;cursor:pointer;font-family:'DM Mono','Courier New',monospace;letter-spacing:0.08em;text-transform:uppercase;}",
+    ".pl-modal-cancel{background:#f4f5f7;color:#0b1929;border:1px solid #d4d9e2;padding:9px 18px;font-size:11px;font-weight:500;cursor:pointer;font-family:'DM Mono','Courier New',monospace;letter-spacing:0.08em;text-transform:uppercase;}"
+  ].join("");
+  document.head.appendChild(style);
 
-  /* ── Labels contextuels ── */
-  function getMainLabel() {
-    if (STATUS === "IN_PORTFOLIO") return "Gérer le portfolio";
-    if (STATUS === "CALL" || STATUS === "CONSIDER") return "Démarrer la Due Diligence";
-    return "Éditer le mémo";
-  }
-  function getMainIcon() {
-    if (STATUS === "IN_PORTFOLIO") return "&#128202;";
-    if (STATUS === "CALL" || STATUS === "CONSIDER") return "&#128270;";
-    return "&#9998;";
-  }
+  /* ── MODAL HELPER ── */
+  function showModal(config, callback) {
+    var existing = document.getElementById("plModal");
+    if (existing) existing.remove();
 
-  /* ── CSS injecté ── */
-  function injectStyles() {
-    var style = document.createElement("style");
-    style.textContent = [
-      "#pl-editor-root {",
-      "  position:fixed;bottom:28px;right:28px;z-index:9999;",
-      "  display:flex;flex-direction:column;align-items:flex-end;gap:8px;",
-      "  font-family:'EB Garamond',Georgia,serif;",
-      "}",
-      "#pl-toggle {",
-      "  background:#0f1f33;color:#fff;border:none;",
-      "  border-radius:3px;padding:10px 20px;",
-      "  font-family:'DM Mono','Courier New',monospace;",
-      "  font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;font-weight:600;",
-      "  cursor:pointer;box-shadow:0 4px 20px rgba(15,31,51,0.25);",
-      "  display:flex;align-items:center;gap:8px;",
-      "  transition:background 0.15s;",
-      "}",
-      "#pl-toggle:hover { background:#1e3553; }",
-      "#pl-toggle.editing { background:#f59e0b;color:#0f1f33; }",
-      ".pl-action-btn {",
-      "  border:none;border-radius:3px;padding:8px 16px;",
-      "  font-family:'DM Mono','Courier New',monospace;",
-      "  font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;font-weight:600;",
-      "  cursor:pointer;transition:all 0.15s;",
-      "}",
-      ".pl-btn-save   { background:#185c38;color:#fff; }",
-      ".pl-btn-save:hover   { background:#14532d; }",
-      ".pl-btn-upload { background:#183460;color:#fff; }",
-      ".pl-btn-upload:hover { background:#1e3a6e; }",
-      ".pl-btn-add    { background:#4f46e5;color:#fff; }",
-      ".pl-btn-add:hover    { background:#4338ca; }",
-      ".pl-btn-cancel { background:#f4f5f7;color:#0b1929;border:1px solid #d4d9e2; }",
-      ".pl-btn-cancel:hover { background:#e4e7ed; }",
-      "#pl-actions { display:none;flex-direction:column;gap:6px;align-items:flex-end; }",
-      "#pl-toast {",
-      "  position:fixed;bottom:100px;right:28px;z-index:9999;",
-      "  background:#0f1f33;color:#fff;",
-      "  padding:10px 18px;border-radius:3px;",
-      "  font-family:'DM Mono','Courier New',monospace;",
-      "  font-size:0.6rem;letter-spacing:0.06em;",
-      "  opacity:0;transition:opacity 0.3s;pointer-events:none;max-width:280px;",
-      "}",
-      "/* Edit highlights */",
-      "[contenteditable]:focus { background:#fefce8 !important;outline:none !important; }",
-      ".pl-section-ctrl {",
-      "  display:flex;gap:6px;margin-bottom:10px;padding-bottom:10px;",
-      "  border-bottom:1px dashed #e4e7ed;",
-      "}",
-      ".pl-ctrl-btn {",
-      "  padding:3px 10px;font-family:'DM Mono',monospace;font-size:0.55rem;",
-      "  letter-spacing:0.08em;text-transform:uppercase;font-weight:600;",
-      "  border-radius:2px;cursor:pointer;border:1px solid #d4d9e2;",
-      "  background:#f4f5f7;color:#526070;",
-      "}",
-      ".pl-ctrl-btn.danger { background:#faeef0;border-color:#ddb8be;color:#7a1824; }",
-    ].join("\n");
-    document.head.appendChild(style);
+    var modal = document.createElement("div");
+    modal.id = "plModal";
+
+    var fieldsHTML = (config.fields || []).map(function(f) {
+      if (f.type === "select") {
+        var opts = f.options.map(function(o) {
+          return "<option value='" + o.value + "'>" + o.label + "</option>";
+        }).join("");
+        return "<label class='pl-modal-label'>" + f.label + "</label><select class='pl-modal-input' data-field='" + f.key + "'>" + opts + "</select>";
+      }
+      return "<label class='pl-modal-label'>" + f.label + "</label><input class='pl-modal-input' type='text' placeholder='" + (f.placeholder || "") + "' data-field='" + f.key + "'>";
+    }).join("");
+
+    modal.innerHTML = "<div id='plModalBox'><h2 id='plModalTitle'>" + config.title + "</h2>" + fieldsHTML + "<div id='plModalActions'><button class='pl-modal-cancel'>Annuler</button><button class='pl-modal-ok'>Confirmer</button></div></div>";
+    document.body.appendChild(modal);
+
+    modal.querySelector(".pl-modal-cancel").onclick = function() { modal.remove(); };
+    modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+    modal.querySelector(".pl-modal-ok").onclick = function() {
+      var result = {};
+      modal.querySelectorAll("[data-field]").forEach(function(el) {
+        result[el.getAttribute("data-field")] = el.value;
+      });
+      modal.remove();
+      callback(result);
+    };
+    /* Focus first input */
+    var first = modal.querySelector("input, select");
+    if (first) setTimeout(function() { first.focus(); }, 50);
   }
 
-  /* ── DOM ── */
+  /* ── INIT ── */
   function init() {
-    injectStyles();
-
-    var root = document.createElement("div");
-    root.id = "pl-editor-root";
-
-    /* Bouton principal */
-    var toggle = document.createElement("button");
-    toggle.id = "pl-toggle";
-    toggle.innerHTML = getMainIcon() + " <span id='pl-label'>" + getMainLabel() + "</span>";
-    toggle.onclick = plToggleEdit;
-    root.appendChild(toggle);
-
-    /* Actions panel */
-    var actions = document.createElement("div");
-    actions.id = "pl-actions";
-
-    var btnSave = document.createElement("button");
-    btnSave.className = "pl-action-btn pl-btn-save";
-    btnSave.innerHTML = "&#128190; Sauvegarder &amp; Sync";
-    btnSave.onclick = plSaveChanges;
-    actions.appendChild(btnSave);
-
-    var btnUpload = document.createElement("button");
-    btnUpload.className = "pl-action-btn pl-btn-upload";
-    btnUpload.innerHTML = "&#128196; Ajouter un document PDF";
-    btnUpload.onclick = function() { fileInput.click(); };
-    actions.appendChild(btnUpload);
-
-    var btnAdd = document.createElement("button");
-    btnAdd.className = "pl-action-btn pl-btn-add";
-    btnAdd.innerHTML = "+ Ajouter une section";
-    btnAdd.onclick = plAddSection;
-    actions.appendChild(btnAdd);
-
-    var btnCancel = document.createElement("button");
-    btnCancel.className = "pl-action-btn pl-btn-cancel";
-    btnCancel.innerHTML = "&#x2715; Annuler";
-    btnCancel.onclick = plCancelEdit;
-    actions.appendChild(btnCancel);
-
-    root.appendChild(actions);
-    document.body.appendChild(root);
-
-    /* Toast */
-    var toast = document.createElement("div");
-    toast.id = "pl-toast";
-    document.body.appendChild(toast);
-
-    /* File input caché — PDF uniquement */
-    fileInput = document.createElement("input");
-    fileInput.type = "file";
-    fileInput.accept = ".pdf,application/pdf";
-    fileInput.style.display = "none";
-    fileInput.onchange = handleFileUpload;
-    document.body.appendChild(fileInput);
+    var fab = document.createElement("div");
+    fab.id = "plEditor";
+    fab.innerHTML = [
+      "<button id='plToggle' onclick='plToggleEdit()'>",
+        "<span id='plIcon'>&#9998;</span><span id='plLabel'> &Eacute;diter le M&eacute;mo</span>",
+      "</button>",
+      "<div id='plActions'>",
+        "<button class='pl-action-btn pl-btn-save' onclick='plSaveChanges()'>&#128190; Sauvegarder &amp; Sync</button>",
+        "<button class='pl-action-btn pl-btn-pdf' onclick='plAttachExcel()'>&#128196; Lier un PDF / Excel</button>",
+        "<button class='pl-action-btn pl-btn-section' onclick='plAddSection()'>+ Ajouter une Section</button>",
+        "<button class='pl-action-btn pl-btn-cancel' onclick='plCancelEdit()'>&#x2715; Annuler</button>",
+      "</div>",
+      "<div id='plToast'></div>"
+    ].join("");
+    document.body.appendChild(fab);
   }
 
-  var fileInput;
-
-  /* ── Toggle edit mode ── */
+  /* ── TOGGLE ── */
   window.plToggleEdit = function() {
     editMode = !editMode;
-    var toggle = document.getElementById("pl-toggle");
-    var actions = document.getElementById("pl-actions");
     if (editMode) {
       savedHTML = document.documentElement.outerHTML;
-      toggle.classList.add("editing");
-      document.getElementById("pl-label").textContent = "En cours d'édition...";
-      actions.style.display = "flex";
-      enableEditing();
+      plEnableEditing();
     } else {
       plCancelEdit();
     }
   };
 
-  function enableEditing() {
-    var selectors = [
-      ".content-area p",".content-area h1",".content-area h2",".content-area h3",
-      ".content-area h4",".content-area li",".content-area td",".content-area th",
-      ".content-area b",".content-area span.text-block"
-    ].join(",");
-    var els = document.querySelectorAll(selectors);
-    for (var i = 0; i < els.length; i++) {
-      if (!els[i].closest("#pl-editor-root")) {
-        els[i].setAttribute("contenteditable","true");
-        els[i].style.cursor = "text";
+  function plEnableEditing() {
+    document.getElementById("plIcon").textContent = "\u25c9";
+    document.getElementById("plLabel").textContent = " En cours d'\u00e9dition\u2026";
+    document.getElementById("plActions").style.display = "flex";
+    document.getElementById("plToggle").style.background = "#c04a00";
+
+    /* Make text nodes editable */
+    var sel = ".content-area p, .content-area h1, .content-area h2, .content-area h3, .content-area h4, .content-area li, .content-area td, .content-area b, .content-area span.text-block, .content-area div.text-block";
+    document.querySelectorAll(sel).forEach(function(el) {
+      if (!el.closest("#plEditor") && !el.closest("#plModal")) {
+        el.setAttribute("contenteditable", "true");
+        el.style.cursor = "text";
       }
-    }
-    /* Contrôles de section */
-    var secs = document.querySelectorAll(".section-container");
-    for (var j = 0; j < secs.length; j++) {
-      if (secs[j].querySelector(".pl-section-ctrl")) continue;
-      var title = secs[j].querySelector(".section-title");
-      var name  = title ? title.textContent.trim().slice(0,35) : "Section";
-      var ctrl  = document.createElement("div");
+    });
+
+    /* Section controls */
+    document.querySelectorAll(".section-container").forEach(function(sec) {
+      if (sec.querySelector(".pl-section-ctrl")) return;
+      var title = sec.querySelector(".section-title");
+      var name = title ? title.textContent.trim().slice(0, 36) : "Section";
+      var ctrl = document.createElement("div");
       ctrl.className = "pl-section-ctrl";
-      ctrl.innerHTML =
-        '<button class="pl-ctrl-btn" onclick="plToggleSection(this)" data-hidden="false">&#128065; Masquer</button>' +
-        '<button class="pl-ctrl-btn danger" onclick="plDeleteSection(this)">&#x2715; Supprimer</button>' +
-        '<span style="font-family:\'DM Mono\',monospace;font-size:0.55rem;color:#9eaaba;padding:3px 6px;">' + name + '</span>';
-      secs[j].insertBefore(ctrl, secs[j].firstChild);
-    }
+      ctrl.innerHTML = [
+        "<button class='pl-ctrl-btn pl-hide-btn' data-hidden='false' onclick='plToggleSection(this)'>&#128065; Masquer</button>",
+        "<button class='pl-ctrl-btn pl-del-btn' onclick='plDeleteSection(this)'>&#x2715; Supprimer</button>",
+        "<span class='pl-ctrl-btn pl-label-btn'>" + name + "</span>"
+      ].join("");
+      sec.insertBefore(ctrl, sec.firstChild);
+    });
   }
 
   window.plToggleSection = function(btn) {
     var sec = btn.closest(".section-container");
-    var isHidden = btn.dataset.hidden === "true";
-    var children = sec.children;
-    for (var i = 0; i < children.length; i++) {
-      if (!children[i].classList.contains("pl-section-ctrl")) {
-        children[i].style.opacity = isHidden ? "1" : "0.1";
-        children[i].style.pointerEvents = isHidden ? "" : "none";
+    var hidden = btn.dataset.hidden === "true";
+    Array.from(sec.children).forEach(function(c) {
+      if (!c.classList.contains("pl-section-ctrl")) {
+        c.style.opacity = hidden ? "1" : "0.1";
+        c.style.pointerEvents = hidden ? "" : "none";
       }
-    }
-    btn.dataset.hidden = isHidden ? "false" : "true";
-    btn.innerHTML = isHidden ? "&#128065; Masquer" : "&#128683; Masqué";
-    btn.style.background = isHidden ? "#f4f5f7" : "#0f1f33";
-    btn.style.color = isHidden ? "#526070" : "#fff";
+    });
+    btn.dataset.hidden = hidden ? "false" : "true";
+    btn.textContent = hidden ? "\ud83d\udc41 Masquer" : "\ud83d\udeab Masqu\u00e9";
+    btn.style.background = hidden ? "" : "#0f1f33";
+    btn.style.color = hidden ? "" : "#fff";
   };
 
   window.plDeleteSection = function(btn) {
     var sec = btn.closest(".section-container");
-    var t = sec.querySelector(".section-title");
-    if (!confirm("Supprimer : " + (t ? t.textContent.trim() : "cette section") + " ?")) return;
-    sec.remove();
-    plShowToast("Section supprimée");
+    var title = sec.querySelector(".section-title");
+    var name = title ? title.textContent.trim() : "cette section";
+    showModal({
+      title: "Supprimer \u201c" + name + "\u201d ?",
+      fields: []
+    }, function() {
+      sec.remove();
+      plShowToast("Section supprim\u00e9e");
+    });
   };
 
-  /* ── Ajout de section ── */
+  /* ── ADD SECTION ── */
   window.plAddSection = function() {
-    var choice = prompt("Type de section :\n1 - Texte libre\n2 - Tableau financier\n3 - Risk flags\n4 - Lien fichier externe");
-    if (!choice) return;
-    var sec = document.createElement("div");
-    sec.className = "section-container";
-    var c = choice.charAt(0);
-    if (c === "1") {
-      sec.innerHTML = '<h2 class="section-title" contenteditable="true">Nouvelle section</h2>' +
-        '<p class="text-block" contenteditable="true" style="line-height:1.7;">Écrivez votre contenu ici...</p>';
-    } else if (c === "2") {
-      sec.innerHTML = '<h2 class="section-title" contenteditable="true">Tableau financier</h2>' +
-        '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.88rem;">' +
-        '<thead><tr style="background:#f4f5f7;"><th contenteditable="true" style="padding:10px;text-align:left;border-bottom:2px solid #d4d9e2;">Métrique</th>' +
-        '<th contenteditable="true" style="padding:10px;text-align:right;border-bottom:2px solid #d4d9e2;">A1</th>' +
-        '<th contenteditable="true" style="padding:10px;text-align:right;border-bottom:2px solid #d4d9e2;">A2</th>' +
-        '<th contenteditable="true" style="padding:10px;text-align:right;border-bottom:2px solid #d4d9e2;">A3</th></tr></thead>' +
-        '<tbody><tr><td contenteditable="true" style="padding:10px;font-weight:600;border-bottom:1px solid #e4e7ed;">Revenue (M€)</td>' +
-        '<td contenteditable="true" style="padding:10px;text-align:right;border-bottom:1px solid #e4e7ed;">—</td>' +
-        '<td contenteditable="true" style="padding:10px;text-align:right;border-bottom:1px solid #e4e7ed;">—</td>' +
-        '<td contenteditable="true" style="padding:10px;text-align:right;border-bottom:1px solid #e4e7ed;">—</td></tr></tbody>' +
-        '</table></div>';
-    } else if (c === "3") {
-      sec.innerHTML = '<h2 class="section-title" contenteditable="true">Risk Flags</h2>' +
-        '<div style="background:#faeef0;border-left:3px solid #7a1824;padding:10px 14px;margin-bottom:8px;font-size:0.88rem;color:#7a1824;" contenteditable="true">🚨 Nouveau risk flag</div>' +
-        '<div style="background:#e8f4ee;border-left:3px solid #185c38;padding:10px 14px;font-size:0.88rem;color:#185c38;" contenteditable="true">✅ Signal positif</div>';
-    } else if (c === "4") {
-      var url   = prompt("URL du fichier (Drive, GitHub, etc.) :"); if (!url) return;
-      var label = prompt("Nom du fichier :", "Document") || "Document";
-      var date  = new Date().toLocaleDateString("fr-FR");
-      sec.innerHTML = '<h2 class="section-title">Fichier lié</h2>' +
-        '<div style="background:#f4f5f7;border:1px solid #d4d9e2;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">' +
-        '<div><div style="font-family:\'EB Garamond\',serif;font-weight:600;font-size:0.95rem;" contenteditable="true">' + label + '</div>' +
-        '<div style="font-family:\'DM Mono\',monospace;font-size:0.58rem;color:#9eaaba;margin-top:4px;">Ajouté le ' + date + '</div></div>' +
-        '<a href="' + url + '" target="_blank" style="background:#0f1f33;color:#fff;padding:7px 16px;border-radius:2px;text-decoration:none;font-family:\'DM Mono\',monospace;font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;">Ouvrir →</a></div>';
-    }
-    var ca = document.querySelector(".content-area");
-    if (ca) { ca.appendChild(sec); sec.scrollIntoView({behavior:"smooth",block:"center"}); }
-    plShowToast("Section ajoutée");
+    showModal({
+      title: "Ajouter une section",
+      fields: [
+        {
+          key: "type",
+          label: "Type de section",
+          type: "select",
+          options: [
+            { value: "text",  label: "Texte libre" },
+            { value: "table", label: "Tableau financier" },
+            { value: "flags", label: "Risk flags & signaux" },
+            { value: "link",  label: "Lien PDF / Excel / Fichier" }
+          ]
+        },
+        { key: "title", label: "Titre de la section", placeholder: "Ex: Notes de Due Diligence" },
+        { key: "url",   label: "URL (si lien / PDF)", placeholder: "https://..." }
+      ]
+    }, function(res) {
+      if (!res.type) return;
+      var sec = document.createElement("div");
+      sec.className = "section-container";
+      var date = new Date().toLocaleDateString("fr-FR");
+
+      if (res.type === "text") {
+        sec.innerHTML = "<h2 class='section-title' contenteditable='true'>" + (res.title || "Nouvelle Section") + "</h2><p class='text-block' contenteditable='true' style='line-height:1.75;'>R\u00e9digez votre contenu ici\u2026</p>";
+      } else if (res.type === "table") {
+        sec.innerHTML = "<h2 class='section-title' contenteditable='true'>" + (res.title || "Mod\u00e8le Financier") + "</h2><div style='overflow-x:auto;'><table style='width:100%;border-collapse:collapse;font-size:0.9rem;'><thead><tr style='background:#0f1f33;'><th contenteditable='true' style='padding:10px;text-align:left;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;'>M\u00e9trique</th><th contenteditable='true' style='padding:10px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;'>Y1</th><th contenteditable='true' style='padding:10px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;'>Y2</th><th contenteditable='true' style='padding:10px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;'>Y3</th></tr></thead><tbody><tr><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-weight:600;'>Revenu (M\u20ac)</td><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;'>\u2014</td><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;'>\u2014</td><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;'>\u2014</td></tr></tbody></table></div>";
+      } else if (res.type === "flags") {
+        sec.innerHTML = "<h2 class='section-title' contenteditable='true'>" + (res.title || "Risk Flags") + "</h2><div style='background:#faf0f1;border-left:3px solid #7a1824;padding:12px 15px;font-size:0.92rem;color:#7a1824;margin-bottom:10px;font-style:italic;' contenteditable='true'>\u26a0 Nouveau risk flag \u2014 r\u00e9digez ici</div><div style='background:#f0faf5;border-left:3px solid #185c38;padding:12px 15px;font-size:0.92rem;color:#185c38;margin-bottom:0;font-style:italic;' contenteditable='true'>\u2705 Signal positif \u2014 r\u00e9digez ici</div>";
+      } else if (res.type === "link") {
+        var url = res.url || "#";
+        var linkTitle = res.title || "Document Li\u00e9";
+        sec.innerHTML = "<h2 class='section-title'>" + linkTitle + "</h2><div style='background:#f4f5f7;border:1px solid #d4d9e2;padding:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;'><div><div style='font-weight:600;font-size:15px;color:#0f1f33;' contenteditable='true'>" + linkTitle + "</div><div style='font-family:DM Mono,monospace;font-size:0.6rem;letter-spacing:0.1em;text-transform:uppercase;color:#9eaaba;margin-top:4px;'>Ajout\u00e9 le " + date + "</div></div><a href='" + url + "' target='_blank' style='background:#0f1f33;color:#fff;padding:9px 16px;font-family:DM Mono,monospace;font-size:0.65rem;letter-spacing:0.1em;text-transform:uppercase;text-decoration:none;'>Ouvrir \u2192</a></div>";
+      }
+
+      document.querySelector(".content-area").appendChild(sec);
+      plShowToast("Section ajout\u00e9e");
+      sec.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
   };
 
-  /* ── Upload PDF ── */
-  function handleFileUpload(e) {
-    var file = e.target.files[0];
-    if (!file) return;
-    /* Reset pour permettre re-upload du même fichier */
-    fileInput.value = "";
-    var note = prompt("Note sur ce document (optionnel — sera visible dans le mémo) :") || "";
-    plShowToast("Lecture du PDF en cours...");
-    var reader = new FileReader();
-    reader.onload = function(ev) {
-      var base64 = ev.target.result.split(",")[1];
-      plShowToast("Envoi à Stan pour analyse...");
-      fetch(WEBHOOK_URL, {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({
-          deal_id:     DEAL_ID,
-          source:      "document_upload",
-          file_base64: base64,
-          file_name:   file.name,
-          file_type:   file.type,
-          note:        note,
-          updated_at:  new Date().toISOString()
-        })
-      }).then(function(res) {
-        if (res.ok) {
-          plShowToast("Document reçu — Stan analyse et met à jour le mémo (30–60 sec)");
-        } else {
-          plShowToast("Erreur serveur — réessayez");
-        }
-      }).catch(function() {
-        plShowToast("Connexion échouée — vérifiez le webhook");
-      });
-    };
-    reader.onerror = function() { plShowToast("Erreur lecture fichier"); };
-    reader.readAsDataURL(file);
-  }
+  /* ── ATTACH PDF / EXCEL ── */
+  window.plAttachExcel = function() {
+    showModal({
+      title: "Lier un document",
+      fields: [
+        { key: "url",   label: "URL du document (Google Drive, PDF, Excel\u2026)", placeholder: "https://docs.google.com/\u2026" },
+        { key: "label", label: "Nom affich\u00e9", placeholder: "Ex: Mod\u00e8le Financier Q1 2025" }
+      ]
+    }, function(res) {
+      if (!res.url) return;
+      var label = res.label || "Document";
+      var date  = new Date().toLocaleDateString("fr-FR");
+      var block = document.getElementById("pl-excel-link");
+      if (!block) {
+        block = document.createElement("div");
+        block.id = "pl-excel-link";
+        block.className = "section-container";
+      }
+      block.innerHTML = "<h2 class='section-title'>Document li\u00e9</h2><div style='background:#f4f5f7;border:1px solid #d4d9e2;padding:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;'><div><div style='font-weight:600;font-size:15px;color:#0f1f33;' contenteditable='true'>" + label + "</div><div style='font-family:DM Mono,monospace;font-size:0.6rem;letter-spacing:0.1em;text-transform:uppercase;color:#9eaaba;margin-top:4px;'>Ajout\u00e9 le " + date + "</div></div><a href='" + res.url + "' target='_blank' style='background:#0f1f33;color:#fff;padding:9px 16px;font-family:DM Mono,monospace;font-size:0.65rem;letter-spacing:0.1em;text-transform:uppercase;text-decoration:none;'>Ouvrir \u2192</a></div>";
+      if (!block.parentElement) document.querySelector(".content-area").appendChild(block);
+      plShowToast("Document li\u00e9 \u2014 sauvegardez pour confirmer");
+      block.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  };
 
-  /* ── Save & Sync (live_editor) ── */
+  /* ── SAVE ── */
   window.plSaveChanges = function() {
-    plShowToast("Sauvegarde en cours...");
+    plShowToast("Sauvegarde en cours\u2026");
     var clone = document.documentElement.cloneNode(true);
-    /* Nettoyage avant envoi */
+    /* Strip editor UI */
+    ["#plEditor", "#plToast", "#plModal"].forEach(function(s) {
+      var el = clone.querySelector(s); if (el) el.remove();
+    });
     clone.querySelectorAll(".pl-section-ctrl").forEach(function(el) { el.remove(); });
     clone.querySelectorAll("[contenteditable]").forEach(function(el) {
       el.removeAttribute("contenteditable");
-      el.style.background = "";
       el.style.cursor = "";
+      el.style.outline = "";
+      el.style.background = "";
     });
-    var ed = clone.querySelector("#pl-editor-root"); if (ed) ed.remove();
-    var toast = clone.querySelector("#pl-toast"); if (toast) toast.remove();
-    var updatedHTML = "<!DOCTYPE html>\n" + clone.outerHTML;
-
+    var html = "<!DOCTYPE html>\n" + clone.outerHTML;
     fetch(WEBHOOK_URL, {
       method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({
-        deal_id:      DEAL_ID,
-        source:       "live_editor",
-        updated_html: updatedHTML,
-        updated_at:   new Date().toISOString()
-      })
-    }).then(function(res) {
-      if (res.ok) {
-        plShowToast("Mémo sauvegardé et synchronisé ✓");
-        plExitEditMode();
-      } else {
-        plShowToast("Erreur serveur — réessayez");
-      }
-    }).catch(function() {
-      plShowToast("Connexion échouée — vérifiez le webhook");
-    });
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deal_id: DEAL_ID, updated_html: html, updated_at: new Date().toISOString(), source: "live_editor_v2" })
+    }).then(function(r) {
+      if (r.ok) { plShowToast("\u2713 Sauvegard\u00e9 et synchronis\u00e9"); plExitEditMode(); }
+      else       { plShowToast("Erreur serveur \u2014 r\u00e9essayez"); }
+    }).catch(function() { plShowToast("Connexion \u00e9chou\u00e9e \u2014 v\u00e9rifiez le webhook"); });
   };
 
   window.plCancelEdit = function() {
-    if (savedHTML) {
-      document.open(); document.write(savedHTML); document.close();
-    }
+    document.open();
+    document.write(savedHTML);
+    document.close();
   };
 
   function plExitEditMode() {
     editMode = false;
-    var toggle = document.getElementById("pl-toggle"); if (!toggle) return;
-    toggle.classList.remove("editing");
-    document.getElementById("pl-label").textContent = getMainLabel();
-    document.getElementById("pl-actions").style.display = "none";
+    var icon   = document.getElementById("plIcon");    if (icon)   icon.textContent      = "\u270e";
+    var lbl    = document.getElementById("plLabel");   if (lbl)    lbl.textContent       = " \u00c9diter le M\u00e9mo";
+    var acts   = document.getElementById("plActions"); if (acts)   acts.style.display    = "none";
+    var toggle = document.getElementById("plToggle");  if (toggle) toggle.style.background = "#0f1f33";
     document.querySelectorAll("[contenteditable]").forEach(function(el) {
-      if (!el.closest("#pl-editor-root")) {
+      if (!el.closest("#plEditor")) {
         el.removeAttribute("contenteditable");
-        el.style.background = "";
         el.style.cursor = "";
+        el.style.outline = "";
+        el.style.background = "";
       }
     });
     document.querySelectorAll(".pl-section-ctrl").forEach(function(el) { el.remove(); });
   }
 
-  /* ── Toast ── */
   function plShowToast(msg) {
-    var t = document.getElementById("pl-toast"); if (!t) return;
-    t.textContent = msg; t.style.opacity = "1";
-    clearTimeout(window._plToastTimer);
-    window._plToastTimer = setTimeout(function() { t.style.opacity = "0"; }, 3500);
+    var t = document.getElementById("plToast");
+    if (!t) return;
+    t.textContent = msg;
+    t.style.opacity = "1";
+    clearTimeout(window._plTimer);
+    window._plTimer = setTimeout(function() { t.style.opacity = "0"; }, 3200);
   }
 
-  /* ── Init ── */
+  /* ── BOOT ── */
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
   } else {
