@@ -1,5 +1,11 @@
-/* PROPLACE LIVE EDITOR - v1.0
-   Usage: <script src="proplace-editor.js" data-webhook="WEBHOOK_URL" data-deal="DEAL_ID"></script>
+/* PROPLACE LIVE EDITOR - v2.0
+   Usage: <script src="proplace-editor.js"
+     data-webhook="WEBHOOK_URL"
+     data-deal="DEAL_ID"
+     data-status="STATUS_PROFUND">
+   </script>
+
+   status values: SOURCED | CALL | CONSIDER | MONITOR | PASS | IN_PORTFOLIO
 */
 (function() {
   var currentScript = document.currentScript || (function() {
@@ -8,76 +14,189 @@
   })();
 
   var WEBHOOK_URL = currentScript.getAttribute("data-webhook") || "";
-  var DEAL_ID = currentScript.getAttribute("data-deal") || "";
+  var DEAL_ID     = currentScript.getAttribute("data-deal")    || "";
+  var STATUS      = (currentScript.getAttribute("data-status") || "").toUpperCase();
+
   var editMode = false;
   var savedHTML = "";
 
-  function init() {
-    var fab = document.createElement("div");
-    fab.innerHTML = '<div id="plEditor" style="position:fixed;bottom:28px;right:28px;z-index:9999;display:flex;flex-direction:column;align-items:flex-end;gap:10px;font-family:Segoe UI,system-ui,sans-serif;">'
-      + '<button id="plToggle" onclick="plToggleEdit()" style="background:#0f172a;color:white;border:none;border-radius:50px;padding:12px 22px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 24px rgba(0,0,0,0.2);display:flex;align-items:center;gap:8px;font-family:inherit;">'
-      + '<span id="plIcon">&#9998;</span><span id="plLabel"> Edit Memo</span></button>'
-      + '<div id="plActions" style="display:none;flex-direction:column;gap:8px;align-items:flex-end;">'
-      + '<button onclick="plSaveChanges()" style="background:#16a34a;color:white;border:none;border-radius:50px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;box-shadow:0 4px 16px rgba(22,163,74,0.3);">&#128190; Save &amp; Sync</button>'
-      + '<button onclick="plAttachExcel()" style="background:#2563eb;color:white;border:none;border-radius:50px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">&#128206; Link Excel</button>'
-      + '<button onclick="plAddSection()" style="background:#6366f1;color:white;border:none;border-radius:50px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">+ Add Section</button>'
-      + '<button onclick="plCancelEdit()" style="background:#f1f5f9;color:#475569;border:none;border-radius:50px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">&#x2715; Cancel</button>'
-      + '</div></div>'
-      + '<div id="plToast" style="position:fixed;bottom:110px;right:28px;z-index:9999;background:#0f172a;color:white;padding:12px 20px;border-radius:10px;font-size:13px;opacity:0;transition:opacity 0.3s;pointer-events:none;max-width:300px;font-family:Segoe UI,system-ui,sans-serif;"></div>';
-    document.body.appendChild(fab);
+  /* ── Labels contextuels ── */
+  function getMainLabel() {
+    if (STATUS === "IN_PORTFOLIO") return "Gérer le portfolio";
+    if (STATUS === "CALL" || STATUS === "CONSIDER") return "Démarrer la Due Diligence";
+    return "Éditer le mémo";
+  }
+  function getMainIcon() {
+    if (STATUS === "IN_PORTFOLIO") return "&#128202;";
+    if (STATUS === "CALL" || STATUS === "CONSIDER") return "&#128270;";
+    return "&#9998;";
   }
 
+  /* ── CSS injecté ── */
+  function injectStyles() {
+    var style = document.createElement("style");
+    style.textContent = [
+      "#pl-editor-root {",
+      "  position:fixed;bottom:28px;right:28px;z-index:9999;",
+      "  display:flex;flex-direction:column;align-items:flex-end;gap:8px;",
+      "  font-family:'EB Garamond',Georgia,serif;",
+      "}",
+      "#pl-toggle {",
+      "  background:#0f1f33;color:#fff;border:none;",
+      "  border-radius:3px;padding:10px 20px;",
+      "  font-family:'DM Mono','Courier New',monospace;",
+      "  font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;font-weight:600;",
+      "  cursor:pointer;box-shadow:0 4px 20px rgba(15,31,51,0.25);",
+      "  display:flex;align-items:center;gap:8px;",
+      "  transition:background 0.15s;",
+      "}",
+      "#pl-toggle:hover { background:#1e3553; }",
+      "#pl-toggle.editing { background:#f59e0b;color:#0f1f33; }",
+      ".pl-action-btn {",
+      "  border:none;border-radius:3px;padding:8px 16px;",
+      "  font-family:'DM Mono','Courier New',monospace;",
+      "  font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;font-weight:600;",
+      "  cursor:pointer;transition:all 0.15s;",
+      "}",
+      ".pl-btn-save   { background:#185c38;color:#fff; }",
+      ".pl-btn-save:hover   { background:#14532d; }",
+      ".pl-btn-upload { background:#183460;color:#fff; }",
+      ".pl-btn-upload:hover { background:#1e3a6e; }",
+      ".pl-btn-add    { background:#4f46e5;color:#fff; }",
+      ".pl-btn-add:hover    { background:#4338ca; }",
+      ".pl-btn-cancel { background:#f4f5f7;color:#0b1929;border:1px solid #d4d9e2; }",
+      ".pl-btn-cancel:hover { background:#e4e7ed; }",
+      "#pl-actions { display:none;flex-direction:column;gap:6px;align-items:flex-end; }",
+      "#pl-toast {",
+      "  position:fixed;bottom:100px;right:28px;z-index:9999;",
+      "  background:#0f1f33;color:#fff;",
+      "  padding:10px 18px;border-radius:3px;",
+      "  font-family:'DM Mono','Courier New',monospace;",
+      "  font-size:0.6rem;letter-spacing:0.06em;",
+      "  opacity:0;transition:opacity 0.3s;pointer-events:none;max-width:280px;",
+      "}",
+      "/* Edit highlights */",
+      "[contenteditable]:focus { background:#fefce8 !important;outline:none !important; }",
+      ".pl-section-ctrl {",
+      "  display:flex;gap:6px;margin-bottom:10px;padding-bottom:10px;",
+      "  border-bottom:1px dashed #e4e7ed;",
+      "}",
+      ".pl-ctrl-btn {",
+      "  padding:3px 10px;font-family:'DM Mono',monospace;font-size:0.55rem;",
+      "  letter-spacing:0.08em;text-transform:uppercase;font-weight:600;",
+      "  border-radius:2px;cursor:pointer;border:1px solid #d4d9e2;",
+      "  background:#f4f5f7;color:#526070;",
+      "}",
+      ".pl-ctrl-btn.danger { background:#faeef0;border-color:#ddb8be;color:#7a1824; }",
+    ].join("\n");
+    document.head.appendChild(style);
+  }
+
+  /* ── DOM ── */
+  function init() {
+    injectStyles();
+
+    var root = document.createElement("div");
+    root.id = "pl-editor-root";
+
+    /* Bouton principal */
+    var toggle = document.createElement("button");
+    toggle.id = "pl-toggle";
+    toggle.innerHTML = getMainIcon() + " <span id='pl-label'>" + getMainLabel() + "</span>";
+    toggle.onclick = plToggleEdit;
+    root.appendChild(toggle);
+
+    /* Actions panel */
+    var actions = document.createElement("div");
+    actions.id = "pl-actions";
+
+    var btnSave = document.createElement("button");
+    btnSave.className = "pl-action-btn pl-btn-save";
+    btnSave.innerHTML = "&#128190; Sauvegarder &amp; Sync";
+    btnSave.onclick = plSaveChanges;
+    actions.appendChild(btnSave);
+
+    var btnUpload = document.createElement("button");
+    btnUpload.className = "pl-action-btn pl-btn-upload";
+    btnUpload.innerHTML = "&#128196; Ajouter un document PDF";
+    btnUpload.onclick = function() { fileInput.click(); };
+    actions.appendChild(btnUpload);
+
+    var btnAdd = document.createElement("button");
+    btnAdd.className = "pl-action-btn pl-btn-add";
+    btnAdd.innerHTML = "+ Ajouter une section";
+    btnAdd.onclick = plAddSection;
+    actions.appendChild(btnAdd);
+
+    var btnCancel = document.createElement("button");
+    btnCancel.className = "pl-action-btn pl-btn-cancel";
+    btnCancel.innerHTML = "&#x2715; Annuler";
+    btnCancel.onclick = plCancelEdit;
+    actions.appendChild(btnCancel);
+
+    root.appendChild(actions);
+    document.body.appendChild(root);
+
+    /* Toast */
+    var toast = document.createElement("div");
+    toast.id = "pl-toast";
+    document.body.appendChild(toast);
+
+    /* File input caché — PDF uniquement */
+    fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = ".pdf,application/pdf";
+    fileInput.style.display = "none";
+    fileInput.onchange = handleFileUpload;
+    document.body.appendChild(fileInput);
+  }
+
+  var fileInput;
+
+  /* ── Toggle edit mode ── */
   window.plToggleEdit = function() {
     editMode = !editMode;
+    var toggle = document.getElementById("pl-toggle");
+    var actions = document.getElementById("pl-actions");
     if (editMode) {
       savedHTML = document.documentElement.outerHTML;
-      plEnableEditing();
+      toggle.classList.add("editing");
+      document.getElementById("pl-label").textContent = "En cours d'édition...";
+      actions.style.display = "flex";
+      enableEditing();
     } else {
       plCancelEdit();
     }
   };
 
-  function plEnableEditing() {
-    document.getElementById("plIcon").innerHTML = "&#128065;";
-    document.getElementById("plLabel").textContent = " En cours...";
-    document.getElementById("plActions").style.display = "flex";
-    document.getElementById("plToggle").style.background = "#f59e0b";
-
-    var selectors = ".content-area p, .content-area h1, .content-area h2, .content-area h3, .content-area h4, .content-area li, .content-area td, .content-area th, .content-area b, .content-area span.text-block";
+  function enableEditing() {
+    var selectors = [
+      ".content-area p",".content-area h1",".content-area h2",".content-area h3",
+      ".content-area h4",".content-area li",".content-area td",".content-area th",
+      ".content-area b",".content-area span.text-block"
+    ].join(",");
     var els = document.querySelectorAll(selectors);
     for (var i = 0; i < els.length; i++) {
-      var el = els[i];
-      if (!el.closest("#plEditor")) {
-        el.setAttribute("contenteditable", "true");
-        el.style.outline = "none";
-        el.style.cursor = "text";
-        el.addEventListener("focus", plMakeFocus(el));
-        el.addEventListener("blur", plMakeBlur(el));
+      if (!els[i].closest("#pl-editor-root")) {
+        els[i].setAttribute("contenteditable","true");
+        els[i].style.cursor = "text";
       }
     }
-
+    /* Contrôles de section */
     var secs = document.querySelectorAll(".section-container");
     for (var j = 0; j < secs.length; j++) {
-      var sec = secs[j];
-      if (sec.querySelector(".pl-section-ctrl")) continue;
-      var titleEl = sec.querySelector(".section-title");
-      var titleText = titleEl ? titleEl.textContent.trim().slice(0, 40) : "Section";
-      var ctrl = document.createElement("div");
+      if (secs[j].querySelector(".pl-section-ctrl")) continue;
+      var title = secs[j].querySelector(".section-title");
+      var name  = title ? title.textContent.trim().slice(0,35) : "Section";
+      var ctrl  = document.createElement("div");
       ctrl.className = "pl-section-ctrl";
-      ctrl.style.cssText = "display:flex;gap:6px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px dashed #e2e8f0;";
-      ctrl.innerHTML = '<button onclick="plToggleSection(this)" data-hidden="false" style="padding:4px 12px;font-size:11px;border-radius:20px;border:1px solid #e2e8f0;background:#f8fafc;cursor:pointer;color:#64748b;font-weight:600;">&#128065; Hide</button>'
-        + '<button onclick="plDeleteSection(this)" style="padding:4px 12px;font-size:11px;border-radius:20px;border:1px solid #fecaca;background:#fef2f2;cursor:pointer;color:#ef4444;font-weight:600;">&#x2715; Remove</button>'
-        + '<span style="font-size:11px;color:#94a3b8;padding:4px 8px;font-style:italic;">' + titleText + '</span>';
-      sec.insertBefore(ctrl, sec.firstChild);
+      ctrl.innerHTML =
+        '<button class="pl-ctrl-btn" onclick="plToggleSection(this)" data-hidden="false">&#128065; Masquer</button>' +
+        '<button class="pl-ctrl-btn danger" onclick="plDeleteSection(this)">&#x2715; Supprimer</button>' +
+        '<span style="font-family:\'DM Mono\',monospace;font-size:0.55rem;color:#9eaaba;padding:3px 6px;">' + name + '</span>';
+      secs[j].insertBefore(ctrl, secs[j].firstChild);
     }
-    plShowToast("Edit mode actif — cliquez sur n'importe quel texte");
-  }
-
-  function plMakeFocus(el) {
-    return function() { el.style.background = "#fefce8"; el.style.borderRadius = "3px"; };
-  }
-  function plMakeBlur(el) {
-    return function() { el.style.background = ""; el.style.borderRadius = ""; };
+    plShowToast("Mode édition actif — cliquez sur n'importe quel texte");
   }
 
   window.plToggleSection = function(btn) {
@@ -86,125 +205,170 @@
     var children = sec.children;
     for (var i = 0; i < children.length; i++) {
       if (!children[i].classList.contains("pl-section-ctrl")) {
-        children[i].style.opacity = isHidden ? "1" : "0.12";
+        children[i].style.opacity = isHidden ? "1" : "0.1";
         children[i].style.pointerEvents = isHidden ? "" : "none";
       }
     }
     btn.dataset.hidden = isHidden ? "false" : "true";
-    btn.innerHTML = isHidden ? "&#128065; Hide" : "&#128683; Hidden";
-    btn.style.background = isHidden ? "#f8fafc" : "#0f172a";
-    btn.style.color = isHidden ? "#64748b" : "white";
+    btn.innerHTML = isHidden ? "&#128065; Masquer" : "&#128683; Masqué";
+    btn.style.background = isHidden ? "#f4f5f7" : "#0f1f33";
+    btn.style.color = isHidden ? "#526070" : "#fff";
   };
 
   window.plDeleteSection = function(btn) {
     var sec = btn.closest(".section-container");
-    var titleEl = sec.querySelector(".section-title");
-    var name = titleEl ? titleEl.textContent.trim() : "cette section";
-    if (!confirm("Supprimer : " + name + " ?")) return;
+    var t = sec.querySelector(".section-title");
+    if (!confirm("Supprimer : " + (t ? t.textContent.trim() : "cette section") + " ?")) return;
     sec.remove();
-    plShowToast("Section supprimee");
+    plShowToast("Section supprimée");
   };
 
+  /* ── Ajout de section ── */
   window.plAddSection = function() {
-    var choice = prompt("Type de section :\n1 - Texte libre\n2 - Tableau financier\n3 - Risk flags\n4 - Lien Excel");
+    var choice = prompt("Type de section :\n1 - Texte libre\n2 - Tableau financier\n3 - Risk flags\n4 - Lien fichier externe");
     if (!choice) return;
     var sec = document.createElement("div");
     sec.className = "section-container";
-    if (choice.charAt(0) === "1") {
-      sec.innerHTML = '<h2 class="section-title" contenteditable="true">Nouvelle Section</h2><p class="text-block" contenteditable="true" style="line-height:1.7;color:#334155;">Ecrivez votre contenu ici...</p>';
-    } else if (choice.charAt(0) === "2") {
-      sec.innerHTML = '<h2 class="section-title" contenteditable="true">Modele Financier</h2><div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.9em;"><thead><tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;"><th contenteditable="true" style="padding:10px;text-align:left;">Metric</th><th contenteditable="true" style="padding:10px;text-align:right;">Y1</th><th contenteditable="true" style="padding:10px;text-align:right;">Y2</th><th contenteditable="true" style="padding:10px;text-align:right;">Y3</th></tr></thead><tbody><tr><td contenteditable="true" style="padding:10px;font-weight:600;">Revenue (EUR M)</td><td contenteditable="true" style="padding:10px;text-align:right;">-</td><td contenteditable="true" style="padding:10px;text-align:right;">-</td><td contenteditable="true" style="padding:10px;text-align:right;">-</td></tr></tbody></table></div>';
-    } else if (choice.charAt(0) === "3") {
-      sec.innerHTML = '<h2 class="section-title" contenteditable="true">Risk Flags</h2><div style="background:#fffbeb;border-left:4px solid #f59e0b;padding:12px 15px;border-radius:0 4px 4px 0;font-size:0.85em;color:#92400e;" contenteditable="true">Nouveau risk flag</div><div style="background:#f0fdf4;border-left:4px solid #16a34a;padding:12px 15px;border-radius:0 4px 4px 0;font-size:0.95em;color:#14532d;margin-top:8px;" contenteditable="true">Nouveau signal positif</div>';
-    } else if (choice.charAt(0) === "4") {
-      var url = prompt("URL Excel / Google Sheets / Drive :");
-      if (!url) return;
-      var label = prompt("Nom du fichier :", "Financial Model") || "Financial Model";
-      var date = new Date().toLocaleDateString("fr-FR");
-      sec.innerHTML = '<h2 class="section-title">Modele Financier</h2><div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;"><div><div style="font-weight:600;font-size:14px;" contenteditable="true">' + label + '</div><div style="color:#64748b;font-size:12px;margin-top:4px;">Ajoute le ' + date + '</div></div><a href="' + url + '" target="_blank" style="background:#0f172a;color:white;padding:8px 18px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;">Ouvrir</a></div>';
+    var c = choice.charAt(0);
+    if (c === "1") {
+      sec.innerHTML = '<h2 class="section-title" contenteditable="true">Nouvelle section</h2>' +
+        '<p class="text-block" contenteditable="true" style="line-height:1.7;">Écrivez votre contenu ici...</p>';
+    } else if (c === "2") {
+      sec.innerHTML = '<h2 class="section-title" contenteditable="true">Tableau financier</h2>' +
+        '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.88rem;">' +
+        '<thead><tr style="background:#f4f5f7;"><th contenteditable="true" style="padding:10px;text-align:left;border-bottom:2px solid #d4d9e2;">Métrique</th>' +
+        '<th contenteditable="true" style="padding:10px;text-align:right;border-bottom:2px solid #d4d9e2;">A1</th>' +
+        '<th contenteditable="true" style="padding:10px;text-align:right;border-bottom:2px solid #d4d9e2;">A2</th>' +
+        '<th contenteditable="true" style="padding:10px;text-align:right;border-bottom:2px solid #d4d9e2;">A3</th></tr></thead>' +
+        '<tbody><tr><td contenteditable="true" style="padding:10px;font-weight:600;border-bottom:1px solid #e4e7ed;">Revenue (M€)</td>' +
+        '<td contenteditable="true" style="padding:10px;text-align:right;border-bottom:1px solid #e4e7ed;">—</td>' +
+        '<td contenteditable="true" style="padding:10px;text-align:right;border-bottom:1px solid #e4e7ed;">—</td>' +
+        '<td contenteditable="true" style="padding:10px;text-align:right;border-bottom:1px solid #e4e7ed;">—</td></tr></tbody>' +
+        '</table></div>';
+    } else if (c === "3") {
+      sec.innerHTML = '<h2 class="section-title" contenteditable="true">Risk Flags</h2>' +
+        '<div style="background:#faeef0;border-left:3px solid #7a1824;padding:10px 14px;margin-bottom:8px;font-size:0.88rem;color:#7a1824;" contenteditable="true">🚨 Nouveau risk flag</div>' +
+        '<div style="background:#e8f4ee;border-left:3px solid #185c38;padding:10px 14px;font-size:0.88rem;color:#185c38;" contenteditable="true">✅ Signal positif</div>';
+    } else if (c === "4") {
+      var url   = prompt("URL du fichier (Drive, GitHub, etc.) :"); if (!url) return;
+      var label = prompt("Nom du fichier :", "Document") || "Document";
+      var date  = new Date().toLocaleDateString("fr-FR");
+      sec.innerHTML = '<h2 class="section-title">Fichier lié</h2>' +
+        '<div style="background:#f4f5f7;border:1px solid #d4d9e2;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">' +
+        '<div><div style="font-family:\'EB Garamond\',serif;font-weight:600;font-size:0.95rem;" contenteditable="true">' + label + '</div>' +
+        '<div style="font-family:\'DM Mono\',monospace;font-size:0.58rem;color:#9eaaba;margin-top:4px;">Ajouté le ' + date + '</div></div>' +
+        '<a href="' + url + '" target="_blank" style="background:#0f1f33;color:#fff;padding:7px 16px;border-radius:2px;text-decoration:none;font-family:\'DM Mono\',monospace;font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;">Ouvrir →</a></div>';
     }
     var ca = document.querySelector(".content-area");
-    ca.appendChild(sec);
-    plShowToast("Section ajoutee");
-    sec.scrollIntoView({behavior: "smooth", block: "center"});
+    if (ca) { ca.appendChild(sec); sec.scrollIntoView({behavior:"smooth",block:"center"}); }
+    plShowToast("Section ajoutée");
   };
 
-  window.plAttachExcel = function() {
-    var url = prompt("URL Excel / Google Sheets / Drive :");
-    if (!url) return;
-    var label = prompt("Nom du fichier :", "Financial Model") || "Financial Model";
-    var date = new Date().toLocaleDateString("fr-FR");
-    var block = document.getElementById("pl-excel-link");
-    if (!block) {
-      block = document.createElement("div");
-      block.id = "pl-excel-link";
-      block.className = "section-container";
-    }
-    block.innerHTML = '<h2 class="section-title">Modele Financier</h2><div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;"><div><div style="font-weight:600;font-size:14px;" contenteditable="true">' + label + '</div><div style="color:#64748b;font-size:12px;margin-top:4px;">Ajoute le ' + date + '</div></div><a href="' + url + '" target="_blank" style="background:#0f172a;color:white;padding:8px 18px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;">Ouvrir</a></div>';
-    if (!block.parentElement) document.querySelector(".content-area").appendChild(block);
-    plShowToast("Lien Excel ajoute - sauvegardez pour confirmer");
-    block.scrollIntoView({behavior: "smooth", block: "center"});
-  };
+  /* ── Upload PDF ── */
+  function handleFileUpload(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    /* Reset pour permettre re-upload du même fichier */
+    fileInput.value = "";
+    var note = prompt("Note sur ce document (optionnel — sera visible dans le mémo) :") || "";
+    plShowToast("Lecture du PDF en cours...");
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      var base64 = ev.target.result.split(",")[1];
+      plShowToast("Envoi à Stan pour analyse...");
+      fetch(WEBHOOK_URL, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          deal_id:     DEAL_ID,
+          source:      "document_upload",
+          file_base64: base64,
+          file_name:   file.name,
+          file_type:   file.type,
+          note:        note,
+          updated_at:  new Date().toISOString()
+        })
+      }).then(function(res) {
+        if (res.ok) {
+          plShowToast("Document reçu — Stan analyse et met à jour le mémo (30–60 sec)");
+        } else {
+          plShowToast("Erreur serveur — réessayez");
+        }
+      }).catch(function() {
+        plShowToast("Connexion échouée — vérifiez le webhook");
+      });
+    };
+    reader.onerror = function() { plShowToast("Erreur lecture fichier"); };
+    reader.readAsDataURL(file);
+  }
 
+  /* ── Save & Sync (live_editor) ── */
   window.plSaveChanges = function() {
     plShowToast("Sauvegarde en cours...");
     var clone = document.documentElement.cloneNode(true);
-    var ctrls = clone.querySelectorAll(".pl-section-ctrl");
-    for (var i = 0; i < ctrls.length; i++) { ctrls[i].remove(); }
-    var editables = clone.querySelectorAll("[contenteditable]");
-    for (var j = 0; j < editables.length; j++) {
-      editables[j].removeAttribute("contenteditable");
-      editables[j].style.background = "";
-      editables[j].style.borderRadius = "";
-      editables[j].style.cursor = "";
-    }
-    var ed = clone.querySelector("#plEditor"); if (ed) ed.remove();
-    var toast = clone.querySelector("#plToast"); if (toast) toast.remove();
+    /* Nettoyage avant envoi */
+    clone.querySelectorAll(".pl-section-ctrl").forEach(function(el) { el.remove(); });
+    clone.querySelectorAll("[contenteditable]").forEach(function(el) {
+      el.removeAttribute("contenteditable");
+      el.style.background = "";
+      el.style.cursor = "";
+    });
+    var ed = clone.querySelector("#pl-editor-root"); if (ed) ed.remove();
+    var toast = clone.querySelector("#pl-toast"); if (toast) toast.remove();
     var updatedHTML = "<!DOCTYPE html>\n" + clone.outerHTML;
+
     fetch(WEBHOOK_URL, {
       method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({deal_id: DEAL_ID, updated_html: updatedHTML, updated_at: new Date().toISOString(), source: "live_editor"})
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        deal_id:      DEAL_ID,
+        source:       "live_editor",
+        updated_html: updatedHTML,
+        updated_at:   new Date().toISOString()
+      })
     }).then(function(res) {
-      if (res.ok) { plShowToast("Sauvegarde et synchronise"); plExitEditMode(); }
-      else { plShowToast("Erreur serveur - reessayez"); }
-    }).catch(function() { plShowToast("Connexion echouee - verifiez le webhook"); });
+      if (res.ok) {
+        plShowToast("Mémo sauvegardé et synchronisé ✓");
+        plExitEditMode();
+      } else {
+        plShowToast("Erreur serveur — réessayez");
+      }
+    }).catch(function() {
+      plShowToast("Connexion échouée — vérifiez le webhook");
+    });
   };
 
   window.plCancelEdit = function() {
-    document.open();
-    document.write(savedHTML);
-    document.close();
+    if (savedHTML) {
+      document.open(); document.write(savedHTML); document.close();
+    }
   };
 
   function plExitEditMode() {
     editMode = false;
-    var icon = document.getElementById("plIcon"); if (icon) icon.innerHTML = "&#9998;";
-    var lbl = document.getElementById("plLabel"); if (lbl) lbl.textContent = " Edit Memo";
-    var actions = document.getElementById("plActions"); if (actions) actions.style.display = "none";
-    var toggle = document.getElementById("plToggle"); if (toggle) toggle.style.background = "#0f172a";
-    var editables = document.querySelectorAll("[contenteditable]");
-    for (var i = 0; i < editables.length; i++) {
-      if (!editables[i].closest("#plEditor")) {
-        editables[i].removeAttribute("contenteditable");
-        editables[i].style.background = "";
-        editables[i].style.borderRadius = "";
-        editables[i].style.cursor = "";
+    var toggle = document.getElementById("pl-toggle"); if (!toggle) return;
+    toggle.classList.remove("editing");
+    document.getElementById("pl-label").textContent = getMainLabel();
+    document.getElementById("pl-actions").style.display = "none";
+    document.querySelectorAll("[contenteditable]").forEach(function(el) {
+      if (!el.closest("#pl-editor-root")) {
+        el.removeAttribute("contenteditable");
+        el.style.background = "";
+        el.style.cursor = "";
       }
-    }
-    var ctrls = document.querySelectorAll(".pl-section-ctrl");
-    for (var j = 0; j < ctrls.length; j++) { ctrls[j].remove(); }
+    });
+    document.querySelectorAll(".pl-section-ctrl").forEach(function(el) { el.remove(); });
   }
 
+  /* ── Toast ── */
   function plShowToast(msg) {
-    var t = document.getElementById("plToast");
-    if (!t) return;
-    t.textContent = msg;
-    t.style.opacity = "1";
+    var t = document.getElementById("pl-toast"); if (!t) return;
+    t.textContent = msg; t.style.opacity = "1";
     clearTimeout(window._plToastTimer);
-    window._plToastTimer = setTimeout(function() { t.style.opacity = "0"; }, 3000);
+    window._plToastTimer = setTimeout(function() { t.style.opacity = "0"; }, 3500);
   }
 
+  /* ── Init ── */
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
   } else {
