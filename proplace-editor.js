@@ -1,4 +1,4 @@
-/* PROPLACE LIVE EDITOR - v3.0
+/* PROPLACE LIVE EDITOR - v3.1
    Usage: <script src="proplace-editor.js"
      data-webhook="WEBHOOK_URL"
      data-deal="DEAL_ID"
@@ -20,9 +20,9 @@
 
   /* ── LABEL CONTEXTUEL ── */
   function getMainLabel() {
-    if (STATUS === "IN_PORTFOLIO") return " G\u00e9rer le Portfolio";
-    if (STATUS === "CALL")        return " D\u00e9marrer la Due Diligence";
-    return " \u00c9diter le M\u00e9mo";
+    if (STATUS === "IN_PORTFOLIO") return " Gérer le Portfolio";
+    if (STATUS === "CALL")        return " Démarrer la Due Diligence";
+    return " Éditer le Mémo";
   }
   function getMainIcon() {
     if (STATUS === "IN_PORTFOLIO") return "&#128202;";
@@ -201,14 +201,15 @@
           updated_at:  new Date().toISOString()
         })
       }).then(function(r) {
-        if (r.ok) plShowToast("\u2713 Document re\u00e7u \u2014 rechargez la page dans 60 secondes pour voir la mise \u00e0 jour.");
+        if (r.ok) plShowToast("\u2713 Document re\u00e7u \u2014 rechargez dans 60 secondes pour voir la mise \u00e0 jour.");
         else       plShowToast("Erreur serveur \u2014 r\u00e9essayez");
       }).catch(function() { plShowToast("Connexion \u00e9chou\u00e9e \u2014 v\u00e9rifiez le webhook"); });
     };
   }
 
-  /* ── INIT ── */
+  /* ── INIT — FIX #1: guard contre double exécution ── */
   function init() {
+    if (document.getElementById("plEditor")) return; /* déjà monté — ne pas dupliquer */
     var fab = document.createElement("div");
     fab.id = "plEditor";
     fab.innerHTML = [
@@ -228,11 +229,20 @@
     document.body.appendChild(fab);
   }
 
-  /* ── TOGGLE ── */
+  /* ── TOGGLE — FIX #2: snapshot HTML sans l'éditeur ── */
   window.plToggleEdit = function() {
     editMode = !editMode;
-    if (editMode) { savedHTML = document.documentElement.outerHTML; plEnableEditing(); }
-    else          { plCancelEdit(); }
+    if (editMode) {
+      /* Détacher temporairement #plEditor avant de capturer outerHTML */
+      var editorEl = document.getElementById("plEditor");
+      var editorParent = editorEl ? editorEl.parentNode : null;
+      if (editorEl && editorParent) editorEl.remove();
+      savedHTML = document.documentElement.outerHTML;
+      if (editorEl && editorParent) editorParent.appendChild(editorEl);
+      plEnableEditing();
+    } else {
+      plCancelEdit();
+    }
   };
 
   window.plOpenPDFUpload = function() { showPDFModal(); };
@@ -346,7 +356,13 @@
     }).catch(function() { plShowToast("Connexion \u00e9chou\u00e9e"); });
   };
 
-  window.plCancelEdit = function() { document.open(); document.write(savedHTML); document.close(); };
+  /* ── CANCEL — FIX #3: strip #plEditor du snapshot avant document.write ── */
+  window.plCancelEdit = function() {
+    var clean = savedHTML.replace(/<div id="plEditor"[\s\S]*?<\/div>\s*(<\/body>)/, "$1");
+    document.open();
+    document.write(clean);
+    document.close();
+  };
 
   function plExitEditMode() {
     editMode = false;
