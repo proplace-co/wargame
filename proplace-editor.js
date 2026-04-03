@@ -1,10 +1,17 @@
-/* PROPLACE LIVE EDITOR - v3.2
+
+/* PROPLACE LIVE EDITOR - v3.3
    Usage: <script src="proplace-editor.js"
      data-webhook="WEBHOOK_URL"
      data-deal="DEAL_ID"
      data-status="STATUS_PROFUND">
    </script>
    Status values: NEW | SOURCED | CALL | CONSIDER | MONITOR | PASS | IN_PORTFOLIO
+
+   v3.3 fixes:
+   - MOBILE BUG #1: plCancelEdit utilise DOMParser au lieu de document.write
+     => le bouton Edit ne disparaît plus sur iOS Safari après Annuler / En cours d'édition
+   - MOBILE BUG #2: en mode édition sur mobile, la barre passe en full-width bas d'écran
+     + padding-bottom sur .content-area pour ne pas masquer le contenu derrière la barre
 */
 (function() {
   var currentScript = document.currentScript || (function() {
@@ -52,8 +59,8 @@
     ".pl-hide-btn{color:#526070;border-color:#d4d9e2;}.pl-hide-btn:hover{background:#0f1f33;color:#fff;border-color:#0f1f33;}",
     ".pl-del-btn{color:#7a1824;border-color:#ddb8be;}.pl-del-btn:hover{background:#7a1824;color:#fff;}",
     ".pl-label-btn{color:#9eaaba;border-color:transparent;background:transparent;cursor:default;font-size:9px;}",
-    "#plModal{position:fixed;inset:0;background:rgba(11,25,41,0.65);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;}",
-    "#plModalBox{background:#fff;padding:28px;max-width:460px;width:100%;box-shadow:0 8px 40px rgba(11,25,41,0.2);border-top:3px solid #0f1f33;}",
+    "#plModal{position:fixed;inset:0;background:rgba(11,25,41,0.65);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;}",
+    "#plModalBox{background:#fff;padding:28px;max-width:460px;width:100%;box-shadow:0 8px 40px rgba(11,25,41,0.2);border-top:3px solid #0f1f33;max-height:90vh;overflow-y:auto;}",
     "#plModalTitle{font-family:'EB Garamond',Georgia,serif;font-size:1.25rem;font-weight:600;color:#0f1f33;margin:0 0 6px;}",
     "#plModalSubtitle{font-family:'EB Garamond',Georgia,serif;font-size:0.85rem;font-style:italic;color:#526070;margin:0 0 18px;line-height:1.55;}",
     ".pl-modal-label{font-family:'DM Mono','Courier New',monospace;font-size:0.6rem;letter-spacing:0.14em;text-transform:uppercase;color:#526070;display:block;margin-bottom:5px;margin-top:12px;}",
@@ -68,7 +75,21 @@
     "#plModalActions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;}",
     ".pl-modal-ok{background:#0f1f33;color:#fff;border:none;padding:9px 18px;font-size:11px;font-weight:500;cursor:pointer;font-family:'DM Mono','Courier New',monospace;letter-spacing:0.08em;text-transform:uppercase;}",
     ".pl-modal-ok:disabled{background:#9eaaba;cursor:not-allowed;}",
-    ".pl-modal-cancel{background:#f4f5f7;color:#0b1929;border:1px solid #d4d9e2;padding:9px 18px;font-size:11px;font-weight:500;cursor:pointer;font-family:'DM Mono','Courier New',monospace;letter-spacing:0.08em;text-transform:uppercase;}"
+    ".pl-modal-cancel{background:#f4f5f7;color:#0b1929;border:1px solid #d4d9e2;padding:9px 18px;font-size:11px;font-weight:500;cursor:pointer;font-family:'DM Mono','Courier New',monospace;letter-spacing:0.08em;text-transform:uppercase;}",
+
+    /* ── FIX MOBILE BUG #2: barre pleine largeur en bas sur mobile ── */
+    "@media (max-width:1000px){",
+      "#plEditor{bottom:0!important;right:0!important;left:0!important;width:100%!important;",
+        "padding:8px 12px 12px!important;border-top:2px solid #d4d9e2!important;",
+        "background:#fff!important;box-shadow:0 -4px 20px rgba(15,31,51,0.12)!important;",
+        "align-items:stretch!important;gap:4px!important;}",
+      "#plToggle{width:100%!important;justify-content:center!important;box-shadow:none!important;}",
+      "#plActions{width:100%!important;align-items:stretch!important;}",
+      ".pl-action-btn{text-align:center!important;width:100%!important;padding:11px 16px!important;font-size:12px!important;}",
+      "#plToast{bottom:auto!important;top:16px!important;right:16px!important;left:16px!important;max-width:100%!important;}",
+    "}",
+    /* padding-bottom sur content-area quand en mode édition pour ne pas masquer le contenu */
+    "@media (max-width:1000px){body.pl-editing .content-area{padding-bottom:280px!important;}}"
   ].join("");
   document.head.appendChild(style);
 
@@ -150,7 +171,7 @@
     function handleFile(file) {
       if (!file || file.type !== "application/pdf") {
         fileInfo.style.color = "#7a1824";
-        fileInfo.textContent = "\u26a0 Fichier invalide \u2014 seuls les PDF sont accept\u00e9s.";
+        fileInfo.textContent = "\u26a0 Fichier invalide \u2014 seuls les PDF sont acceptés.";
         return;
       }
       fileInfo.style.color = "#526070";
@@ -165,7 +186,7 @@
       };
       reader.onerror = function() {
         fileInfo.style.color = "#7a1824";
-        fileInfo.textContent = "\u26a0 Erreur de lecture \u2014 r\u00e9essayez.";
+        fileInfo.textContent = "\u26a0 Erreur de lecture \u2014 réessayez.";
       };
       reader.readAsDataURL(file);
     }
@@ -201,16 +222,14 @@
           updated_at:  new Date().toISOString()
         })
       }).then(function(r) {
-        if (r.ok) plShowToast("\u2713 Document re\u00e7u \u2014 rechargez dans 60 secondes pour voir la mise \u00e0 jour.");
-        else       plShowToast("Erreur serveur \u2014 r\u00e9essayez");
-      }).catch(function() { plShowToast("Connexion \u00e9chou\u00e9e \u2014 v\u00e9rifiez le webhook"); });
+        if (r.ok) plShowToast("\u2713 Document reçu \u2014 rechargez dans 60 secondes pour voir la mise \u00e0 jour.");
+        else       plShowToast("Erreur serveur \u2014 réessayez");
+      }).catch(function() { plShowToast("Connexion \u00e9chou\u00e9e \u2014 vérifiez le webhook"); });
     };
   }
 
   /* ── MODAL LIER UN FICHIER (sans analyse) — v3.2 ──
      Envoie mode=link_file au webhook → Branch 3 dans Make
-     Le fichier est uploadé sur Drive sans passer par Claude/PDF.co
-     Une event card simple est injectée dans DD_FEED ou PM_FEED
   ── */
   function showLinkFileModal() {
     var existing = document.getElementById("plModal");
@@ -225,7 +244,7 @@
         "<p id='plModalSubtitle'>",
           "Le fichier sera <strong>sauvegardé dans le dossier Drive de la startup</strong> et un lien ",
           "sera ajouté au mémo. <strong>Aucune analyse IA</strong> ne sera effectuée. ",
-          "Tous les formats sont acceptés (PDF, Excel, Word, images…). ",
+          "Tous les formats sont acceptés (PDF, Excel, Word, images\u2026). ",
           "Pour une analyse automatique du contenu, utilisez « Analyser un document PDF ».",
         "</p>",
         "<div id='plDropZone'>",
@@ -271,7 +290,7 @@
       };
       reader.onerror = function() {
         fileInfo.style.color = "#7a1824";
-        fileInfo.textContent = "\u26a0 Erreur de lecture \u2014 r\u00e9essayez.";
+        fileInfo.textContent = "\u26a0 Erreur de lecture \u2014 réessayez.";
       };
       reader.readAsDataURL(file);
     }
@@ -300,22 +319,22 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           deal_id:     DEAL_ID,
-          source:      "link_file",      /* ← Branch 3 dans Make */
+          source:      "link_file",
           file_base64: selectedBase64,
           file_name:   selectedFile.name,
           file_type:   selectedFile.type,
-          section:     section,          /* "dd" ou "pm" */
+          section:     section,
           note:        note,
           updated_at:  new Date().toISOString()
         })
       }).then(function(r) {
-        if (r.ok) plShowToast("\u2713 Fichier lié — rechargez dans 15 secondes pour voir la mise à jour.");
-        else       plShowToast("Erreur serveur \u2014 r\u00e9essayez");
-      }).catch(function() { plShowToast("Connexion \u00e9chou\u00e9e \u2014 v\u00e9rifiez le webhook"); });
+        if (r.ok) plShowToast("\u2713 Fichier lié \u2014 rechargez dans 15 secondes pour voir la mise à jour.");
+        else       plShowToast("Erreur serveur \u2014 réessayez");
+      }).catch(function() { plShowToast("Connexion \u00e9chou\u00e9e \u2014 vérifiez le webhook"); });
     };
   }
 
-  /* ── INIT — FIX #1: guard contre double exécution ── */
+  /* ── INIT ── */
   function init() {
     if (document.getElementById("plEditor")) return;
     var fab = document.createElement("div");
@@ -337,7 +356,7 @@
     document.body.appendChild(fab);
   }
 
-  /* ── TOGGLE — FIX #2: snapshot HTML sans l'éditeur ── */
+  /* ── TOGGLE ── */
   window.plToggleEdit = function() {
     editMode = !editMode;
     if (editMode) {
@@ -353,14 +372,15 @@
   };
 
   window.plOpenPDFUpload = function() { showPDFModal(); };
-
-  /* ── plAttachLink — v3.2 : upload vers Drive via webhook mode=link_file ── */
-  window.plAttachLink = function() { showLinkFileModal(); };
+  window.plAttachLink    = function() { showLinkFileModal(); };
 
   function plEnableEditing() {
     document.getElementById("plToggle").classList.add("editing");
     document.getElementById("plLabel").textContent = " En cours d'\u00e9dition\u2026";
     document.getElementById("plActions").style.display = "flex";
+    /* FIX BUG #2: classe sur body pour le padding-bottom mobile */
+    document.body.classList.add("pl-editing");
+
     var sel = ".content-area p,.content-area h1,.content-area h2,.content-area h3,.content-area h4,.content-area li,.content-area td,.content-area b,.content-area span.text-block,.content-area div.text-block";
     document.querySelectorAll(sel).forEach(function(el) {
       if (!el.closest("#plEditor") && !el.closest("#plModal")) {
@@ -389,7 +409,7 @@
       }
     });
     btn.dataset.hidden = hidden ? "false" : "true";
-    btn.textContent    = hidden ? "\ud83d\udc41 Masquer" : "\ud83d\udeab Masqu\u00e9";
+    btn.textContent    = hidden ? "\ud83d\udc41 Masquer" : "\ud83d\udeab Masqué";
     btn.style.background = hidden ? "" : "#0f1f33"; btn.style.color = hidden ? "" : "#fff";
   };
 
@@ -397,7 +417,7 @@
     var sec = btn.closest(".section-container");
     var t   = sec.querySelector(".section-title");
     showModal({ title: "Supprimer \u201c" + (t ? t.textContent.trim() : "cette section") + "\u201d ?", fields: [] }, function() {
-      sec.remove(); plShowToast("Section supprim\u00e9e");
+      sec.remove(); plShowToast("Section supprimée");
     });
   };
 
@@ -416,14 +436,18 @@
       if (!res.type) return;
       var sec = document.createElement("div"); sec.className = "section-container";
       if (res.type === "text") {
-        sec.innerHTML = "<h2 class='section-title' contenteditable='true'>" + (res.title || "Nouvelle Section") + "</h2><p class='text-block' contenteditable='true' style='line-height:1.75;'>R\u00e9digez votre contenu ici\u2026</p>";
+        sec.innerHTML = "<h2 class='section-title' contenteditable='true'>" + (res.title || "Nouvelle Section") + "</h2><p class='text-block' contenteditable='true' style='line-height:1.75;'>Rédigez votre contenu ici\u2026</p>";
       } else if (res.type === "table") {
-        sec.innerHTML = "<h2 class='section-title' contenteditable='true'>" + (res.title || "Tableau Financier") + "</h2><div style='overflow-x:auto;'><table style='width:100%;border-collapse:collapse;font-size:0.9rem;'><thead><tr style='background:#0f1f33;'><th contenteditable='true' style='padding:10px;text-align:left;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;'>M\u00e9trique</th><th contenteditable='true' style='padding:10px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;'>Y1</th><th contenteditable='true' style='padding:10px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;'>Y2</th><th contenteditable='true' style='padding:10px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;'>Y3</th></tr></thead><tbody><tr><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-weight:600;'>Revenu (M\u20ac)</td><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;'>\u2014</td><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;'>\u2014</td><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;'>\u2014</td></tr></tbody></table></div>";
+        sec.innerHTML = "<h2 class='section-title' contenteditable='true'>" + (res.title || "Tableau Financier") + "</h2><div style='overflow-x:auto;'><table style='width:100%;border-collapse:collapse;font-size:0.9rem;'><thead><tr style='background:#0f1f33;'><th contenteditable='true' style='padding:10px;text-align:left;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;'>Métrique</th><th contenteditable='true' style='padding:10px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;'>Y1</th><th contenteditable='true' style='padding:10px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;'>Y2</th><th contenteditable='true' style='padding:10px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;'>Y3</th></tr></thead><tbody><tr><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-weight:600;'>Revenu (M\u20ac)</td><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;'>\u2014</td><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;'>\u2014</td><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;'>\u2014</td></tr></tbody></table></div>";
       } else if (res.type === "flags") {
         sec.innerHTML = "<h2 class='section-title' contenteditable='true'>" + (res.title || "Risk Flags") + "</h2><div style='background:#faf0f1;border-left:3px solid #7a1824;padding:12px 15px;font-size:0.92rem;color:#7a1824;margin-bottom:10px;font-style:italic;' contenteditable='true'>\u26a0 Nouveau risk flag</div><div style='background:#f0faf5;border-left:3px solid #185c38;padding:12px 15px;font-size:0.92rem;color:#185c38;font-style:italic;' contenteditable='true'>\u2705 Signal positif</div>";
       }
       document.querySelector(".content-area").appendChild(sec);
-      plShowToast("Section ajout\u00e9e"); sec.scrollIntoView({ behavior:"smooth", block:"center" });
+      plShowToast("Section ajoutée");
+      /* Sur mobile: scroll vers la nouvelle section en laissant de l'espace pour la barre */
+      setTimeout(function() {
+        sec.scrollIntoView({ behavior:"smooth", block:"start" });
+      }, 100);
     });
   };
 
@@ -435,26 +459,45 @@
     clone.querySelectorAll("[contenteditable]").forEach(function(el) {
       el.removeAttribute("contenteditable"); el.style.cursor = el.style.outline = el.style.background = "";
     });
+    /* Retirer la classe pl-editing du body dans le clone */
+    if (clone.body) clone.body.classList.remove("pl-editing");
     var html = "<!DOCTYPE html>\n" + clone.outerHTML;
     fetch(WEBHOOK_URL, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ deal_id: DEAL_ID, updated_html: html, updated_at: new Date().toISOString(), source: "live_editor" })
     }).then(function(r) {
-      if (r.ok) { plShowToast("\u2713 Sauvegard\u00e9 et synchronis\u00e9"); plExitEditMode(); }
-      else       { plShowToast("Erreur serveur \u2014 r\u00e9essayez"); }
+      if (r.ok) { plShowToast("\u2713 Sauvegardé et synchronisé"); plExitEditMode(); }
+      else       { plShowToast("Erreur serveur \u2014 réessayez"); }
     }).catch(function() { plShowToast("Connexion \u00e9chou\u00e9e"); });
   };
 
-  /* ── CANCEL — FIX #3: strip #plEditor du snapshot avant document.write ── */
+  /* ── CANCEL — v3.3: DOMParser au lieu de document.write ──
+     Sur mobile Safari, document.write ne ré-exécute pas les scripts externes
+     → le bouton disparaissait après Annuler.
+     Fix: on restaure uniquement .content-area via DOMParser.
+  ── */
   window.plCancelEdit = function() {
-    var clean = savedHTML.replace(/<div id="plEditor"[\s\S]*?<\/div>\s*(<\/body>)/, "$1");
-    document.open();
-    document.write(clean);
-    document.close();
+    if (savedHTML) {
+      try {
+        var parser = new DOMParser();
+        var savedDoc = parser.parseFromString(savedHTML, "text/html");
+        var savedContent = savedDoc.querySelector(".content-area");
+        var currentContent = document.querySelector(".content-area");
+        if (savedContent && currentContent) {
+          currentContent.innerHTML = savedContent.innerHTML;
+        }
+      } catch(e) {
+        /* fallback silencieux */
+      }
+    }
+    plExitEditMode();
+    savedHTML = "";
   };
 
   function plExitEditMode() {
     editMode = false;
+    /* FIX BUG #2: retirer la classe du body */
+    document.body.classList.remove("pl-editing");
     var toggle = document.getElementById("plToggle"); if (toggle) toggle.classList.remove("editing");
     var lbl    = document.getElementById("plLabel");  if (lbl)    lbl.innerHTML = getMainIcon() + getMainLabel();
     var acts   = document.getElementById("plActions"); if (acts)   acts.style.display = "none";
