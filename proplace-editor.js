@@ -1,4 +1,4 @@
-/* PROPLACE LIVE EDITOR - v3.1
+/* PROPLACE LIVE EDITOR - v3.2
    Usage: <script src="proplace-editor.js"
      data-webhook="WEBHOOK_URL"
      data-deal="DEAL_ID"
@@ -207,9 +207,117 @@
     };
   }
 
+  /* ── MODAL LIER UN FICHIER (sans analyse) — v3.2 ──
+     Envoie mode=link_file au webhook → Branch 3 dans Make
+     Le fichier est uploadé sur Drive sans passer par Claude/PDF.co
+     Une event card simple est injectée dans DD_FEED ou PM_FEED
+  ── */
+  function showLinkFileModal() {
+    var existing = document.getElementById("plModal");
+    if (existing) existing.remove();
+    var selectedFile   = null;
+    var selectedBase64 = null;
+    var modal = document.createElement("div");
+    modal.id  = "plModal";
+    modal.innerHTML = [
+      "<div id='plModalBox'>",
+        "<h2 id='plModalTitle'>&#128279; Lier un fichier (sans analyse)</h2>",
+        "<p id='plModalSubtitle'>",
+          "Le fichier sera <strong>sauvegardé dans le dossier Drive de la startup</strong> et un lien ",
+          "sera ajouté au mémo. <strong>Aucune analyse IA</strong> ne sera effectuée. ",
+          "Tous les formats sont acceptés (PDF, Excel, Word, images…). ",
+          "Pour une analyse automatique du contenu, utilisez « Analyser un document PDF ».",
+        "</p>",
+        "<div id='plDropZone'>",
+          "<p>&#128194; <strong>Cliquez ici</strong> ou glissez-déposez votre fichier</p>",
+          "<small>Tous formats acceptés &middot; Taille max recommandée : 20 Mo</small>",
+        "</div>",
+        "<div id='plFileInfo'></div>",
+        "<label class='pl-modal-label' style='margin-top:16px;'>Section de destination</label>",
+        "<select class='pl-modal-input' id='plLinkSection'>",
+          "<option value='dd'>Due Diligence</option>",
+          "<option value='pm'>Portfolio Company</option>",
+        "</select>",
+        "<label class='pl-modal-label'>Note sur ce fichier (optionnel)</label>",
+        "<input class='pl-modal-input' type='text' id='plLinkNote' placeholder='Ex : Modèle financier Q1 2025 — version définitive'>",
+        "<div id='plModalActions'>",
+          "<button class='pl-modal-cancel'>Annuler</button>",
+          "<button class='pl-modal-ok' id='plLinkConfirm' disabled>Lier le fichier &#x2192;</button>",
+        "</div>",
+      "</div>"
+    ].join("");
+    document.body.appendChild(modal);
+
+    var fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.style.display = "none";
+    document.body.appendChild(fileInput);
+
+    var dropZone   = document.getElementById("plDropZone");
+    var fileInfo   = document.getElementById("plFileInfo");
+    var confirmBtn = document.getElementById("plLinkConfirm");
+
+    function handleFile(file) {
+      if (!file) return;
+      fileInfo.style.color = "#526070";
+      fileInfo.textContent = "Lecture en cours\u2026";
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        selectedFile   = file;
+        selectedBase64 = ev.target.result.split(",")[1];
+        fileInfo.style.color = "#185c38";
+        fileInfo.textContent = "\u2713 " + file.name + " (" + Math.round(file.size / 1024) + " Ko)";
+        confirmBtn.disabled = false;
+      };
+      reader.onerror = function() {
+        fileInfo.style.color = "#7a1824";
+        fileInfo.textContent = "\u26a0 Erreur de lecture \u2014 r\u00e9essayez.";
+      };
+      reader.readAsDataURL(file);
+    }
+
+    dropZone.onclick  = function() { fileInput.click(); };
+    fileInput.onchange = function(e) { if (e.target.files[0]) handleFile(e.target.files[0]); fileInput.value = ""; };
+    dropZone.addEventListener("dragover",  function(e) { e.preventDefault(); dropZone.classList.add("dragover"); });
+    dropZone.addEventListener("dragleave", function()  { dropZone.classList.remove("dragover"); });
+    dropZone.addEventListener("drop", function(e) {
+      e.preventDefault(); dropZone.classList.remove("dragover");
+      if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+    });
+
+    function cleanup() { modal.remove(); fileInput.remove(); }
+    modal.querySelector(".pl-modal-cancel").onclick = cleanup;
+    modal.onclick = function(e) { if (e.target === modal) cleanup(); };
+
+    confirmBtn.onclick = function() {
+      if (!selectedBase64) return;
+      var note    = document.getElementById("plLinkNote").value    || "";
+      var section = document.getElementById("plLinkSection").value || "dd";
+      cleanup();
+      plShowToast("Envoi en cours\u2026 Le fichier sera lié au mémo dans quelques secondes.");
+      fetch(WEBHOOK_URL, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          deal_id:     DEAL_ID,
+          source:      "link_file",      /* ← Branch 3 dans Make */
+          file_base64: selectedBase64,
+          file_name:   selectedFile.name,
+          file_type:   selectedFile.type,
+          section:     section,          /* "dd" ou "pm" */
+          note:        note,
+          updated_at:  new Date().toISOString()
+        })
+      }).then(function(r) {
+        if (r.ok) plShowToast("\u2713 Fichier lié — rechargez dans 15 secondes pour voir la mise à jour.");
+        else       plShowToast("Erreur serveur \u2014 r\u00e9essayez");
+      }).catch(function() { plShowToast("Connexion \u00e9chou\u00e9e \u2014 v\u00e9rifiez le webhook"); });
+    };
+  }
+
   /* ── INIT — FIX #1: guard contre double exécution ── */
   function init() {
-    if (document.getElementById("plEditor")) return; /* déjà monté — ne pas dupliquer */
+    if (document.getElementById("plEditor")) return;
     var fab = document.createElement("div");
     fab.id = "plEditor";
     fab.innerHTML = [
@@ -233,7 +341,6 @@
   window.plToggleEdit = function() {
     editMode = !editMode;
     if (editMode) {
-      /* Détacher temporairement #plEditor avant de capturer outerHTML */
       var editorEl = document.getElementById("plEditor");
       var editorParent = editorEl ? editorEl.parentNode : null;
       if (editorEl && editorParent) editorEl.remove();
@@ -246,6 +353,9 @@
   };
 
   window.plOpenPDFUpload = function() { showPDFModal(); };
+
+  /* ── plAttachLink — v3.2 : upload vers Drive via webhook mode=link_file ── */
+  window.plAttachLink = function() { showLinkFileModal(); };
 
   function plEnableEditing() {
     document.getElementById("plToggle").classList.add("editing");
@@ -314,27 +424,6 @@
       }
       document.querySelector(".content-area").appendChild(sec);
       plShowToast("Section ajout\u00e9e"); sec.scrollIntoView({ behavior:"smooth", block:"center" });
-    });
-  };
-
-  window.plAttachLink = function() {
-    showModal({
-      title: "Lier un fichier externe",
-      subtitle: "Ajoutez un lien vers un fichier existant (Google Drive, Notion, Excel online\u2026). Ce lien ne sera PAS analys\u00e9 par Stan. Pour une analyse automatique, utilisez \u00ab\u00a0Analyser un document PDF\u00a0\u00bb.",
-      fields: [
-        { key: "url",   label: "URL du fichier", placeholder: "https://drive.google.com/\u2026" },
-        { key: "label", label: "Nom affich\u00e9", placeholder: "Ex : Mod\u00e8le financier Q1 2025" }
-      ]
-    }, function(res) {
-      if (!res.url) return;
-      var label = res.label || "Document li\u00e9";
-      var date  = new Date().toLocaleDateString("fr-FR");
-      var block = document.getElementById("pl-linked-file");
-      if (!block) { block = document.createElement("div"); block.id = "pl-linked-file"; block.className = "section-container"; }
-      block.innerHTML = "<h2 class='section-title'>Fichier li\u00e9</h2><div style='background:#f4f5f7;border:1px solid #d4d9e2;padding:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;'><div><div style='font-weight:600;font-size:15px;color:#0f1f33;' contenteditable='true'>" + label + "</div><div style='font-family:DM Mono,monospace;font-size:0.6rem;letter-spacing:0.1em;text-transform:uppercase;color:#9eaaba;margin-top:4px;'>Ajout\u00e9 le " + date + "</div></div><a href='" + res.url + "' target='_blank' style='background:#0f1f33;color:#fff;padding:9px 16px;font-family:DM Mono,monospace;font-size:0.65rem;letter-spacing:0.1em;text-transform:uppercase;text-decoration:none;'>Ouvrir \u2192</a></div>";
-      if (!block.parentElement) document.querySelector(".content-area").appendChild(block);
-      plShowToast("Fichier li\u00e9 \u2014 sauvegardez pour confirmer");
-      block.scrollIntoView({ behavior:"smooth", block:"center" });
     });
   };
 
