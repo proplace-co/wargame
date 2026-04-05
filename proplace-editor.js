@@ -255,14 +255,27 @@
 
   /* LIGHTBOX */
   function initAutoLightbox() {
-    document.querySelectorAll('.sticky-img').forEach(function(img,i) {
-      if(img.closest('.zoom-trigger')||img.closest('.img-lightbox'))return;
-      var id='lb-auto-'+i, overlay=document.createElement('div');
-      overlay.className='img-lightbox'; overlay.id=id; overlay.style.display='none';
-      overlay.innerHTML='<a href="#" class="lb-close">&times;</a><img src="'+img.src+'" alt="'+(img.alt||'')+'">';
+    /* 1. Créer des overlays pour les images sans lightbox */
+    document.querySelectorAll('.sticky-img').forEach(function(img, i) {
+      if (img.closest('.zoom-trigger') || img.closest('.img-lightbox')) return;
+      var id = 'lb-auto-' + i;
+      var overlay = document.createElement('div');
+      overlay.className = 'img-lightbox'; overlay.id = id;
+      overlay.innerHTML = '<a href="#" class="lb-close">&times;</a><img src="' + img.src + '" alt="' + (img.alt || '') + '">';
       document.body.appendChild(overlay);
-      var trigger=document.createElement('a'); trigger.href='#'+id; trigger.className='zoom-trigger';
-      img.parentNode.insertBefore(trigger,img); trigger.appendChild(img);
+      var trigger = document.createElement('a');
+      trigger.href = '#' + id; trigger.className = 'zoom-trigger';
+      img.parentNode.insertBefore(trigger, img); trigger.appendChild(img);
+    });
+
+    /* 2. Déplacer TOUS les .img-lightbox vers document.body
+          (évite que overflow/transform d'un parent piège position:fixed) */
+    document.querySelectorAll('.img-lightbox').forEach(function(lb) {
+      if (lb.parentNode !== document.body) {
+        document.body.appendChild(lb);
+      }
+      /* Forcer display:none inline sur tous */
+      lb.style.display = 'none';
     });
   }
   function initLightboxHandlers() {
