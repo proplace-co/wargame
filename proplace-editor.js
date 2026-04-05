@@ -1,5 +1,4 @@
-
-/* PROPLACE LIVE EDITOR - v3.3
+/* PROPLACE LIVE EDITOR - v3.4
    Usage: <script src="proplace-editor.js"
      data-webhook="WEBHOOK_URL"
      data-deal="DEAL_ID"
@@ -7,13 +6,23 @@
    </script>
    Status values: NEW | SOURCED | CALL | CONSIDER | MONITOR | PASS | IN_PORTFOLIO
 
-   v3.3 fixes:
-   - MOBILE BUG #1: plCancelEdit utilise DOMParser au lieu de document.write
-     => le bouton Edit ne disparaît plus sur iOS Safari après Annuler / En cours d'édition
-   - MOBILE BUG #2: en mode édition sur mobile, la barre passe en full-width bas d'écran
-     + padding-bottom sur .content-area pour ne pas masquer le contenu derrière la barre
+   v3.4 changes vs v3.3:
+   - BUG FIX: double pen icon after Cancel — plExitEditMode now only resets
+     #plLabel text, not innerHTML (which was re-injecting the icon a second time)
+   - NEW: auto-lightbox — every .sticky-img without an explicit wrapper
+     becomes clickable and opens a full-screen overlay
+   - NEW: lightbox close without scroll-to-top — hash cleared via
+     history.replaceState, scroll position preserved; backdrop click also closes
+   - NEW: hide empty synergies section — if {{1323.company_name}} was empty
+     the LLM still renders #synergies-custom with a broken title;
+     this detects and hides it along with its sidebar nav link
 */
 (function() {
+  'use strict';
+
+  /* ═══════════════════════════════════════════════════════════════
+     EDITOR BOOTSTRAP
+  ═══════════════════════════════════════════════════════════════ */
   var currentScript = document.currentScript || (function() {
     var scripts = document.getElementsByTagName("script");
     return scripts[scripts.length - 1];
@@ -76,8 +85,6 @@
     ".pl-modal-ok{background:#0f1f33;color:#fff;border:none;padding:9px 18px;font-size:11px;font-weight:500;cursor:pointer;font-family:'DM Mono','Courier New',monospace;letter-spacing:0.08em;text-transform:uppercase;}",
     ".pl-modal-ok:disabled{background:#9eaaba;cursor:not-allowed;}",
     ".pl-modal-cancel{background:#f4f5f7;color:#0b1929;border:1px solid #d4d9e2;padding:9px 18px;font-size:11px;font-weight:500;cursor:pointer;font-family:'DM Mono','Courier New',monospace;letter-spacing:0.08em;text-transform:uppercase;}",
-
-    /* ── FIX MOBILE BUG #2: barre pleine largeur en bas sur mobile ── */
     "@media (max-width:1000px){",
       "#plEditor{bottom:0!important;right:0!important;left:0!important;width:100%!important;",
         "padding:8px 12px 12px!important;border-top:2px solid #d4d9e2!important;",
@@ -88,12 +95,13 @@
       ".pl-action-btn{text-align:center!important;width:100%!important;padding:11px 16px!important;font-size:12px!important;}",
       "#plToast{bottom:auto!important;top:16px!important;right:16px!important;left:16px!important;max-width:100%!important;}",
     "}",
-    /* padding-bottom sur content-area quand en mode édition pour ne pas masquer le contenu */
     "@media (max-width:1000px){body.pl-editing .content-area{padding-bottom:280px!important;}}"
   ].join("");
   document.head.appendChild(style);
 
-  /* ── MODAL GÉNÉRIQUE ── */
+  /* ═══════════════════════════════════════════════════════════════
+     MODAL GÉNÉRIQUE
+  ═══════════════════════════════════════════════════════════════ */
   function showModal(config, callback) {
     var existing = document.getElementById("plModal");
     if (existing) existing.remove();
@@ -125,7 +133,9 @@
     if (first) setTimeout(function() { first.focus(); }, 50);
   }
 
-  /* ── MODAL PDF UPLOAD ── */
+  /* ═══════════════════════════════════════════════════════════════
+     MODAL PDF UPLOAD
+  ═══════════════════════════════════════════════════════════════ */
   function showPDFModal() {
     var existing = document.getElementById("plModal");
     if (existing) existing.remove();
@@ -228,9 +238,9 @@
     };
   }
 
-  /* ── MODAL LIER UN FICHIER (sans analyse) — v3.2 ──
-     Envoie mode=link_file au webhook → Branch 3 dans Make
-  ── */
+  /* ═══════════════════════════════════════════════════════════════
+     MODAL LIER UN FICHIER (sans analyse)
+  ═══════════════════════════════════════════════════════════════ */
   function showLinkFileModal() {
     var existing = document.getElementById("plModal");
     if (existing) existing.remove();
@@ -334,7 +344,9 @@
     };
   }
 
-  /* ── INIT ── */
+  /* ═══════════════════════════════════════════════════════════════
+     INIT EDITOR UI
+  ═══════════════════════════════════════════════════════════════ */
   function init() {
     if (document.getElementById("plEditor")) return;
     var fab = document.createElement("div");
@@ -354,13 +366,20 @@
       "<div id='plToast'></div>"
     ].join("");
     document.body.appendChild(fab);
+
+    /* Run all page-level enhancements after editor UI is ready */
+    initAutoLightbox();
+    fixLightboxClose();
+    hideEmptySynergies();
   }
 
-  /* ── TOGGLE ── */
+  /* ═══════════════════════════════════════════════════════════════
+     EDITOR ACTIONS
+  ═══════════════════════════════════════════════════════════════ */
   window.plToggleEdit = function() {
     editMode = !editMode;
     if (editMode) {
-      var editorEl = document.getElementById("plEditor");
+      var editorEl     = document.getElementById("plEditor");
       var editorParent = editorEl ? editorEl.parentNode : null;
       if (editorEl && editorParent) editorEl.remove();
       savedHTML = document.documentElement.outerHTML;
@@ -378,22 +397,23 @@
     document.getElementById("plToggle").classList.add("editing");
     document.getElementById("plLabel").textContent = " En cours d'\u00e9dition\u2026";
     document.getElementById("plActions").style.display = "flex";
-    /* FIX BUG #2: classe sur body pour le padding-bottom mobile */
     document.body.classList.add("pl-editing");
 
     var sel = ".content-area p,.content-area h1,.content-area h2,.content-area h3,.content-area h4,.content-area li,.content-area td,.content-area b,.content-area span.text-block,.content-area div.text-block";
     document.querySelectorAll(sel).forEach(function(el) {
       if (!el.closest("#plEditor") && !el.closest("#plModal")) {
-        el.setAttribute("contenteditable","true"); el.style.cursor = "text";
+        el.setAttribute("contenteditable", "true");
+        el.style.cursor = "text";
       }
     });
     document.querySelectorAll(".section-container").forEach(function(sec) {
       if (sec.querySelector(".pl-section-ctrl")) return;
       var title = sec.querySelector(".section-title");
-      var name  = title ? title.textContent.trim().slice(0,36) : "Section";
+      var name  = title ? title.textContent.trim().slice(0, 36) : "Section";
       var ctrl  = document.createElement("div");
       ctrl.className = "pl-section-ctrl";
-      ctrl.innerHTML = "<button class='pl-ctrl-btn pl-hide-btn' data-hidden='false' onclick='plToggleSection(this)'>&#128065; Masquer</button>" +
+      ctrl.innerHTML =
+        "<button class='pl-ctrl-btn pl-hide-btn' data-hidden='false' onclick='plToggleSection(this)'>&#128065; Masquer</button>" +
         "<button class='pl-ctrl-btn pl-del-btn' onclick='plDeleteSection(this)'>&#x2715; Supprimer</button>" +
         "<span class='pl-ctrl-btn pl-label-btn'>" + name + "</span>";
       sec.insertBefore(ctrl, sec.firstChild);
@@ -401,23 +421,29 @@
   }
 
   window.plToggleSection = function(btn) {
-    var sec = btn.closest(".section-container");
+    var sec    = btn.closest(".section-container");
     var hidden = btn.dataset.hidden === "true";
     Array.from(sec.children).forEach(function(c) {
       if (!c.classList.contains("pl-section-ctrl")) {
-        c.style.opacity = hidden ? "1" : "0.1"; c.style.pointerEvents = hidden ? "" : "none";
+        c.style.opacity       = hidden ? "1"    : "0.1";
+        c.style.pointerEvents = hidden ? ""     : "none";
       }
     });
-    btn.dataset.hidden = hidden ? "false" : "true";
-    btn.textContent    = hidden ? "\ud83d\udc41 Masquer" : "\ud83d\udeab Masqué";
-    btn.style.background = hidden ? "" : "#0f1f33"; btn.style.color = hidden ? "" : "#fff";
+    btn.dataset.hidden   = hidden ? "false" : "true";
+    btn.textContent      = hidden ? "\ud83d\udc41 Masquer" : "\ud83d\udeab Masqué";
+    btn.style.background = hidden ? "" : "#0f1f33";
+    btn.style.color      = hidden ? "" : "#fff";
   };
 
   window.plDeleteSection = function(btn) {
     var sec = btn.closest(".section-container");
     var t   = sec.querySelector(".section-title");
-    showModal({ title: "Supprimer \u201c" + (t ? t.textContent.trim() : "cette section") + "\u201d ?", fields: [] }, function() {
-      sec.remove(); plShowToast("Section supprimée");
+    showModal({
+      title: "Supprimer \u201c" + (t ? t.textContent.trim() : "cette section") + "\u201d ?",
+      fields: []
+    }, function() {
+      sec.remove();
+      plShowToast("Section supprimée");
     });
   };
 
@@ -434,7 +460,8 @@
       ]
     }, function(res) {
       if (!res.type) return;
-      var sec = document.createElement("div"); sec.className = "section-container";
+      var sec = document.createElement("div");
+      sec.className = "section-container";
       if (res.type === "text") {
         sec.innerHTML = "<h2 class='section-title' contenteditable='true'>" + (res.title || "Nouvelle Section") + "</h2><p class='text-block' contenteditable='true' style='line-height:1.75;'>Rédigez votre contenu ici\u2026</p>";
       } else if (res.type === "table") {
@@ -444,51 +471,51 @@
       }
       document.querySelector(".content-area").appendChild(sec);
       plShowToast("Section ajoutée");
-      /* Sur mobile: scroll vers la nouvelle section en laissant de l'espace pour la barre */
-      setTimeout(function() {
-        sec.scrollIntoView({ behavior:"smooth", block:"start" });
-      }, 100);
+      setTimeout(function() { sec.scrollIntoView({ behavior: "smooth", block: "start" }); }, 100);
     });
   };
 
   window.plSaveChanges = function() {
     plShowToast("Sauvegarde en cours\u2026");
     var clone = document.documentElement.cloneNode(true);
-    ["#plEditor","#plToast","#plModal"].forEach(function(s) { var el = clone.querySelector(s); if (el) el.remove(); });
+    ["#plEditor", "#plToast", "#plModal"].forEach(function(s) {
+      var el = clone.querySelector(s);
+      if (el) el.remove();
+    });
     clone.querySelectorAll(".pl-section-ctrl").forEach(function(el) { el.remove(); });
     clone.querySelectorAll("[contenteditable]").forEach(function(el) {
-      el.removeAttribute("contenteditable"); el.style.cursor = el.style.outline = el.style.background = "";
+      el.removeAttribute("contenteditable");
+      el.style.cursor = el.style.outline = el.style.background = "";
     });
-    /* Retirer la classe pl-editing du body dans le clone */
     if (clone.body) clone.body.classList.remove("pl-editing");
     var html = "<!DOCTYPE html>\n" + clone.outerHTML;
     fetch(WEBHOOK_URL, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ deal_id: DEAL_ID, updated_html: html, updated_at: new Date().toISOString(), source: "live_editor" })
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        deal_id:      DEAL_ID,
+        updated_html: html,
+        updated_at:   new Date().toISOString(),
+        source:       "live_editor"
+      })
     }).then(function(r) {
       if (r.ok) { plShowToast("\u2713 Sauvegardé et synchronisé"); plExitEditMode(); }
       else       { plShowToast("Erreur serveur \u2014 réessayez"); }
     }).catch(function() { plShowToast("Connexion \u00e9chou\u00e9e"); });
   };
 
-  /* ── CANCEL — v3.3: DOMParser au lieu de document.write ──
-     Sur mobile Safari, document.write ne ré-exécute pas les scripts externes
-     → le bouton disparaissait après Annuler.
-     Fix: on restaure uniquement .content-area via DOMParser.
-  ── */
+  /* v3.3 fix: DOMParser instead of document.write to avoid iOS Safari losing the script */
   window.plCancelEdit = function() {
     if (savedHTML) {
       try {
-        var parser = new DOMParser();
-        var savedDoc = parser.parseFromString(savedHTML, "text/html");
-        var savedContent = savedDoc.querySelector(".content-area");
+        var parser      = new DOMParser();
+        var savedDoc    = parser.parseFromString(savedHTML, "text/html");
+        var savedContent   = savedDoc.querySelector(".content-area");
         var currentContent = document.querySelector(".content-area");
         if (savedContent && currentContent) {
           currentContent.innerHTML = savedContent.innerHTML;
         }
-      } catch(e) {
-        /* fallback silencieux */
-      }
+      } catch(e) { /* silent fallback */ }
     }
     plExitEditMode();
     savedHTML = "";
@@ -496,24 +523,147 @@
 
   function plExitEditMode() {
     editMode = false;
-    /* FIX BUG #2: retirer la classe du body */
     document.body.classList.remove("pl-editing");
-    var toggle = document.getElementById("plToggle"); if (toggle) toggle.classList.remove("editing");
-    var lbl    = document.getElementById("plLabel");  if (lbl)    lbl.innerHTML = getMainIcon() + getMainLabel();
-    var acts   = document.getElementById("plActions"); if (acts)   acts.style.display = "none";
+
+    var toggle = document.getElementById("plToggle");
+    if (toggle) toggle.classList.remove("editing");
+
+    /* ── v3.4 FIX: only reset #plLabel text — NOT innerHTML.
+       Previously: lbl.innerHTML = getMainIcon() + getMainLabel()
+       This re-injected the icon into #plLabel while #plIcon already
+       had the icon, producing two pens. Now we reset each span
+       independently. ── */
+    var icon = document.getElementById("plIcon");
+    if (icon) icon.innerHTML = getMainIcon();
+    var lbl  = document.getElementById("plLabel");
+    if (lbl)  lbl.textContent = getMainLabel();
+
+    var acts = document.getElementById("plActions");
+    if (acts) acts.style.display = "none";
+
     document.querySelectorAll("[contenteditable]").forEach(function(el) {
-      if (!el.closest("#plEditor")) { el.removeAttribute("contenteditable"); el.style.cursor = el.style.outline = el.style.background = ""; }
+      if (!el.closest("#plEditor")) {
+        el.removeAttribute("contenteditable");
+        el.style.cursor = el.style.outline = el.style.background = "";
+      }
     });
     document.querySelectorAll(".pl-section-ctrl").forEach(function(el) { el.remove(); });
   }
 
   function plShowToast(msg) {
-    var t = document.getElementById("plToast"); if (!t) return;
-    t.textContent = msg; t.style.opacity = "1";
+    var t = document.getElementById("plToast");
+    if (!t) return;
+    t.textContent = msg;
+    t.style.opacity = "1";
     clearTimeout(window._plTimer);
     window._plTimer = setTimeout(function() { t.style.opacity = "0"; }, 4500);
   }
 
-  if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", init); }
-  else { init(); }
+  /* ═══════════════════════════════════════════════════════════════
+     AUTO-LIGHTBOX
+     Wraps every .sticky-img that isn't already inside a .zoom-trigger
+     with a CSS :target lightbox overlay. Must run before
+     fixLightboxClose so the new overlays get the close handler.
+  ═══════════════════════════════════════════════════════════════ */
+  function initAutoLightbox() {
+    document.querySelectorAll('.sticky-img').forEach(function(img, i) {
+      if (img.closest('.zoom-trigger') || img.closest('.img-lightbox')) return;
+
+      var id  = 'lb-auto-' + i;
+      var src = img.src;
+      var alt = img.alt || '';
+
+      var overlay       = document.createElement('div');
+      overlay.className = 'img-lightbox';
+      overlay.id        = id;
+      overlay.innerHTML = '<a href="#" class="lb-close">&times;</a>'
+                        + '<img src="' + src + '" alt="' + alt + '">';
+      document.body.appendChild(overlay);
+
+      var trigger       = document.createElement('a');
+      trigger.href      = '#' + id;
+      trigger.className = 'zoom-trigger';
+      img.parentNode.insertBefore(trigger, img);
+      trigger.appendChild(img);
+    });
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+     LIGHTBOX CLOSE WITHOUT SCROLL-TO-TOP
+     Saves scroll Y, clears hash via history.replaceState (no
+     history entry), restores scroll. Backdrop click also closes.
+  ═══════════════════════════════════════════════════════════════ */
+  function fixLightboxClose() {
+    document.querySelectorAll('.img-lightbox').forEach(function(lb) {
+      lb.dataset.lbOrigId = lb.id;
+    });
+
+    document.querySelectorAll('.lb-close').forEach(function(btn) {
+      btn.addEventListener('click', function(e) {
+        e.preventDefault();
+        var savedScroll = window.scrollY;
+        var lb          = btn.closest('.img-lightbox');
+        var origId      = lb.dataset.lbOrigId;
+
+        lb.id = origId + '--hidden';
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+        window.scrollTo(0, savedScroll);
+        setTimeout(function() { lb.id = origId; }, 80);
+      });
+    });
+
+    document.querySelectorAll('.img-lightbox').forEach(function(lb) {
+      lb.addEventListener('click', function(e) {
+        if (e.target === lb) {
+          var closeBtn = lb.querySelector('.lb-close');
+          if (closeBtn) closeBtn.click();
+        }
+      });
+    });
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+     HIDE EMPTY SYNERGIES SECTION
+     When {{1323.company_name}} is empty the LLM sometimes still
+     renders #synergies-custom with a broken title ending in
+     "and " / "et " / "und " etc. This hides it and its nav link.
+  ═══════════════════════════════════════════════════════════════ */
+  function hideEmptySynergies() {
+    var section = document.getElementById('synergies-custom');
+    if (!section) return;
+
+    var title = section.querySelector('.section-title');
+    if (!title) return;
+
+    var text = (title.textContent || title.innerText || '').trim();
+
+    var isEmpty = /\band\s*$|\bet\s*$|\bund\s*$|\by\s*$|\be\s*$/i.test(text)
+               || /undefined|null|\{\{/i.test(text)
+               || text.replace(/[^a-z]/gi, '').length < 5;
+
+    if (!isEmpty) return;
+
+    section.style.display = 'none';
+
+    var navLink = document.querySelector('a[href="#synergies-custom"]');
+    if (navLink) navLink.style.display = 'none';
+
+    /* Also hide the SYNERGIES nav heading if it now has no visible links */
+    document.querySelectorAll('.sb-nav-heading').forEach(function(heading) {
+      var next = heading.nextElementSibling;
+      if (next && next.getAttribute('href') === '#synergies-custom' && next.style.display === 'none') {
+        heading.style.display = 'none';
+      }
+    });
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+     BOOT
+  ═══════════════════════════════════════════════════════════════ */
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
 })();
