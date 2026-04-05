@@ -384,32 +384,72 @@
   };
 
   window.plAddSection = function () {
-    showModal({
-      title: 'Ajouter une section',
-      fields: [
-        { key: 'type', label: 'Type', type: 'select', options: [
-          { value: 'text',  label: 'Texte libre' },
-          { value: 'table', label: 'Tableau financier' },
-          { value: 'flags', label: 'Risk flags & signaux' }
-        ]},
-        { key: 'title', label: 'Titre', placeholder: 'Ex : Notes de Due Diligence' }
-      ]
-    }, function (res) {
-      if (!res.type) return;
+    var existing = document.getElementById('plModal'); if (existing) existing.remove();
+
+    /* Build position options: "after section X" + "En fin de mémo" */
+    var posOpts = getSectionOptions().map(function (o) {
+      return "<option value='" + escHtml(o.value) + "'>Après : " + escHtml(o.label) + '</option>';
+    }).join('');
+    posOpts += "<option value='__end__'>— En fin de mémo</option>";
+
+    var modal = document.createElement('div'); modal.id = 'plModal';
+    modal.innerHTML = [
+      "<div id='plModalBox'>",
+        "<h2 id='plModalTitle'>+ Ajouter une section</h2>",
+        "<label class='pl-modal-label'>Type de section</label>",
+        "<select class='pl-modal-input' id='plSecType'>",
+          "<option value='text'>Texte libre</option>",
+          "<option value='table'>Tableau financier</option>",
+          "<option value='flags'>Risk flags &amp; signaux</option>",
+        "</select>",
+        "<label class='pl-modal-label'>Titre</label>",
+        "<input class='pl-modal-input' type='text' id='plSecTitle' placeholder='Ex : Notes de Due Diligence'>",
+        "<label class='pl-modal-label'>Position</label>",
+        "<select class='pl-modal-input' id='plSecPosition'>" + posOpts + "</select>",
+        "<div id='plModalActions'>",
+          "<button class='pl-modal-cancel'>Annuler</button>",
+          "<button class='pl-modal-ok' id='plSecConfirm'>Ajouter &#x2192;</button>",
+        "</div>",
+      "</div>"
+    ].join('');
+    document.body.appendChild(modal);
+
+    modal.querySelector('.pl-modal-cancel').onclick = function () { modal.remove(); };
+    modal.onclick = function (e) { if (e.target === modal) modal.remove(); };
+    setTimeout(function () { var f = modal.querySelector('input,select'); if (f) f.focus(); }, 50);
+
+    document.getElementById('plSecConfirm').onclick = function () {
+      var type  = document.getElementById('plSecType').value     || 'text';
+      var title = document.getElementById('plSecTitle').value    || '';
+      var posId = document.getElementById('plSecPosition').value || '__end__';
+      modal.remove();
+
       var sec = document.createElement('div'); sec.className = 'section-container';
-      if (res.type === 'text') {
-        sec.innerHTML = "<h2 class='section-title' contenteditable='true'>" + (res.title || 'Nouvelle Section') + "</h2><p class='text-block' contenteditable='true' style='line-height:1.75;'>Rédigez votre contenu ici\u2026</p>";
-      } else if (res.type === 'table') {
-        sec.innerHTML = "<h2 class='section-title' contenteditable='true'>" + (res.title || 'Tableau Financier') + "</h2><div style='overflow-x:auto;'><table style='width:100%;border-collapse:collapse;font-size:0.9rem;'><thead><tr style='background:#0f1f33;'><th contenteditable='true' style='padding:10px;text-align:left;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;'>Métrique</th><th contenteditable='true' style='padding:10px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;'>Y1</th><th contenteditable='true' style='padding:10px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;'>Y2</th><th contenteditable='true' style='padding:10px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;'>Y3</th></tr></thead><tbody><tr><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-weight:600;'>Revenu (M\u20ac)</td><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;'>\u2014</td><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;'>\u2014</td><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;'>\u2014</td></tr></tbody></table></div>";
-      } else if (res.type === 'flags') {
-        sec.innerHTML = "<h2 class='section-title' contenteditable='true'>" + (res.title || 'Risk Flags') + "</h2><div style='background:#faf0f1;border-left:3px solid #7a1824;padding:12px 15px;font-size:0.92rem;color:#7a1824;margin-bottom:10px;font-style:italic;' contenteditable='true'>\u26a0 Nouveau risk flag</div><div style='background:#f0faf5;border-left:3px solid #185c38;padding:12px 15px;font-size:0.92rem;color:#185c38;font-style:italic;' contenteditable='true'>\u2705 Signal positif</div>";
+      if (type === 'text') {
+        sec.innerHTML = "<h2 class='section-title' contenteditable='true'>" + escHtml(title || 'Nouvelle Section') + "</h2><p class='text-block' contenteditable='true' style='line-height:1.75;'>Rédigez votre contenu ici\u2026</p>";
+      } else if (type === 'table') {
+        sec.innerHTML = "<h2 class='section-title' contenteditable='true'>" + escHtml(title || 'Tableau Financier') + "</h2><div style='overflow-x:auto;'><table style='width:100%;border-collapse:collapse;font-size:0.9rem;'><thead><tr style='background:#0f1f33;'><th contenteditable='true' style='padding:10px;text-align:left;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;'>Métrique</th><th contenteditable='true' style='padding:10px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;'>Y1</th><th contenteditable='true' style='padding:10px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;'>Y2</th><th contenteditable='true' style='padding:10px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;'>Y3</th></tr></thead><tbody><tr><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-weight:600;'>Revenu (M\u20ac)</td><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;'>\u2014</td><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;'>\u2014</td><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;'>\u2014</td></tr></tbody></table></div>";
+      } else if (type === 'flags') {
+        sec.innerHTML = "<h2 class='section-title' contenteditable='true'>" + escHtml(title || 'Risk Flags') + "</h2><div style='background:#faf0f1;border-left:3px solid #7a1824;padding:12px 15px;font-size:0.92rem;color:#7a1824;margin-bottom:10px;font-style:italic;' contenteditable='true'>\u26a0 Nouveau risk flag</div><div style='background:#f0faf5;border-left:3px solid #185c38;padding:12px 15px;font-size:0.92rem;color:#185c38;font-style:italic;' contenteditable='true'>\u2705 Signal positif</div>";
       }
-      document.querySelector('.content-area').appendChild(sec);
+
+      /* Insert at chosen position */
+      var contentArea = document.querySelector('.content-area');
+      if (posId === '__end__') {
+        contentArea.appendChild(sec);
+      } else {
+        var anchor = document.getElementById(posId);
+        if (anchor && anchor.parentNode === contentArea) {
+          contentArea.insertBefore(sec, anchor.nextSibling);
+        } else {
+          contentArea.appendChild(sec);
+        }
+      }
+
       plShowToast('Section ajoutée');
-      /* Mark as changed → show Save button */
       markManualChange();
       setTimeout(function () { sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 100);
-    });
+    };
   };
 
   window.plSaveChanges = function () {
