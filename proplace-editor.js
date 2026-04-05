@@ -191,35 +191,95 @@
     };
   }
 
-  /* MODAL LIER UN FICHIER */
+  /* MODAL LIER UN FICHIER — v3.6: PDF.co pre-upload si clé présente */
   function showLinkFileModal() {
     var existing = document.getElementById("plModal"); if (existing) existing.remove();
     var selectedFile=null, selectedBase64=null;
+    var hasPdfco = !!PDFCO_KEY;
+    var LIMIT = 3 * 1024 * 1024;
     var sectionOpts = buildSectionOptions();
     var sectionOptsHTML = sectionOpts.length
       ? sectionOpts.map(function(o){return "<option value='"+o.value+"'>"+o.label+"</option>";}).join("")
       : "<option value='dd'>Due Diligence</option><option value='pm'>Portfolio Company</option>";
+    var sizeHint = hasPdfco ? "Tous formats &middot; Taille illimitée" : "Tous formats &middot; Max 3 Mo";
 
     var modal = document.createElement("div"); modal.id="plModal";
-    modal.innerHTML = "<div id='plModalBox'><h2 id='plModalTitle'>&#128279; Lier un fichier (sans analyse)</h2><p id='plModalSubtitle'>Le fichier sera <strong>sauvegardé dans Drive</strong> et un lien sera ajouté dans la section choisie. <strong>Aucune analyse IA.</strong></p><div id='plDropZone'><p>&#128194; <strong>Cliquez ici</strong> ou glissez-déposez</p><small>Tous formats &middot; Max 20 Mo</small></div><div id='plFileInfo'></div><label class='pl-modal-label' style='margin-top:16px;'>Section de destination</label><select class='pl-modal-input' id='plLinkSection'>"+sectionOptsHTML+"</select><label class='pl-modal-label'>Note (optionnel)</label><input class='pl-modal-input' type='text' id='plLinkNote' placeholder='Ex : Modèle financier Q1 2025'><div id='plModalActions'><button class='pl-modal-cancel'>Annuler</button><button class='pl-modal-ok' id='plLinkConfirm' disabled>Lier &#x2192;</button></div></div>";
+    modal.innerHTML = "<div id='plModalBox'><h2 id='plModalTitle'>&#128279; Lier un fichier (sans analyse)</h2><p id='plModalSubtitle'>Le fichier sera <strong>sauvegardé dans Drive</strong> et un lien sera ajouté dans la section choisie. <strong>Aucune analyse IA.</strong></p><div id='plDropZone'><p>&#128194; <strong>Cliquez ici</strong> ou glissez-déposez</p><small>"+sizeHint+"</small></div><div id='plFileInfo'></div><label class='pl-modal-label' style='margin-top:16px;'>Section de destination</label><select class='pl-modal-input' id='plLinkSection'>"+sectionOptsHTML+"</select><label class='pl-modal-label'>Note (optionnel)</label><input class='pl-modal-input' type='text' id='plLinkNote' placeholder='Ex : Modèle financier Q1 2025'><div id='plModalActions'><button class='pl-modal-cancel'>Annuler</button><button class='pl-modal-ok' id='plLinkConfirm' disabled>Lier &#x2192;</button></div></div>";
     document.body.appendChild(modal);
 
     var fi=document.createElement("input"); fi.type="file"; fi.style.display="none"; document.body.appendChild(fi);
     var dz=document.getElementById("plDropZone"),inf=document.getElementById("plFileInfo"),cb=document.getElementById("plLinkConfirm");
-    function hf(file){if(!file)return;inf.style.color="#526070";inf.textContent="Lecture\u2026";var r=new FileReader();r.onload=function(ev){selectedFile=file;selectedBase64=ev.target.result.split(",")[1];inf.style.color="#185c38";inf.textContent="\u2713 "+file.name+" ("+Math.round(file.size/1024)+" Ko)";cb.disabled=false;};r.onerror=function(){inf.style.color="#7a1824";inf.textContent="\u26a0 Erreur.";};r.readAsDataURL(file);}
+
+    function hf(file){
+      if(!file)return;
+      if(!hasPdfco && file.size > LIMIT){
+        inf.style.color="#7a1824"; inf.textContent="\u26a0 "+Math.round(file.size/1024)+" Ko \u2014 max 3 Mo sans cl\u00e9 PDF.co.";
+        cb.disabled=true; selectedFile=null; selectedBase64=null; return;
+      }
+      inf.style.color="#526070"; inf.textContent="Lecture\u2026";
+      var r=new FileReader();
+      r.onload=function(ev){
+        selectedFile=file; selectedBase64=ev.target.result.split(",")[1];
+        inf.style.color="#185c38";
+        inf.textContent="\u2713 "+file.name+" ("+Math.round(file.size/1024)+" Ko)"+(hasPdfco?" \u2014 via PDF.co":"");
+        cb.disabled=false;
+      };
+      r.onerror=function(){inf.style.color="#7a1824";inf.textContent="\u26a0 Erreur.";};
+      r.readAsDataURL(file);
+    }
+
     dz.onclick=function(){fi.click();}; fi.onchange=function(e){if(e.target.files[0])hf(e.target.files[0]);fi.value="";};
     dz.addEventListener("dragover",function(e){e.preventDefault();dz.classList.add("dragover");}); dz.addEventListener("dragleave",function(){dz.classList.remove("dragover");}); dz.addEventListener("drop",function(e){e.preventDefault();dz.classList.remove("dragover");if(e.dataTransfer.files[0])hf(e.dataTransfer.files[0]);});
     function cl(){modal.remove();fi.remove();} modal.querySelector(".pl-modal-cancel").onclick=cl; modal.onclick=function(e){if(e.target===modal)cl();};
+
     cb.onclick=function(){
-      if(!selectedBase64)return;
+      if(!selectedBase64||!selectedFile)return;
       var note=document.getElementById("plLinkNote").value||"";
       var selEl=document.getElementById("plLinkSection");
       var section=selEl?selEl.value:"dd";
       var sectionLabel=selEl&&selEl.selectedOptions&&selEl.selectedOptions[0]?selEl.selectedOptions[0].text:section;
-      cl(); plShowToast("Envoi en cours\u2026");
-      fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({deal_id:DEAL_ID,source:"link_file",file_base64:selectedBase64,file_name:selectedFile.name,file_type:selectedFile.type,section:section,section_label:sectionLabel,note:note,updated_at:new Date().toISOString()})})
-      .then(function(r){if(r.ok)plShowToast("\u2713 Li\u00e9 \u2014 rechargez dans 15s.");else plShowToast("Erreur serveur");})
-      .catch(function(){plShowToast("Connexion \u00e9chou\u00e9e");});
+      cl();
+
+      function sendToMake(fileUrl, fileBase64) {
+        return fetch(WEBHOOK_URL,{
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            deal_id:DEAL_ID, source:"link_file",
+            file_url:     fileUrl    || "",
+            file_base64:  fileBase64 || "",
+            file_name:    selectedFile.name,
+            file_type:    selectedFile.type,
+            section:      section,
+            section_label:sectionLabel,
+            note:         note,
+            updated_at:   new Date().toISOString()
+          })
+        });
+      }
+
+      if (hasPdfco) {
+        /* Upload vers PDF.co d'abord → envoie l'URL à Make */
+        plShowToast("Upload en cours\u2026");
+        fetch("https://api.pdf.co/v1/file/upload/base64",{
+          method:"POST",
+          headers:{"Content-Type":"application/json","x-api-key":PDFCO_KEY},
+          body:JSON.stringify({name:selectedFile.name, file:selectedBase64})
+        })
+        .then(function(r){return r.json();})
+        .then(function(data){
+          if(!data.url){plShowToast("\u26a0 PDF.co \u00e9chou\u00e9 : "+(data.message||"erreur"));return Promise.resolve();}
+          plShowToast("Envoi en cours\u2026");
+          return sendToMake(data.url, "");
+        })
+        .then(function(r){if(r&&r.ok)plShowToast("\u2713 Li\u00e9 \u2014 rechargez dans 15s.");else if(r)plShowToast("Erreur serveur ("+r.status+")");})
+        .catch(function(){plShowToast(!navigator.onLine?"\u26a0 Pas de connexion":"\u26a0 \u00c9chou\u00e9 \u2014 v\u00e9rifiez cl\u00e9 PDF.co");});
+      } else {
+        /* Base64 direct */
+        plShowToast("Envoi en cours\u2026");
+        sendToMake("", selectedBase64)
+        .then(function(r){if(r.ok)plShowToast("\u2713 Li\u00e9 \u2014 rechargez dans 15s.");else plShowToast("Erreur serveur ("+r.status+")");})
+        .catch(function(){plShowToast(!navigator.onLine?"\u26a0 Pas de connexion":"\u26a0 \u00c9chou\u00e9");});
+      }
     };
   }
 
