@@ -407,10 +407,18 @@
       } else if(res.type==="flags"){
         sec.innerHTML=[
           "<h2 class='section-title' contenteditable='true'>"+(res.title||"Risk Flags")+"</h2>",
-          "<div style='background:#faf0f1;border-left:3px solid #7a1824;padding:12px 15px;font-size:0.92rem;color:#7a1824;margin-bottom:8px;' contenteditable='true'>\u26a0 Nouveau risk flag</div>",
-          "<div style='background:#f0faf5;border-left:3px solid #185c38;padding:12px 15px;font-size:0.92rem;color:#185c38;margin-bottom:8px;' contenteditable='true'>\u2705 Signal positif</div>",
-          "<button onclick='plFlagsAddRow(this,\"red\")' style='background:#f0f2f5;border:1px dashed #ddb8be;color:#7a1824;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;text-transform:uppercase;cursor:pointer;margin-right:6px;'>+ Risk flag</button>",
-          "<button onclick='plFlagsAddRow(this,\"green\")' style='background:#f0f2f5;border:1px dashed #b0d4c0;color:#185c38;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;text-transform:uppercase;cursor:pointer;'>+ Signal positif</button>"
+          "<div class='pl-flag-wrap' style='position:relative;margin-bottom:8px;'>",
+            "<div class='pl-flag-content' style='background:#faf0f1;border-left:3px solid #7a1824;padding:12px 40px 12px 15px;font-size:0.92rem;color:#7a1824;' contenteditable='true'>\u26a0 Nouveau risk flag</div>",
+            "<button onclick='this.parentNode.remove()' style='position:absolute;top:8px;right:8px;background:none;border:none;color:#7a1824;font-size:14px;cursor:pointer;padding:2px 6px;opacity:0.6;' title='Supprimer'>\u00d7</button>",
+          "</div>",
+          "<div class='pl-flag-wrap' style='position:relative;margin-bottom:8px;'>",
+            "<div class='pl-flag-content' style='background:#f0faf5;border-left:3px solid #185c38;padding:12px 40px 12px 15px;font-size:0.92rem;color:#185c38;' contenteditable='true'>\u2705 Signal positif</div>",
+            "<button onclick='this.parentNode.remove()' style='position:absolute;top:8px;right:8px;background:none;border:none;color:#185c38;font-size:14px;cursor:pointer;padding:2px 6px;opacity:0.6;' title='Supprimer'>\u00d7</button>",
+          "</div>",
+          "<div style='margin-top:6px;'>",
+            "<button onclick='plFlagsAddRow(this,\"red\")' style='background:#f0f2f5;border:1px dashed #ddb8be;color:#7a1824;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;text-transform:uppercase;cursor:pointer;margin-right:6px;'>+ Risk flag</button>",
+            "<button onclick='plFlagsAddRow(this,\"green\")' style='background:#f0f2f5;border:1px dashed #b0d4c0;color:#185c38;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;text-transform:uppercase;cursor:pointer;'>+ Signal positif</button>",
+          "</div>"
         ].join("");
       }
       /* Insertion position */
@@ -475,13 +483,41 @@
     newTh.focus();
   };
 
-  window.plFlagsAddRow = function(btn,type) {
-    var isRed=type==="red";
-    var div=document.createElement("div"); div.contentEditable="true";
-    div.style.cssText="background:"+(isRed?"#faf0f1":"#f0faf5")+";border-left:3px solid "+(isRed?"#7a1824":"#185c38")+";padding:12px 15px;font-size:0.92rem;color:"+(isRed?"#7a1824":"#185c38")+";margin-bottom:8px;";
-    div.textContent=isRed?"\u26a0 Nouveau risk flag":"\u2705 Signal positif";
-    btn.parentNode.insertBefore(div,btn);
-    div.focus(); var r=document.createRange();r.selectNodeContents(div);r.collapse(false);var s=window.getSelection();s.removeAllRanges();s.addRange(r);
+  window.plFlagsAddRow = function(btn, type) {
+    var isRed = type === "red";
+    var color  = isRed ? "#7a1824" : "#185c38";
+    var bg     = isRed ? "#faf0f1" : "#f0faf5";
+    var border = isRed ? "#7a1824" : "#185c38";
+    var text   = isRed ? "\u26a0 Nouveau risk flag" : "\u2705 Signal positif";
+
+    /* Wrapper avec bouton × */
+    var wrap = document.createElement("div");
+    wrap.className = "pl-flag-wrap";
+    wrap.style.cssText = "position:relative;margin-bottom:8px;";
+
+    var div = document.createElement("div");
+    div.className = "pl-flag-content";
+    div.contentEditable = "true";
+    div.style.cssText = "background:"+bg+";border-left:3px solid "+border+";padding:12px 40px 12px 15px;font-size:0.92rem;color:"+color+";";
+    div.textContent = text;
+
+    var del = document.createElement("button");
+    del.textContent = "\u00d7";
+    del.title = "Supprimer";
+    del.style.cssText = "position:absolute;top:8px;right:8px;background:none;border:none;color:"+color+";font-size:14px;cursor:pointer;padding:2px 6px;opacity:0.6;";
+    del.onclick = function() { wrap.remove(); };
+
+    wrap.appendChild(div);
+    wrap.appendChild(del);
+
+    /* Insérer avant le div des boutons + (dernier enfant du section-container) */
+    var container = btn.closest("div[style*='margin-top']") || btn.parentNode;
+    container.parentNode.insertBefore(wrap, container);
+
+    /* Focus sans getSelection pour éviter le freeze */
+    setTimeout(function() {
+      try { div.focus(); } catch(e) {}
+    }, 50);
   };
 
   /* SAVE */
@@ -491,6 +527,9 @@
     ["#plEditor","#plToast","#plModal"].forEach(function(s){var el=clone.querySelector(s);if(el)el.remove();});
     clone.querySelectorAll(".pl-section-ctrl").forEach(function(el){el.remove();});
     clone.querySelectorAll("button[onclick^='plTableAdd'],button[onclick^='plFlagsAdd']").forEach(function(el){el.remove();});
+    /* Retirer les boutons × des flags et les wrappers de boutons + */
+    clone.querySelectorAll(".pl-flag-wrap button").forEach(function(el){el.remove();});
+    clone.querySelectorAll("div[style*='margin-top:6px'] button[onclick^='plFlagsAdd']").forEach(function(el){el.parentNode&&el.parentNode.remove();});
     clone.querySelectorAll("table.pl-custom-table thead tr th:last-child").forEach(function(th){if(th.querySelector("button")||th.style.width==="32px")th.remove();});
     clone.querySelectorAll("table.pl-custom-table tbody tr td:last-child").forEach(function(td){if(td.style.width==="32px"&&!td.textContent.trim())td.remove();});
     clone.querySelectorAll("[contenteditable]").forEach(function(el){
