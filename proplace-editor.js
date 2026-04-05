@@ -16,6 +16,7 @@
   var WEBHOOK_URL = currentScript.getAttribute("data-webhook") || "";
   var DEAL_ID     = currentScript.getAttribute("data-deal")    || "";
   var STATUS      = (currentScript.getAttribute("data-status") || "NEW").toUpperCase();
+  var PDFCO_KEY   = currentScript.getAttribute("data-pdfco-key") || "";
   var editMode    = false;
   var savedHTML   = "";
 
@@ -113,22 +114,126 @@
 
   /* MODAL PDF UPLOAD */
   function showPDFModal() {
+    if (!WEBHOOK_URL) {
+      alert("⚠️ Webhook non configuré — l'attribut data-webhook est manquant sur la balise <script>.");
+      return;
+    }
     var existing = document.getElementById("plModal"); if (existing) existing.remove();
     var selectedFile = null, selectedBase64 = null;
+
+    /* Seuil fallback si pas de clé PDF.co */
+    var DIRECT_LIMIT = 3 * 1024 * 1024;
+    var hasPdfco = !!PDFCO_KEY;
+
+    var sizeHint = hasPdfco
+      ? "PDF uniquement &middot; Taille illimitée"
+      : "PDF uniquement &middot; Max 3 Mo sans clé PDF.co";
+
     var modal = document.createElement("div"); modal.id = "plModal";
-    modal.innerHTML = "<div id='plModalBox'><h2 id='plModalTitle'>&#128196; Analyser un document PDF</h2><p id='plModalSubtitle'>Stan va <strong>lire et analyser le contenu complet du PDF</strong>, puis mettre à jour automatiquement la section Due Diligence ou Portfolio. <strong>PDF uniquement.</strong></p><div id='plDropZone'><p>&#128196; <strong>Cliquez ici</strong> ou glissez-déposez votre PDF</p><small>PDF uniquement &middot; Max 10 Mo</small></div><div id='plFileInfo'></div><label class='pl-modal-label' style='margin-top:16px;'>Note (optionnel)</label><input class='pl-modal-input' type='text' id='plPdfNote' placeholder='Ex : Term sheet Partech v finale'><div id='plModalActions'><button class='pl-modal-cancel'>Annuler</button><button class='pl-modal-ok' id='plPdfConfirm' disabled>Envoyer &#x2192;</button></div></div>";
+    modal.innerHTML = [
+      "<div id='plModalBox'>",
+        "<h2 id='plModalTitle'>&#128196; Analyser un document PDF</h2>",
+        "<p id='plModalSubtitle'>Stan va <strong>analyser le PDF</strong> et mettre à jour la section Due Diligence ou Portfolio automatiquement.</p>",
+        "<div id='plDropZone'>",
+          "<p>&#128196; <strong>Cliquez ici</strong> ou glissez-déposez votre PDF</p>",
+          "<small>" + sizeHint + "</small>",
+        "</div>",
+        "<div id='plFileInfo'></div>",
+        "<label class='pl-modal-label' style='margin-top:16px;'>Note (optionnel)</label>",
+        "<input class='pl-modal-input' type='text' id='plPdfNote' placeholder='Ex : Term sheet Partech v finale'>",
+        "<div id='plModalActions'>",
+          "<button class='pl-modal-cancel'>Annuler</button>",
+          "<button class='pl-modal-ok' id='plPdfConfirm' disabled>Envoyer &#x2192;</button>",
+        "</div>",
+      "</div>"
+    ].join("");
     document.body.appendChild(modal);
-    var fi = document.createElement("input"); fi.type = "file"; fi.accept = ".pdf,application/pdf"; fi.style.display = "none"; document.body.appendChild(fi);
-    var dz = document.getElementById("plDropZone"), inf = document.getElementById("plFileInfo"), cb = document.getElementById("plPdfConfirm");
+
+    var fi = document.createElement("input"); fi.type="file"; fi.accept=".pdf,application/pdf"; fi.style.display="none"; document.body.appendChild(fi);
+    var dz=document.getElementById("plDropZone"), inf=document.getElementById("plFileInfo"), cb=document.getElementById("plPdfConfirm");
+
     function hf(file) {
-      if (!file || file.type !== "application/pdf") { inf.style.color="#7a1824"; inf.textContent="\u26a0 PDF uniquement."; return; }
+      if (!file || file.type !== "application/pdf") {
+        inf.style.color="#7a1824"; inf.textContent="\u26a0 PDF uniquement."; return;
+      }
+      /* Bloquer uniquement si pas de clé PDF.co ET fichier > 3 Mo */
+      if (!hasPdfco && file.size > DIRECT_LIMIT) {
+        inf.style.color="#7a1824";
+        inf.textContent="\u26a0 " + Math.round(file.size/1024) + " Ko \u2014 trop lourd sans PDF.co key. Compressez via smallpdf.com ou ajoutez data-pdfco-key.";
+        cb.disabled=true; selectedFile=null; selectedBase64=null; return;
+      }
       inf.style.color="#526070"; inf.textContent="Lecture\u2026";
-      var r = new FileReader(); r.onload=function(ev){selectedFile=file;selectedBase64=ev.target.result.split(",")[1];inf.style.color="#185c38";inf.textContent="\u2713 "+file.name+" ("+Math.round(file.size/1024)+" Ko)";cb.disabled=false;}; r.onerror=function(){inf.style.color="#7a1824";inf.textContent="\u26a0 Erreur.";};r.readAsDataURL(file);
+      var r = new FileReader();
+      r.onload=function(ev){
+        selectedFile=file;
+        selectedBase64=ev.target.result.split(",")[1];
+        var sizeStr = Math.round(file.size/1024) + " Ko";
+        var note2 = hasPdfco ? " \u2014 via PDF.co" : "";
+        inf.style.color="#185c38";
+        inf.textContent="\u2713 "+file.name+" ("+sizeStr+")" + note2;
+        cb.disabled=false;
+      };
+      r.onerror=function(){inf.style.color="#7a1824";inf.textContent="\u26a0 Erreur de lecture.";};
+      r.readAsDataURL(file);
     }
-    dz.onclick=function(){fi.click();}; fi.onchange=function(e){if(e.target.files[0])hf(e.target.files[0]);fi.value="";};
-    dz.addEventListener("dragover",function(e){e.preventDefault();dz.classList.add("dragover");}); dz.addEventListener("dragleave",function(){dz.classList.remove("dragover");}); dz.addEventListener("drop",function(e){e.preventDefault();dz.classList.remove("dragover");if(e.dataTransfer.files[0])hf(e.dataTransfer.files[0]);});
-    function cl(){modal.remove();fi.remove();} modal.querySelector(".pl-modal-cancel").onclick=cl; modal.onclick=function(e){if(e.target===modal)cl();};
-    cb.onclick=function(){if(!selectedBase64)return;var note=document.getElementById("plPdfNote").value||"";cl();plShowToast("Envoi en cours\u2026");fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({deal_id:DEAL_ID,source:"document_upload",file_base64:selectedBase64,file_name:selectedFile.name,file_type:selectedFile.type,note:note,updated_at:new Date().toISOString()})}).then(function(r){if(r.ok)plShowToast("\u2713 Reçu \u2014 rechargez dans 60s.");else plShowToast("Erreur serveur");}).catch(function(){plShowToast("Connexion \u00e9chou\u00e9e");});};
+
+    dz.onclick=function(){fi.click();};
+    fi.onchange=function(e){if(e.target.files[0])hf(e.target.files[0]);fi.value="";};
+    dz.addEventListener("dragover",function(e){e.preventDefault();dz.classList.add("dragover");});
+    dz.addEventListener("dragleave",function(){dz.classList.remove("dragover");});
+    dz.addEventListener("drop",function(e){e.preventDefault();dz.classList.remove("dragover");if(e.dataTransfer.files[0])hf(e.dataTransfer.files[0]);});
+
+    function cl(){modal.remove();fi.remove();}
+    modal.querySelector(".pl-modal-cancel").onclick=cl;
+    modal.onclick=function(e){if(e.target===modal)cl();};
+
+    cb.onclick=function(){
+      if(!selectedBase64||!selectedFile)return;
+      var note=document.getElementById("plPdfNote").value||"";
+      cl();
+
+    cb.onclick=function(){
+      if(!selectedBase64||!selectedFile)return;
+      var note=document.getElementById("plPdfNote").value||"";
+      cl();
+
+      if (!hasPdfco) {
+        plShowToast("\u26a0 Cl\u00e9 PDF.co manquante \u2014 ajoutez data-pdfco-key sur la balise script");
+        return;
+      }
+
+      plShowToast("Upload en cours\u2026");
+      fetch("https://api.pdf.co/v1/file/upload/base64", {
+        method:"POST",
+        headers:{"Content-Type":"application/json","x-api-key":PDFCO_KEY},
+        body:JSON.stringify({name:selectedFile.name,file:selectedBase64})
+      })
+      .then(function(r){return r.json();})
+      .then(function(data){
+        if(!data.url){plShowToast("\u26a0 PDF.co \u00e9chou\u00e9 : "+(data.message||"erreur"));return;}
+        plShowToast("Analyse en cours\u2026 (30-60s)");
+        return fetch(WEBHOOK_URL,{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            deal_id:DEAL_ID,
+            source:"document_upload",
+            file_url:data.url,
+            file_name:selectedFile.name,
+            file_type:selectedFile.type,
+            note:note,
+            updated_at:new Date().toISOString()
+          })
+        });
+      })
+      .then(function(r){
+        if(r&&r.ok)plShowToast("\u2713 Re\u00e7u \u2014 rechargez dans 60s.");
+        else if(r)plShowToast("Erreur serveur ("+r.status+")");
+      })
+      .catch(function(){
+        plShowToast(!navigator.onLine?"\u26a0 Pas de connexion":"\u26a0 \u00c9chou\u00e9 \u2014 v\u00e9rifiez la cl\u00e9 PDF.co et Make");
+      });
+    };
   }
 
   /* MODAL LIER UN FICHIER — v3.6: options dynamiques depuis le DOM */
@@ -335,10 +440,50 @@
       var sec = document.createElement("div"); sec.className = "section-container";
       if (res.type === "text") {
         sec.innerHTML = "<h2 class='section-title' contenteditable='true'>" + (res.title || "Nouvelle Section") + "</h2><p class='text-block' contenteditable='true' style='line-height:1.75;'>R\u00e9digez votre contenu ici\u2026</p>";
+
       } else if (res.type === "table") {
-        sec.innerHTML = "<h2 class='section-title' contenteditable='true'>" + (res.title || "Tableau Financier") + "</h2><div style='overflow-x:auto;'><table style='width:100%;border-collapse:collapse;font-size:0.9rem;'><thead><tr style='background:#0f1f33;'><th contenteditable='true' style='padding:10px;text-align:left;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;'>M\u00e9trique</th><th contenteditable='true' style='padding:10px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;'>Y1</th><th contenteditable='true' style='padding:10px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;'>Y2</th><th contenteditable='true' style='padding:10px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;'>Y3</th></tr></thead><tbody><tr><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-weight:600;'>Revenu (M\u20ac)</td><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;'>\u2014</td><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;'>\u2014</td><td contenteditable='true' style='padding:10px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;'>\u2014</td></tr></tbody></table></div>";
+        /* Tableau avec boutons + ligne / + colonne */
+        sec.innerHTML = [
+          "<h2 class='section-title' contenteditable='true'>" + (res.title || "Tableau") + "</h2>",
+          "<div class='pl-table-wrap' style='overflow-x:auto;position:relative;'>",
+            "<table class='pl-custom-table' style='width:100%;border-collapse:collapse;font-size:0.95rem;'>",
+              "<thead>",
+                "<tr style='background:#0f1f33;'>",
+                  "<th contenteditable='true' style='padding:10px 12px;text-align:left;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;border-right:1px solid rgba(255,255,255,0.1);min-width:120px;'>Métrique</th>",
+                  "<th contenteditable='true' style='padding:10px 12px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;border-right:1px solid rgba(255,255,255,0.1);min-width:80px;'>Y1</th>",
+                  "<th contenteditable='true' style='padding:10px 12px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;border-right:1px solid rgba(255,255,255,0.1);min-width:80px;'>Y2</th>",
+                  "<th contenteditable='true' style='padding:10px 12px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;min-width:80px;'>Y3</th>",
+                  /* Bouton + colonne dans le header */
+                  "<th style='padding:4px;background:#1e3553;width:32px;'>",
+                    "<button onclick='plTableAddCol(this)' title='Ajouter une colonne' style='background:#2d4a6e;color:#fff;border:none;width:24px;height:24px;cursor:pointer;font-size:14px;border-radius:2px;line-height:1;'>+</button>",
+                  "</th>",
+                "</tr>",
+              "</thead>",
+              "<tbody>",
+                "<tr>",
+                  "<td contenteditable='true' style='padding:10px 12px;border-bottom:1px solid #e4e7ed;border-right:1px solid #e4e7ed;font-weight:600;'>Revenu (M€)</td>",
+                  "<td contenteditable='true' style='padding:10px 12px;border-bottom:1px solid #e4e7ed;border-right:1px solid #e4e7ed;font-family:DM Mono,monospace;text-align:right;'>—</td>",
+                  "<td contenteditable='true' style='padding:10px 12px;border-bottom:1px solid #e4e7ed;border-right:1px solid #e4e7ed;font-family:DM Mono,monospace;text-align:right;'>—</td>",
+                  "<td contenteditable='true' style='padding:10px 12px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;text-align:right;'>—</td>",
+                  /* Cellule vide sous le bouton + col */
+                  "<td style='border-bottom:1px solid #e4e7ed;width:32px;'></td>",
+                "</tr>",
+              "</tbody>",
+            "</table>",
+            /* Bouton + ligne sous le tableau */
+            "<button onclick='plTableAddRow(this)' title='Ajouter une ligne' style='margin-top:6px;background:#f0f2f5;border:1px dashed #c0ccd8;color:#526070;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;width:100%;'>+ Ligne</button>",
+          "</div>"
+        ].join("");
+
       } else if (res.type === "flags") {
-        sec.innerHTML = "<h2 class='section-title' contenteditable='true'>" + (res.title || "Risk Flags") + "</h2><div style='background:#faf0f1;border-left:3px solid #7a1824;padding:12px 15px;font-size:0.92rem;color:#7a1824;margin-bottom:10px;font-style:italic;' contenteditable='true'>\u26a0 Nouveau risk flag</div><div style='background:#f0faf5;border-left:3px solid #185c38;padding:12px 15px;font-size:0.92rem;color:#185c38;font-style:italic;' contenteditable='true'>\u2705 Signal positif</div>";
+        /* Fix : pas d'italic sur les flags */
+        sec.innerHTML = [
+          "<h2 class='section-title' contenteditable='true'>" + (res.title || "Risk Flags") + "</h2>",
+          "<div style='background:#faf0f1;border-left:3px solid #7a1824;padding:12px 15px;font-size:0.92rem;color:#7a1824;margin-bottom:8px;' contenteditable='true'>\u26a0 Nouveau risk flag</div>",
+          "<div style='background:#f0faf5;border-left:3px solid #185c38;padding:12px 15px;font-size:0.92rem;color:#185c38;margin-bottom:8px;' contenteditable='true'>\u2705 Signal positif</div>",
+          "<button onclick='plFlagsAddRow(this,\"red\")' style='background:#f0f2f5;border:1px dashed #ddb8be;color:#7a1824;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;margin-right:6px;'>+ Risk flag</button>",
+          "<button onclick='plFlagsAddRow(this,\"green\")' style='background:#f0f2f5;border:1px dashed #b0d4c0;color:#185c38;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;'>+ Signal positif</button>"
+        ].join("");
       }
 
       /* Insertion à la position choisie */
@@ -365,11 +510,93 @@
     });
   };
 
+  /* ── HELPERS TABLEAU DYNAMIQUE ── */
+
+  /* Ajouter une ligne */
+  window.plTableAddRow = function(btn) {
+    var table = btn.parentNode.querySelector("table");
+    if (!table) return;
+    var tbody = table.querySelector("tbody");
+    if (!tbody) return;
+    /* Compter les colonnes depuis le header */
+    var headerCells = table.querySelectorAll("thead tr th");
+    /* -1 pour ignorer la cellule du bouton +col */
+    var colCount = Math.max(headerCells.length - 1, 1);
+    var tr = document.createElement("tr");
+    for (var i = 0; i < colCount; i++) {
+      var td = document.createElement("td");
+      td.contentEditable = "true";
+      td.style.cssText = "padding:10px 12px;border-bottom:1px solid #e4e7ed;" +
+        (i === colCount - 1 ? "" : "border-right:1px solid #e4e7ed;") +
+        (i === 0 ? "font-weight:600;" : "font-family:DM Mono,monospace;text-align:right;");
+      td.textContent = i === 0 ? "Nouvelle ligne" : "—";
+      tr.appendChild(td);
+    }
+    /* Cellule vide sous le bouton +col */
+    var tdEmpty = document.createElement("td");
+    tdEmpty.style.cssText = "border-bottom:1px solid #e4e7ed;width:32px;";
+    tr.appendChild(tdEmpty);
+    tbody.appendChild(tr);
+    /* Focus sur la première cellule */
+    var first = tr.querySelector("td");
+    if (first) { first.focus(); var r=document.createRange();r.selectNodeContents(first);r.collapse(false);var s=window.getSelection();s.removeAllRanges();s.addRange(r); }
+  };
+
+  /* Ajouter une colonne */
+  window.plTableAddCol = function(btn) {
+    var table = btn.closest("table");
+    if (!table) return;
+    var headerRow = table.querySelector("thead tr");
+    if (!headerRow) return;
+    /* Insérer un nouveau th AVANT le th du bouton +col */
+    var addColTh = btn.closest("th");
+    var newTh = document.createElement("th");
+    newTh.contentEditable = "true";
+    newTh.style.cssText = "padding:10px 12px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;border-right:1px solid rgba(255,255,255,0.1);min-width:80px;";
+    newTh.textContent = "Col";
+    headerRow.insertBefore(newTh, addColTh);
+    /* Ajouter une cellule dans chaque ligne du tbody */
+    var rows = table.querySelectorAll("tbody tr");
+    rows.forEach(function(row) {
+      var cells = row.querySelectorAll("td");
+      /* La dernière cellule est toujours la cellule vide (sous +col) */
+      var lastEmpty = cells[cells.length - 1];
+      var newTd = document.createElement("td");
+      newTd.contentEditable = "true";
+      newTd.style.cssText = "padding:10px 12px;border-bottom:1px solid #e4e7ed;border-right:1px solid #e4e7ed;font-family:DM Mono,monospace;text-align:right;";
+      newTd.textContent = "—";
+      row.insertBefore(newTd, lastEmpty);
+    });
+    newTh.focus();
+  };
+
+  /* Ajouter un flag ou signal */
+  window.plFlagsAddRow = function(btn, type) {
+    var isRed = type === "red";
+    var div = document.createElement("div");
+    div.contentEditable = "true";
+    div.style.cssText = "background:" + (isRed ? "#faf0f1" : "#f0faf5") + ";border-left:3px solid " + (isRed ? "#7a1824" : "#185c38") + ";padding:12px 15px;font-size:0.92rem;color:" + (isRed ? "#7a1824" : "#185c38") + ";margin-bottom:8px;";
+    div.textContent = isRed ? "\u26a0 Nouveau risk flag" : "\u2705 Signal positif";
+    /* Insérer avant les boutons */
+    btn.parentNode.insertBefore(div, btn);
+    div.focus();
+    var r=document.createRange();r.selectNodeContents(div);r.collapse(false);var s=window.getSelection();s.removeAllRanges();s.addRange(r);
+  };
+
   window.plSaveChanges = function() {
     plShowToast("Sauvegarde en cours\u2026");
     var clone = document.documentElement.cloneNode(true);
     ["#plEditor","#plToast","#plModal"].forEach(function(s){var el=clone.querySelector(s);if(el)el.remove();});
     clone.querySelectorAll(".pl-section-ctrl").forEach(function(el){el.remove();});
+    /* Retirer les boutons +Ligne / +Col / +Flag avant de sauvegarder */
+    clone.querySelectorAll("button[onclick^='plTableAdd'], button[onclick^='plFlagsAdd']").forEach(function(el){el.remove();});
+    /* Retirer la colonne fantôme du bouton +col (th/td vide en fin de ligne) */
+    clone.querySelectorAll("table.pl-custom-table thead tr th:last-child").forEach(function(th){
+      if (th.querySelector("button[onclick^='plTableAddCol']") || th.style.width === "32px") th.remove();
+    });
+    clone.querySelectorAll("table.pl-custom-table tbody tr td:last-child").forEach(function(td){
+      if (td.style.width === "32px" && !td.textContent.trim()) td.remove();
+    });
     clone.querySelectorAll("[contenteditable]").forEach(function(el){
       el.removeAttribute("contenteditable");
       el.style.cursor  = "";
