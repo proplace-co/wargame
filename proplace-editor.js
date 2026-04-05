@@ -227,7 +227,26 @@
   function init() {
     if (document.getElementById("plEditor")) return;
     var fab=document.createElement("div"); fab.id="plEditor";
-    fab.innerHTML="<button id='plToggle' onclick='plToggleEdit()'><span id='plIcon'>"+getMainIcon()+"</span><span id='plLabel'>"+getMainLabel()+"</span></button><div id='plActions'><button class='pl-action-btn pl-btn-save' onclick='plSaveChanges()'>&#128190; Sauvegarder &amp; Sync</button><button class='pl-action-btn pl-btn-pdf' onclick='plOpenPDFUpload()'>&#128196; Analyser un document PDF</button><button class='pl-action-btn pl-btn-link' onclick='plAttachLink()'>&#128279; Lier un fichier (sans analyse)</button><button class='pl-action-btn pl-btn-section' onclick='plAddSection()'>+ Ajouter une section manuellement</button><button class='pl-action-btn pl-btn-cancel' onclick='plCancelEdit()'>&#x2715; Annuler</button></div><div id='plToast'></div>";
+    fab.innerHTML=[
+      "<button id='plToggle' onclick='plToggleEdit()'>",
+        "<span id='plIcon'>"+getMainIcon()+"</span>",
+        "<span id='plLabel'>"+getMainLabel()+"</span>",
+      "</button>",
+      /* Phase 1 : actions immédiates (PDF/Link/Section) — pas de Save */
+      "<div id='plActionsP1' style='display:none;flex-direction:column;gap:6px;align-items:flex-end;'>",
+        "<button class='pl-action-btn pl-btn-pdf'     onclick='plOpenPDFUpload()'>&#128196; Analyser un document PDF</button>",
+        "<button class='pl-action-btn pl-btn-link'    onclick='plAttachLink()'>&#128279; Lier un fichier (sans analyse)</button>",
+        "<button class='pl-action-btn pl-btn-section' onclick='plAddSection()'>+ Ajouter une section manuellement</button>",
+        "<button class='pl-action-btn' style='background:#526070;color:#fff;' onclick='plStartTextEdit()'>&#9998; Éditer le texte du mémo</button>",
+        "<button class='pl-action-btn pl-btn-cancel'  onclick='plCloseActions()'>&#x2715; Fermer</button>",
+      "</div>",
+      /* Phase 2 : après ajout section ou édition texte — Save visible */
+      "<div id='plActionsP2' style='display:none;flex-direction:column;gap:6px;align-items:flex-end;'>",
+        "<button class='pl-action-btn pl-btn-save'   onclick='plSaveChanges()'>&#128190; Sauvegarder &amp; Sync</button>",
+        "<button class='pl-action-btn pl-btn-cancel' onclick='plCancelEdit()'>&#x2715; Annuler les modifications</button>",
+      "</div>",
+      "<div id='plToast'></div>"
+    ].join("");
     document.body.appendChild(fab);
     initAutoLightbox();
     initLightboxHandlers();
@@ -276,18 +295,51 @@
 
   /* EDITOR ACTIONS */
   window.plToggleEdit = function() {
-    editMode=!editMode;
-    if(editMode){var el=document.getElementById("plEditor"),ep=el?el.parentNode:null;if(el&&ep)el.remove();savedHTML=document.documentElement.outerHTML;if(el&&ep)ep.appendChild(el);plEnableEditing();}
-    else{plCancelEdit();}
+    var p1=document.getElementById("plActionsP1");
+    var p2=document.getElementById("plActionsP2");
+    if(!editMode && p1.style.display==="none") {
+      /* Ouvrir le panneau Phase 1 */
+      p1.style.display="flex"; p2.style.display="none";
+      document.getElementById("plLabel").textContent=" Options";
+    } else {
+      /* Fermer tout */
+      plCloseActions();
+    }
+  };
+
+  /* Ferme le panneau sans modifier le contenu */
+  window.plCloseActions = function() {
+    var p1=document.getElementById("plActionsP1");
+    var p2=document.getElementById("plActionsP2");
+    if(p1)p1.style.display="none";
+    if(p2)p2.style.display="none";
+    var icon=document.getElementById("plIcon"); if(icon)icon.innerHTML=getMainIcon();
+    var lbl=document.getElementById("plLabel"); if(lbl)lbl.textContent=getMainLabel();
+    document.getElementById("plToggle").classList.remove("editing");
+  };
+
+  /* Passe en mode édition texte → Phase 2 */
+  window.plStartTextEdit = function() {
+    var p1=document.getElementById("plActionsP1");
+    var p2=document.getElementById("plActionsP2");
+    if(p1)p1.style.display="none";
+    if(p2)p2.style.display="flex";
+    document.getElementById("plToggle").classList.add("editing");
+    document.getElementById("plLabel").textContent=" En cours d'\u00e9dition\u2026";
+    /* Snapshot avant édition */
+    var editorEl=document.getElementById("plEditor"),ep=editorEl?editorEl.parentNode:null;
+    if(editorEl&&ep)editorEl.remove();
+    savedHTML=document.documentElement.outerHTML;
+    if(editorEl&&ep)ep.appendChild(editorEl);
+    editMode=true;
+    document.body.classList.add("pl-editing");
+    plEnableContentEditing();
   };
   window.plOpenPDFUpload = function(){showPDFModal();};
   window.plAttachLink    = function(){showLinkFileModal();};
 
-  function plEnableEditing() {
-    document.getElementById("plToggle").classList.add("editing");
-    document.getElementById("plLabel").textContent=" En cours d'\u00e9dition\u2026";
-    document.getElementById("plActions").style.display="flex";
-    document.body.classList.add("pl-editing");
+  /* Active contenteditable sur les éléments texte */
+  function plEnableContentEditing() {
     var sel=".content-area p,.content-area h1,.content-area h2,.content-area h3,.content-area h4,.content-area li,.content-area td,.content-area b,.content-area span.text-block,.content-area div.text-block";
     document.querySelectorAll(sel).forEach(function(el){if(!el.closest("#plEditor")&&!el.closest("#plModal")){el.setAttribute("contenteditable","true");el.style.cursor="text";}});
     document.querySelectorAll(".section-container").forEach(function(sec){
@@ -298,6 +350,9 @@
       sec.insertBefore(ctrl,sec.firstChild);
     });
   }
+
+  /* Ancien alias conservé pour compatibilité interne */
+  function plEnableEditing() { plEnableContentEditing(); }
 
   window.plToggleSection = function(btn) {
     var sec=btn.closest(".section-container"),hidden=btn.dataset.hidden==="true";
@@ -371,6 +426,19 @@
       ctrl.innerHTML="<button class='pl-ctrl-btn pl-hide-btn' data-hidden='false' onclick='plToggleSection(this)'>&#128065; Masquer</button><button class='pl-ctrl-btn pl-del-btn' onclick='plDeleteSection(this)'>&#x2715; Supprimer</button><span class='pl-ctrl-btn pl-label-btn'>"+nm+"</span>";
       sec.insertBefore(ctrl,sec.firstChild);
       plShowToast("Section ajout\u00e9e");
+      /* Snapshot + passer en Phase 2 pour pouvoir sauvegarder */
+      if(!editMode) {
+        var editorEl=document.getElementById("plEditor"),ep=editorEl?editorEl.parentNode:null;
+        if(editorEl&&ep)editorEl.remove();
+        savedHTML=document.documentElement.outerHTML;
+        if(editorEl&&ep)ep.appendChild(editorEl);
+        editMode=true;
+        document.body.classList.add("pl-editing");
+      }
+      var p1=document.getElementById("plActionsP1"); if(p1)p1.style.display="none";
+      var p2=document.getElementById("plActionsP2"); if(p2)p2.style.display="flex";
+      document.getElementById("plToggle").classList.add("editing");
+      document.getElementById("plLabel").textContent=" Section ajout\u00e9e \u2014 sauvegardez";
       setTimeout(function(){sec.scrollIntoView({behavior:"smooth",block:"start"});},100);
     });
   };
@@ -447,7 +515,8 @@
     var toggle=document.getElementById("plToggle"); if(toggle)toggle.classList.remove("editing");
     var icon=document.getElementById("plIcon"); if(icon)icon.innerHTML=getMainIcon();
     var lbl=document.getElementById("plLabel"); if(lbl)lbl.textContent=getMainLabel();
-    var acts=document.getElementById("plActions"); if(acts)acts.style.display="none";
+    var p1=document.getElementById("plActionsP1"); if(p1)p1.style.display="none";
+    var p2=document.getElementById("plActionsP2"); if(p2)p2.style.display="none";
     document.querySelectorAll("[contenteditable]").forEach(function(el){
       if(!el.closest("#plEditor")){el.removeAttribute("contenteditable");el.style.cursor=el.style.outline="";
       var bg=el.style.background||el.style.backgroundColor||"";
