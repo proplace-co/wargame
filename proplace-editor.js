@@ -236,37 +236,111 @@
       var selEl=document.getElementById("plLinkSection");
       var section=selEl?selEl.value:"dd";
       var sectionLabel=selEl&&selEl.selectedOptions&&selEl.selectedOptions[0]?selEl.selectedOptions[0].text:section;
+      var fileName=selectedFile.name;
       cl();
 
-      /* Upload vers PDF.co → envoie uniquement file_url à Make */
+      /* Upload vers PDF.co → injecte la carte immédiatement → sauvegarde HTML */
       plShowToast("Upload en cours\u2026");
       fetch("https://api.pdf.co/v1/file/upload/base64",{
         method:"POST",
         headers:{"Content-Type":"application/json","x-api-key":PDFCO_KEY},
-        body:JSON.stringify({name:selectedFile.name, file:selectedBase64})
+        body:JSON.stringify({name:fileName, file:selectedBase64})
       })
       .then(function(r){return r.json();})
       .then(function(data){
-        if(!data.url){plShowToast("\u26a0 PDF.co \u00e9chou\u00e9 : "+(data.message||"erreur"));return Promise.resolve();}
-        plShowToast("Envoi en cours\u2026");
-        return fetch(WEBHOOK_URL,{
+        if(!data.url){plShowToast("\u26a0 PDF.co \u00e9chou\u00e9 : "+(data.message||"erreur"));return;}
+
+        /* 1 — Injecter la carte dans la section cible */
+        plInjectFileCard(data.url, fileName, sectionLabel, note, section);
+
+        /* 2 — Sauvegarder le HTML immédiatement sur GitHub */
+        plShowToast("Sauvegarde en cours\u2026");
+        plSaveHTMLNow(function(ok){
+          if(ok) plShowToast("\u2713 Fichier li\u00e9 et m\u00e9mo mis \u00e0 jour !");
+          else   plShowToast("\u2713 Carte ajout\u00e9e \u2014 \u00e9chec sync GitHub");
+        });
+
+        /* 3 — Envoyer aussi à Make pour Drive storage (async, pas bloquant) */
+        fetch(WEBHOOK_URL,{
           method:"POST", headers:{"Content-Type":"application/json"},
           body:JSON.stringify({
             deal_id:      DEAL_ID,
             source:       "link_file",
             file_url:     data.url,
-            file_name:    selectedFile.name,
+            file_name:    fileName,
             file_type:    selectedFile.type,
             section:      section,
             section_label:sectionLabel,
             note:         note,
             updated_at:   new Date().toISOString()
           })
-        });
+        }).catch(function(){/* silencieux */});
       })
-      .then(function(r){if(r&&r.ok)plShowToast("\u2713 Li\u00e9 \u2014 rechargez dans 15s.");else if(r)plShowToast("Erreur serveur ("+r.status+")");})
       .catch(function(){plShowToast(!navigator.onLine?"\u26a0 Pas de connexion":"\u26a0 \u00c9chou\u00e9 \u2014 v\u00e9rifiez cl\u00e9 PDF.co");});
     };
+  }
+
+  /* Injecte une carte fichier dans la section cible du mémo */
+  function plInjectFileCard(fileUrl, fileName, sectionLabel, note, sectionId) {
+    var ext = fileName.split('.').pop().toUpperCase();
+    var date = new Date().toLocaleDateString('fr-FR', {day:'2-digit', month:'short', year:'numeric'});
+    var card = document.createElement("div");
+    card.className = "pl-linked-file";
+    card.style.cssText = "display:flex;align-items:center;gap:12px;padding:11px 14px;background:#f4f5f7;border:1px solid #d4d9e2;border-left:3px solid #0f1f33;margin-bottom:8px;";
+    card.innerHTML = [
+      "<span style='font-family:DM Mono,monospace;font-size:0.62rem;background:#0f1f33;color:#fff;padding:2px 7px;letter-spacing:0.06em;flex-shrink:0;'>"+ext+"</span>",
+      "<div style='flex:1;min-width:0;'>",
+        "<a href='"+fileUrl+"' target='_blank' style='font-family:EB Garamond,serif;font-size:0.95rem;font-weight:600;color:#0f1f33;text-decoration:underline;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>"+fileName+"</a>",
+        "<span style='font-family:DM Mono,monospace;font-size:0.6rem;color:#9eaaba;letter-spacing:0.04em;'>"+date+(note?" &middot; "+note:"")+"</span>",
+      "</div>"
+    ].join("");
+
+    /* Trouver la section cible */
+    var target = document.getElementById(sectionId) ||
+                 document.querySelector("[data-pl-id='"+sectionId+"']") ||
+                 document.getElementById(sectionId.toLowerCase().replace(/\s+/g,"-")) ||
+                 document.getElementById("due-diligence") ||
+                 document.querySelector(".section-container");
+
+    if (target) {
+      /* Insérer après le section-title */
+      var title = target.querySelector(".section-title");
+      if (title && title.nextSibling) {
+        target.insertBefore(card, title.nextSibling);
+      } else {
+        target.appendChild(card);
+      }
+      card.scrollIntoView({behavior:"smooth", block:"center"});
+    }
+  }
+
+  /* Sauvegarde le HTML courant sur GitHub via le webhook live_editor */
+  function plSaveHTMLNow(callback) {
+    var editorEl = document.getElementById("plEditor");
+    var ep = editorEl ? editorEl.parentNode : null;
+    if (editorEl && ep) editorEl.remove();
+    var clone = document.documentElement.cloneNode(true);
+    if (editorEl && ep) ep.appendChild(editorEl);
+
+    /* Nettoyer les éléments éditeur */
+    ["#plEditor","#plToast","#plModal"].forEach(function(s){var el=clone.querySelector(s);if(el)el.remove();});
+    clone.querySelectorAll(".pl-section-ctrl").forEach(function(el){el.remove();});
+    clone.querySelectorAll("[contenteditable]").forEach(function(el){
+      el.removeAttribute("contenteditable"); el.style.cursor=""; el.style.outline="";
+    });
+    var html = "<!DOCTYPE html>\n" + clone.outerHTML;
+
+    fetch(WEBHOOK_URL,{
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        deal_id:     DEAL_ID,
+        source:      "live_editor",
+        updated_html:html,
+        updated_at:  new Date().toISOString()
+      })
+    })
+    .then(function(r){ callback(r.ok); })
+    .catch(function(){ callback(false); });
   }
 
   /* INIT UI */
