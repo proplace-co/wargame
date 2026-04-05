@@ -19,9 +19,6 @@
   var DEAL_ID      = currentScript.getAttribute("data-deal")         || "";
   var STATUS       = (currentScript.getAttribute("data-status") || "NEW").toUpperCase();
   var PDFCO_KEY    = currentScript.getAttribute("data-pdfco-key")    || "";
-  var GH_TOKEN     = currentScript.getAttribute("data-github-token") || "";
-  var GH_REPO      = currentScript.getAttribute("data-github-repo")  || "";
-  var GH_FILE      = currentScript.getAttribute("data-github-file")  || "";
   var editMode     = false;
   var savedHTML    = "";
 
@@ -702,53 +699,31 @@
     return "<!DOCTYPE html>\n"+clone.outerHTML;
   }
 
-  /* ── PUSH HTML VERS GITHUB DIRECTEMENT (pas de Make) ── */
-  function plPushToGitHub(html, callback) {
-    if (!GH_TOKEN || !GH_REPO || !GH_FILE) {
-      /* Fallback : envoyer via Make webhook (ancien circuit) */
-      fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({deal_id:DEAL_ID,updated_html:html,updated_at:new Date().toISOString(),source:"live_editor"})
-      }).then(function(r){callback(r.ok);}).catch(function(){callback(false);});
-      return;
-    }
-    var apiUrl = "https://api.github.com/repos/"+GH_REPO+"/contents/"+GH_FILE;
-    var headers = {"Content-Type":"application/json","Authorization":"Bearer "+GH_TOKEN,"Accept":"application/vnd.github+json"};
-    /* 1 — GET SHA (avec cache-buster) */
-    fetch(apiUrl+"?t="+Date.now(), {method:"GET", headers:headers})
-    .then(function(r){return r.json();})
-    .then(function(meta){
-      var sha = meta.sha || "";
-      /* 2 — PUT avec le nouveau contenu */
-      return fetch(apiUrl, {
-        method:"PUT", headers:headers,
-        body:JSON.stringify({
-          message:"Proplace memo update",
-          sha:sha,
-          content:btoa(unescape(encodeURIComponent(html)))
-        })
-      });
-    })
-    .then(function(r){callback(r.ok);})
-    .catch(function(){callback(false);});
+  /* ── PUSH HTML VERS GITHUB via Make (token dans Make, pas dans le HTML) ── */
+  function plPushToGitHub(html, source, callback) {
+    fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        deal_id:     DEAL_ID,
+        source:      source || "live_editor",
+        updated_html:html,
+        updated_at:  new Date().toISOString()
+      })
+    }).then(function(r){callback(r.ok);}).catch(function(){callback(false);});
   }
 
   /* ── SAVE (bouton Sauvegarder & Sync) ── */
   window.plSaveChanges = function() {
     plShowToast("Sauvegarde en cours\u2026");
     var html = plCleanHTML();
-    plPushToGitHub(html, function(ok){
-      if(ok){plShowToast("\u2713 Sauvegard\u00e9 instantan\u00e9ment !");plExitEditMode();}
-      else  {plShowToast("\u26a0 \u00c9chec GitHub \u2014 v\u00e9rifiez data-github-token");}
+    plPushToGitHub(html, "live_editor", function(ok){
+      if(ok){plShowToast("\u2713 Sauvegard\u00e9 et synchronis\u00e9 !");plExitEditMode();}
+      else  {plShowToast("\u26a0 \u00c9chec \u2014 v\u00e9rifiez Make");}
     });
-    /* Notifier aussi Make pour Airtable update (async, non bloquant) */
-    if(WEBHOOK_URL) fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({deal_id:DEAL_ID,source:"live_editor_notify",updated_at:new Date().toISOString()})
-    }).catch(function(){});
   };
 
-  /* ── SAVE silencieux (link_file interne) ── */
+  /* ── SAVE silencieux pour link_file ── */
   function plSaveHTMLNow(callback) {
-    plPushToGitHub(plCleanHTML(), callback);
+    plPushToGitHub(plCleanHTML(), "live_editor", callback);
   }
 
   window.plCancelEdit = function() {
