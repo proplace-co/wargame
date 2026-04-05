@@ -15,12 +15,15 @@
     var s = document.getElementsByTagName("script");
     return s[s.length - 1];
   })();
-  var WEBHOOK_URL = currentScript.getAttribute("data-webhook") || "";
-  var DEAL_ID     = currentScript.getAttribute("data-deal")    || "";
-  var STATUS      = (currentScript.getAttribute("data-status") || "NEW").toUpperCase();
-  var PDFCO_KEY   = currentScript.getAttribute("data-pdfco-key") || "";
-  var editMode    = false;
-  var savedHTML   = "";
+  var WEBHOOK_URL  = currentScript.getAttribute("data-webhook")      || "";
+  var DEAL_ID      = currentScript.getAttribute("data-deal")         || "";
+  var STATUS       = (currentScript.getAttribute("data-status") || "NEW").toUpperCase();
+  var PDFCO_KEY    = currentScript.getAttribute("data-pdfco-key")    || "";
+  var GH_TOKEN     = currentScript.getAttribute("data-github-token") || "";
+  var GH_REPO      = currentScript.getAttribute("data-github-repo")  || "";
+  var GH_FILE      = currentScript.getAttribute("data-github-file")  || "";
+  var editMode     = false;
+  var savedHTML    = "";
 
   function getMainLabel() {
     if (STATUS === "IN_PORTFOLIO") return " Gérer le Portfolio";
@@ -678,16 +681,16 @@
     }, 50);
   };
 
-  /* SAVE */
-  window.plSaveChanges = function() {
-    plShowToast("Sauvegarde en cours\u2026");
+  /* ── UTILITAIRE : Nettoie le HTML avant push ── */
+  function plCleanHTML() {
+    var editorEl=document.getElementById("plEditor"),ep=editorEl?editorEl.parentNode:null;
+    if(editorEl&&ep)editorEl.remove();
     var clone=document.documentElement.cloneNode(true);
+    if(editorEl&&ep)ep.appendChild(editorEl);
     ["#plEditor","#plToast","#plModal"].forEach(function(s){var el=clone.querySelector(s);if(el)el.remove();});
     clone.querySelectorAll(".pl-section-ctrl").forEach(function(el){el.remove();});
     clone.querySelectorAll("button[onclick^='plTableAdd'],button[onclick^='plFlagsAdd']").forEach(function(el){el.remove();});
-    /* Retirer les boutons × des flags et les wrappers de boutons + */
     clone.querySelectorAll(".pl-flag-wrap button").forEach(function(el){el.remove();});
-    clone.querySelectorAll("div[style*='margin-top:6px'] button[onclick^='plFlagsAdd']").forEach(function(el){el.parentNode&&el.parentNode.remove();});
     clone.querySelectorAll("table.pl-custom-table thead tr th:last-child").forEach(function(th){if(th.querySelector("button")||th.style.width==="32px")th.remove();});
     clone.querySelectorAll("table.pl-custom-table tbody tr td:last-child").forEach(function(td){if(td.style.width==="32px"&&!td.textContent.trim())td.remove();});
     clone.querySelectorAll("[contenteditable]").forEach(function(el){
@@ -696,11 +699,57 @@
       if(/rgba\(143,\s*168,\s*200/i.test(bg)||/rgba\(254,\s*249,\s*195/i.test(bg)){el.style.background="";}
     });
     if(clone.body)clone.body.classList.remove("pl-editing");
-    var html="<!DOCTYPE html>\n"+clone.outerHTML;
-    fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({deal_id:DEAL_ID,updated_html:html,updated_at:new Date().toISOString(),source:"live_editor"})})
-    .then(function(r){if(r.ok){plShowToast("\u2713 Sauvegard\u00e9 et synchronis\u00e9");plExitEditMode();}else{plShowToast("Erreur serveur");}})
-    .catch(function(){plShowToast("Connexion \u00e9chou\u00e9e");});
+    return "<!DOCTYPE html>\n"+clone.outerHTML;
+  }
+
+  /* ── PUSH HTML VERS GITHUB DIRECTEMENT (pas de Make) ── */
+  function plPushToGitHub(html, callback) {
+    if (!GH_TOKEN || !GH_REPO || !GH_FILE) {
+      /* Fallback : envoyer via Make webhook (ancien circuit) */
+      fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({deal_id:DEAL_ID,updated_html:html,updated_at:new Date().toISOString(),source:"live_editor"})
+      }).then(function(r){callback(r.ok);}).catch(function(){callback(false);});
+      return;
+    }
+    var apiUrl = "https://api.github.com/repos/"+GH_REPO+"/contents/"+GH_FILE;
+    var headers = {"Content-Type":"application/json","Authorization":"Bearer "+GH_TOKEN,"Accept":"application/vnd.github+json"};
+    /* 1 — GET SHA (avec cache-buster) */
+    fetch(apiUrl+"?t="+Date.now(), {method:"GET", headers:headers})
+    .then(function(r){return r.json();})
+    .then(function(meta){
+      var sha = meta.sha || "";
+      /* 2 — PUT avec le nouveau contenu */
+      return fetch(apiUrl, {
+        method:"PUT", headers:headers,
+        body:JSON.stringify({
+          message:"Proplace memo update",
+          sha:sha,
+          content:btoa(unescape(encodeURIComponent(html)))
+        })
+      });
+    })
+    .then(function(r){callback(r.ok);})
+    .catch(function(){callback(false);});
+  }
+
+  /* ── SAVE (bouton Sauvegarder & Sync) ── */
+  window.plSaveChanges = function() {
+    plShowToast("Sauvegarde en cours\u2026");
+    var html = plCleanHTML();
+    plPushToGitHub(html, function(ok){
+      if(ok){plShowToast("\u2713 Sauvegard\u00e9 instantan\u00e9ment !");plExitEditMode();}
+      else  {plShowToast("\u26a0 \u00c9chec GitHub \u2014 v\u00e9rifiez data-github-token");}
+    });
+    /* Notifier aussi Make pour Airtable update (async, non bloquant) */
+    if(WEBHOOK_URL) fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({deal_id:DEAL_ID,source:"live_editor_notify",updated_at:new Date().toISOString()})
+    }).catch(function(){});
   };
+
+  /* ── SAVE silencieux (link_file interne) ── */
+  function plSaveHTMLNow(callback) {
+    plPushToGitHub(plCleanHTML(), callback);
+  }
 
   window.plCancelEdit = function() {
     if(savedHTML){try{var p=new DOMParser(),d=p.parseFromString(savedHTML,"text/html"),sc=d.querySelector(".content-area"),cc=document.querySelector(".content-area");if(sc&&cc)cc.innerHTML=sc.innerHTML;}catch(e){}}
