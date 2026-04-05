@@ -1,10 +1,12 @@
 /* PROPLACE LIVE EDITOR - v3.6
-   Base : v3.5 (lightbox rewrite, double pen fix, auto-lightbox, hide empty synergies)
-   Added from v3.4:
-   - "Ajouter une section" : champ "Insérer" dynamique listant toutes les sections
-     existantes du mémo → insertion précise après la section choisie
-   - "Lier un fichier"    : select "Section" construit dynamiquement à partir du DOM
-     (toutes les sections, plus seulement DD / Portfolio Company)
+   Base : v3.5 (lightbox JS, double pen fix, auto-lightbox, hide empty synergies)
+   v3.6 adds:
+   - PDF upload via PDF.co pre-upload (data-pdfco-key) — taille illimitée
+   - "Ajouter une section" : champ "Insérer" dynamique (position dans le mémo)
+   - "Lier un fichier" : liste toutes les sections du mémo
+   - Tableau dynamique avec +Ligne / +Colonne
+   - Risk flags sans italic + boutons +Flag / +Signal
+   - Fix backgrounds inline tableaux préservés au save
 */
 (function() {
   'use strict';
@@ -112,68 +114,32 @@
     var first = modal.querySelector("input,select"); if (first) setTimeout(function() { first.focus(); }, 50);
   }
 
-  /* MODAL PDF UPLOAD */
+  /* MODAL PDF UPLOAD — circuit PDF.co si clé présente, sinon base64 direct */
   function showPDFModal() {
-    if (!WEBHOOK_URL) {
-      alert("⚠️ Webhook non configuré — l'attribut data-webhook est manquant sur la balise <script>.");
-      return;
-    }
+    if (!WEBHOOK_URL) { alert("⚠️ data-webhook manquant sur la balise <script>."); return; }
     var existing = document.getElementById("plModal"); if (existing) existing.remove();
     var selectedFile = null, selectedBase64 = null;
-
-    /* Seuil fallback si pas de clé PDF.co */
-    var DIRECT_LIMIT = 3 * 1024 * 1024;
     var hasPdfco = !!PDFCO_KEY;
-
-    var sizeHint = hasPdfco
-      ? "PDF uniquement &middot; Taille illimitée"
-      : "PDF uniquement &middot; Max 3 Mo sans clé PDF.co";
+    var sizeHint = hasPdfco ? "PDF uniquement &middot; Taille illimitée" : "PDF uniquement &middot; Max 3 Mo";
+    var LIMIT = 3 * 1024 * 1024;
 
     var modal = document.createElement("div"); modal.id = "plModal";
-    modal.innerHTML = [
-      "<div id='plModalBox'>",
-        "<h2 id='plModalTitle'>&#128196; Analyser un document PDF</h2>",
-        "<p id='plModalSubtitle'>Stan va <strong>analyser le PDF</strong> et mettre à jour la section Due Diligence ou Portfolio automatiquement.</p>",
-        "<div id='plDropZone'>",
-          "<p>&#128196; <strong>Cliquez ici</strong> ou glissez-déposez votre PDF</p>",
-          "<small>" + sizeHint + "</small>",
-        "</div>",
-        "<div id='plFileInfo'></div>",
-        "<label class='pl-modal-label' style='margin-top:16px;'>Note (optionnel)</label>",
-        "<input class='pl-modal-input' type='text' id='plPdfNote' placeholder='Ex : Term sheet Partech v finale'>",
-        "<div id='plModalActions'>",
-          "<button class='pl-modal-cancel'>Annuler</button>",
-          "<button class='pl-modal-ok' id='plPdfConfirm' disabled>Envoyer &#x2192;</button>",
-        "</div>",
-      "</div>"
-    ].join("");
+    modal.innerHTML = "<div id='plModalBox'><h2 id='plModalTitle'>&#128196; Analyser un document PDF</h2><p id='plModalSubtitle'>Stan va analyser le PDF et mettre à jour la section Due Diligence ou Portfolio.</p><div id='plDropZone'><p>&#128196; <strong>Cliquez ici</strong> ou glissez-déposez</p><small>" + sizeHint + "</small></div><div id='plFileInfo'></div><label class='pl-modal-label' style='margin-top:16px;'>Note (optionnel)</label><input class='pl-modal-input' type='text' id='plPdfNote' placeholder='Ex : Term sheet Partech v finale'><div id='plModalActions'><button class='pl-modal-cancel'>Annuler</button><button class='pl-modal-ok' id='plPdfConfirm' disabled>Envoyer &#x2192;</button></div></div>";
     document.body.appendChild(modal);
 
     var fi = document.createElement("input"); fi.type="file"; fi.accept=".pdf,application/pdf"; fi.style.display="none"; document.body.appendChild(fi);
     var dz=document.getElementById("plDropZone"), inf=document.getElementById("plFileInfo"), cb=document.getElementById("plPdfConfirm");
 
     function hf(file) {
-      if (!file || file.type !== "application/pdf") {
-        inf.style.color="#7a1824"; inf.textContent="\u26a0 PDF uniquement."; return;
-      }
-      /* Bloquer uniquement si pas de clé PDF.co ET fichier > 3 Mo */
-      if (!hasPdfco && file.size > DIRECT_LIMIT) {
-        inf.style.color="#7a1824";
-        inf.textContent="\u26a0 " + Math.round(file.size/1024) + " Ko \u2014 trop lourd sans PDF.co key. Compressez via smallpdf.com ou ajoutez data-pdfco-key.";
+      if (!file || file.type !== "application/pdf") { inf.style.color="#7a1824"; inf.textContent="\u26a0 PDF uniquement."; return; }
+      if (!hasPdfco && file.size > LIMIT) {
+        inf.style.color="#7a1824"; inf.textContent="\u26a0 " + Math.round(file.size/1024) + " Ko \u2014 max 3 Mo. Ajoutez data-pdfco-key ou compressez.";
         cb.disabled=true; selectedFile=null; selectedBase64=null; return;
       }
       inf.style.color="#526070"; inf.textContent="Lecture\u2026";
       var r = new FileReader();
-      r.onload=function(ev){
-        selectedFile=file;
-        selectedBase64=ev.target.result.split(",")[1];
-        var sizeStr = Math.round(file.size/1024) + " Ko";
-        var note2 = hasPdfco ? " \u2014 via PDF.co" : "";
-        inf.style.color="#185c38";
-        inf.textContent="\u2713 "+file.name+" ("+sizeStr+")" + note2;
-        cb.disabled=false;
-      };
-      r.onerror=function(){inf.style.color="#7a1824";inf.textContent="\u26a0 Erreur de lecture.";};
+      r.onload=function(ev){ selectedFile=file; selectedBase64=ev.target.result.split(",")[1]; inf.style.color="#185c38"; inf.textContent="\u2713 "+file.name+" ("+Math.round(file.size/1024)+" Ko)"+(hasPdfco?" \u2014 via PDF.co":""); cb.disabled=false; };
+      r.onerror=function(){ inf.style.color="#7a1824"; inf.textContent="\u26a0 Erreur de lecture."; };
       r.readAsDataURL(file);
     }
 
@@ -192,84 +158,53 @@
       var note=document.getElementById("plPdfNote").value||"";
       cl();
 
-    cb.onclick=function(){
-      if(!selectedBase64||!selectedFile)return;
-      var note=document.getElementById("plPdfNote").value||"";
-      cl();
-
-      if (!hasPdfco) {
-        plShowToast("\u26a0 Cl\u00e9 PDF.co manquante \u2014 ajoutez data-pdfco-key sur la balise script");
-        return;
-      }
-
-      plShowToast("Upload en cours\u2026");
-      fetch("https://api.pdf.co/v1/file/upload/base64", {
-        method:"POST",
-        headers:{"Content-Type":"application/json","x-api-key":PDFCO_KEY},
-        body:JSON.stringify({name:selectedFile.name,file:selectedBase64})
-      })
-      .then(function(r){return r.json();})
-      .then(function(data){
-        if(!data.url){plShowToast("\u26a0 PDF.co \u00e9chou\u00e9 : "+(data.message||"erreur"));return;}
-        plShowToast("Analyse en cours\u2026 (30-60s)");
-        return fetch(WEBHOOK_URL,{
+      if (hasPdfco) {
+        /* Circuit PDF.co : upload d'abord, puis envoie l'URL à Make */
+        plShowToast("Upload PDF en cours\u2026");
+        fetch("https://api.pdf.co/v1/file/upload/base64", {
           method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({
-            deal_id:DEAL_ID,
-            source:"document_upload",
-            file_url:data.url,
-            file_name:selectedFile.name,
-            file_type:selectedFile.type,
-            note:note,
-            updated_at:new Date().toISOString()
-          })
-        });
-      })
-      .then(function(r){
-        if(r&&r.ok)plShowToast("\u2713 Re\u00e7u \u2014 rechargez dans 60s.");
-        else if(r)plShowToast("Erreur serveur ("+r.status+")");
-      })
-      .catch(function(){
-        plShowToast(!navigator.onLine?"\u26a0 Pas de connexion":"\u26a0 \u00c9chou\u00e9 \u2014 v\u00e9rifiez la cl\u00e9 PDF.co et Make");
-      });
+          headers:{"Content-Type":"application/json","x-api-key":PDFCO_KEY},
+          body:JSON.stringify({name:selectedFile.name,file:selectedBase64})
+        })
+        .then(function(r){return r.json();})
+        .then(function(data){
+          if(!data.url){plShowToast("\u26a0 PDF.co \u00e9chou\u00e9 : "+(data.message||"erreur"));return Promise.resolve();}
+          plShowToast("Analyse en cours\u2026 (30-60s)");
+          return fetch(WEBHOOK_URL,{
+            method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({deal_id:DEAL_ID,source:"document_upload",file_url:data.url,file_name:selectedFile.name,file_type:selectedFile.type,note:note,updated_at:new Date().toISOString()})
+          });
+        })
+        .then(function(r){if(r&&r.ok)plShowToast("\u2713 Re\u00e7u \u2014 rechargez dans 60s.");else if(r)plShowToast("Erreur serveur ("+r.status+")");})
+        .catch(function(){plShowToast(!navigator.onLine?"\u26a0 Pas de connexion":"\u26a0 \u00c9chou\u00e9 \u2014 v\u00e9rifiez cl\u00e9 PDF.co");});
+
+      } else {
+        /* Circuit fallback : base64 direct */
+        plShowToast("Envoi en cours\u2026");
+        fetch(WEBHOOK_URL,{
+          method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({deal_id:DEAL_ID,source:"document_upload",file_base64:selectedBase64,file_name:selectedFile.name,file_type:selectedFile.type,note:note,updated_at:new Date().toISOString()})
+        })
+        .then(function(r){if(r.ok)plShowToast("\u2713 Re\u00e7u \u2014 rechargez dans 60s.");else plShowToast("Erreur serveur ("+r.status+")");})
+        .catch(function(){plShowToast(!navigator.onLine?"\u26a0 Pas de connexion":"\u26a0 \u00c9chou\u00e9 \u2014 sc\u00e9nario Make actif ?");});
+      }
     };
   }
 
-  /* MODAL LIER UN FICHIER — v3.6: options dynamiques depuis le DOM */
+  /* MODAL LIER UN FICHIER */
   function showLinkFileModal() {
     var existing = document.getElementById("plModal"); if (existing) existing.remove();
-    var selectedFile = null, selectedBase64 = null;
-
-    /* Construire les options de section dynamiquement */
+    var selectedFile=null, selectedBase64=null;
     var sectionOpts = buildSectionOptions();
     var sectionOptsHTML = sectionOpts.length
-      ? sectionOpts.map(function(o) { return "<option value='" + o.value + "'>" + o.label + "</option>"; }).join("")
+      ? sectionOpts.map(function(o){return "<option value='"+o.value+"'>"+o.label+"</option>";}).join("")
       : "<option value='dd'>Due Diligence</option><option value='pm'>Portfolio Company</option>";
 
-    var modal = document.createElement("div"); modal.id = "plModal";
-    modal.innerHTML = [
-      "<div id='plModalBox'>",
-        "<h2 id='plModalTitle'>&#128279; Lier un fichier (sans analyse)</h2>",
-        "<p id='plModalSubtitle'>Le fichier sera <strong>sauvegardé dans Drive</strong> et un lien sera ajouté dans la section choisie. <strong>Aucune analyse IA.</strong> Tous formats acceptés.</p>",
-        "<div id='plDropZone'>",
-          "<p>&#128194; <strong>Cliquez ici</strong> ou glissez-déposez</p>",
-          "<small>Tous formats &middot; Max 20 Mo</small>",
-        "</div>",
-        "<div id='plFileInfo'></div>",
-        "<label class='pl-modal-label' style='margin-top:16px;'>Section de destination</label>",
-        "<select class='pl-modal-input' id='plLinkSection'>" + sectionOptsHTML + "</select>",
-        "<label class='pl-modal-label'>Note (optionnel)</label>",
-        "<input class='pl-modal-input' type='text' id='plLinkNote' placeholder='Ex : Mod\u00e8le financier Q1 2025'>",
-        "<div id='plModalActions'>",
-          "<button class='pl-modal-cancel'>Annuler</button>",
-          "<button class='pl-modal-ok' id='plLinkConfirm' disabled>Lier &#x2192;</button>",
-        "</div>",
-      "</div>"
-    ].join("");
+    var modal = document.createElement("div"); modal.id="plModal";
+    modal.innerHTML = "<div id='plModalBox'><h2 id='plModalTitle'>&#128279; Lier un fichier (sans analyse)</h2><p id='plModalSubtitle'>Le fichier sera <strong>sauvegardé dans Drive</strong> et un lien sera ajouté dans la section choisie. <strong>Aucune analyse IA.</strong></p><div id='plDropZone'><p>&#128194; <strong>Cliquez ici</strong> ou glissez-déposez</p><small>Tous formats &middot; Max 20 Mo</small></div><div id='plFileInfo'></div><label class='pl-modal-label' style='margin-top:16px;'>Section de destination</label><select class='pl-modal-input' id='plLinkSection'>"+sectionOptsHTML+"</select><label class='pl-modal-label'>Note (optionnel)</label><input class='pl-modal-input' type='text' id='plLinkNote' placeholder='Ex : Modèle financier Q1 2025'><div id='plModalActions'><button class='pl-modal-cancel'>Annuler</button><button class='pl-modal-ok' id='plLinkConfirm' disabled>Lier &#x2192;</button></div></div>";
     document.body.appendChild(modal);
 
-    var fi = document.createElement("input"); fi.type="file"; fi.style.display="none"; document.body.appendChild(fi);
+    var fi=document.createElement("input"); fi.type="file"; fi.style.display="none"; document.body.appendChild(fi);
     var dz=document.getElementById("plDropZone"),inf=document.getElementById("plFileInfo"),cb=document.getElementById("plLinkConfirm");
     function hf(file){if(!file)return;inf.style.color="#526070";inf.textContent="Lecture\u2026";var r=new FileReader();r.onload=function(ev){selectedFile=file;selectedBase64=ev.target.result.split(",")[1];inf.style.color="#185c38";inf.textContent="\u2713 "+file.name+" ("+Math.round(file.size/1024)+" Ko)";cb.disabled=false;};r.onerror=function(){inf.style.color="#7a1824";inf.textContent="\u26a0 Erreur.";};r.readAsDataURL(file);}
     dz.onclick=function(){fi.click();}; fi.onchange=function(e){if(e.target.files[0])hf(e.target.files[0]);fi.value="";};
@@ -278,351 +213,232 @@
     cb.onclick=function(){
       if(!selectedBase64)return;
       var note=document.getElementById("plLinkNote").value||"";
-      var section=document.getElementById("plLinkSection").value||"dd";
-      /* Récupérer le label lisible pour Make */
-      var sectionLabel=section;
       var selEl=document.getElementById("plLinkSection");
-      if(selEl&&selEl.selectedOptions&&selEl.selectedOptions[0]) sectionLabel=selEl.selectedOptions[0].text;
-      cl();
-      plShowToast("Envoi en cours\u2026");
-      fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-        deal_id:DEAL_ID,
-        source:"link_file",
-        file_base64:selectedBase64,
-        file_name:selectedFile.name,
-        file_type:selectedFile.type,
-        section:section,
-        section_label:sectionLabel,
-        note:note,
-        updated_at:new Date().toISOString()
-      })}).then(function(r){if(r.ok)plShowToast("\u2713 Li\u00e9 \u2014 rechargez dans 15s.");else plShowToast("Erreur serveur");}).catch(function(){plShowToast("Connexion \u00e9chou\u00e9e");});
+      var section=selEl?selEl.value:"dd";
+      var sectionLabel=selEl&&selEl.selectedOptions&&selEl.selectedOptions[0]?selEl.selectedOptions[0].text:section;
+      cl(); plShowToast("Envoi en cours\u2026");
+      fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({deal_id:DEAL_ID,source:"link_file",file_base64:selectedBase64,file_name:selectedFile.name,file_type:selectedFile.type,section:section,section_label:sectionLabel,note:note,updated_at:new Date().toISOString()})})
+      .then(function(r){if(r.ok)plShowToast("\u2713 Li\u00e9 \u2014 rechargez dans 15s.");else plShowToast("Erreur serveur");})
+      .catch(function(){plShowToast("Connexion \u00e9chou\u00e9e");});
     };
   }
 
   /* INIT UI */
   function init() {
     if (document.getElementById("plEditor")) return;
-    var fab = document.createElement("div"); fab.id = "plEditor";
-    fab.innerHTML = "<button id='plToggle' onclick='plToggleEdit()'><span id='plIcon'>" + getMainIcon() + "</span><span id='plLabel'>" + getMainLabel() + "</span></button><div id='plActions'><button class='pl-action-btn pl-btn-save' onclick='plSaveChanges()'>&#128190; Sauvegarder &amp; Sync</button><button class='pl-action-btn pl-btn-pdf' onclick='plOpenPDFUpload()'>&#128196; Analyser un document PDF</button><button class='pl-action-btn pl-btn-link' onclick='plAttachLink()'>&#128279; Lier un fichier (sans analyse)</button><button class='pl-action-btn pl-btn-section' onclick='plAddSection()'>+ Ajouter une section manuellement</button><button class='pl-action-btn pl-btn-cancel' onclick='plCancelEdit()'>&#x2715; Annuler</button></div><div id='plToast'></div>";
+    var fab=document.createElement("div"); fab.id="plEditor";
+    fab.innerHTML="<button id='plToggle' onclick='plToggleEdit()'><span id='plIcon'>"+getMainIcon()+"</span><span id='plLabel'>"+getMainLabel()+"</span></button><div id='plActions'><button class='pl-action-btn pl-btn-save' onclick='plSaveChanges()'>&#128190; Sauvegarder &amp; Sync</button><button class='pl-action-btn pl-btn-pdf' onclick='plOpenPDFUpload()'>&#128196; Analyser un document PDF</button><button class='pl-action-btn pl-btn-link' onclick='plAttachLink()'>&#128279; Lier un fichier (sans analyse)</button><button class='pl-action-btn pl-btn-section' onclick='plAddSection()'>+ Ajouter une section manuellement</button><button class='pl-action-btn pl-btn-cancel' onclick='plCancelEdit()'>&#x2715; Annuler</button></div><div id='plToast'></div>";
     document.body.appendChild(fab);
     initAutoLightbox();
     initLightboxHandlers();
     hideEmptySynergies();
   }
 
-  /* ═══════════════════════════════════════════════════════════════
-     LIGHTBOX — PURE JS SHOW/HIDE (v3.5)
-  ═══════════════════════════════════════════════════════════════ */
+  /* LIGHTBOX */
   function initAutoLightbox() {
-    document.querySelectorAll('.sticky-img').forEach(function(img, i) {
-      if (img.closest('.zoom-trigger') || img.closest('.img-lightbox')) return;
-      var id = 'lb-auto-' + i;
-      var overlay = document.createElement('div');
-      overlay.className = 'img-lightbox'; overlay.id = id;
-      overlay.style.display = 'none';
-      overlay.innerHTML = '<a href="#" class="lb-close">&times;</a><img src="' + img.src + '" alt="' + (img.alt || '') + '">';
+    document.querySelectorAll('.sticky-img').forEach(function(img,i) {
+      if(img.closest('.zoom-trigger')||img.closest('.img-lightbox'))return;
+      var id='lb-auto-'+i, overlay=document.createElement('div');
+      overlay.className='img-lightbox'; overlay.id=id; overlay.style.display='none';
+      overlay.innerHTML='<a href="#" class="lb-close">&times;</a><img src="'+img.src+'" alt="'+(img.alt||'')+'">';
       document.body.appendChild(overlay);
-      var trigger = document.createElement('a');
-      trigger.href = '#' + id; trigger.className = 'zoom-trigger';
-      img.parentNode.insertBefore(trigger, img); trigger.appendChild(img);
+      var trigger=document.createElement('a'); trigger.href='#'+id; trigger.className='zoom-trigger';
+      img.parentNode.insertBefore(trigger,img); trigger.appendChild(img);
     });
   }
-
   function initLightboxHandlers() {
     document.querySelectorAll('a.zoom-trigger').forEach(function(trigger) {
-      if (trigger.dataset.plLbReady) return;
-      trigger.dataset.plLbReady = '1';
-      trigger.addEventListener('click', function(e) {
-        var href = trigger.getAttribute('href') || '';
-        if (!href.startsWith('#')) return;
-        var lb = document.getElementById(href.slice(1));
-        if (!lb || !lb.classList.contains('img-lightbox')) return;
-        e.preventDefault();
-        lb.style.display = 'flex';
+      if(trigger.dataset.plLbReady)return; trigger.dataset.plLbReady='1';
+      trigger.addEventListener('click',function(e){
+        var href=trigger.getAttribute('href')||''; if(!href.startsWith('#'))return;
+        var lb=document.getElementById(href.slice(1)); if(!lb||!lb.classList.contains('img-lightbox'))return;
+        e.preventDefault(); lb.style.display='flex';
       });
     });
-    document.addEventListener('click', function(e) {
-      var btn = e.target.closest && e.target.closest('.lb-close');
-      if (btn) {
-        e.preventDefault();
-        var savedY = window.scrollY;
-        var lb = btn.closest('.img-lightbox');
-        if (lb) lb.style.display = 'none';
-        if (window.location.hash) history.replaceState(null, '', window.location.pathname + window.location.search);
-        window.scrollTo(0, savedY); return;
-      }
-      if (e.target.classList && e.target.classList.contains('img-lightbox')) {
-        var savedY = window.scrollY;
-        e.target.style.display = 'none';
-        if (window.location.hash) history.replaceState(null, '', window.location.pathname + window.location.search);
-        window.scrollTo(0, savedY);
-      }
+    document.addEventListener('click',function(e){
+      var btn=e.target.closest&&e.target.closest('.lb-close');
+      if(btn){e.preventDefault();var sy=window.scrollY,lb=btn.closest('.img-lightbox');if(lb)lb.style.display='none';if(window.location.hash)history.replaceState(null,'',window.location.pathname+window.location.search);window.scrollTo(0,sy);return;}
+      if(e.target.classList&&e.target.classList.contains('img-lightbox')){var sy=window.scrollY;e.target.style.display='none';if(window.location.hash)history.replaceState(null,'',window.location.pathname+window.location.search);window.scrollTo(0,sy);}
     });
   }
 
   /* HIDE EMPTY SYNERGIES */
   function hideEmptySynergies() {
-    var section = document.getElementById('synergies-custom'); if (!section) return;
-    var title = section.querySelector('.section-title'); if (!title) return;
-    var text = (title.textContent || title.innerText || '').trim();
-    var isEmpty = /\band\s*$|\bet\s*$|\bund\s*$|\by\s*$|\be\s*$/i.test(text) || /undefined|null|\{\{/i.test(text) || text.replace(/[^a-z]/gi,'').length < 5;
-    if (!isEmpty) return;
-    section.style.display = 'none';
-    var navLink = document.querySelector('a[href="#synergies-custom"]'); if (navLink) navLink.style.display = 'none';
-    document.querySelectorAll('.sb-nav-heading').forEach(function(h) {
-      var next = h.nextElementSibling;
-      if (next && next.getAttribute('href') === '#synergies-custom' && next.style.display === 'none') h.style.display = 'none';
-    });
+    var section=document.getElementById('synergies-custom'); if(!section)return;
+    var title=section.querySelector('.section-title'); if(!title)return;
+    var text=(title.textContent||title.innerText||'').trim();
+    var isEmpty=/\band\s*$|\bet\s*$|\bund\s*$|\by\s*$|\be\s*$/i.test(text)||/undefined|null|\{\{/i.test(text)||text.replace(/[^a-z]/gi,'').length<5;
+    if(!isEmpty)return;
+    section.style.display='none';
+    var navLink=document.querySelector('a[href="#synergies-custom"]'); if(navLink)navLink.style.display='none';
+    document.querySelectorAll('.sb-nav-heading').forEach(function(h){var next=h.nextElementSibling;if(next&&next.getAttribute('href')==='#synergies-custom'&&next.style.display==='none')h.style.display='none';});
   }
 
   /* EDITOR ACTIONS */
   window.plToggleEdit = function() {
-    editMode = !editMode;
-    if (editMode) {
-      var editorEl = document.getElementById("plEditor"), editorParent = editorEl ? editorEl.parentNode : null;
-      if (editorEl && editorParent) editorEl.remove();
-      savedHTML = document.documentElement.outerHTML;
-      if (editorEl && editorParent) editorParent.appendChild(editorEl);
-      plEnableEditing();
-    } else { plCancelEdit(); }
+    editMode=!editMode;
+    if(editMode){var el=document.getElementById("plEditor"),ep=el?el.parentNode:null;if(el&&ep)el.remove();savedHTML=document.documentElement.outerHTML;if(el&&ep)ep.appendChild(el);plEnableEditing();}
+    else{plCancelEdit();}
   };
-  window.plOpenPDFUpload = function() { showPDFModal(); };
-  window.plAttachLink    = function() { showLinkFileModal(); };
+  window.plOpenPDFUpload = function(){showPDFModal();};
+  window.plAttachLink    = function(){showLinkFileModal();};
 
   function plEnableEditing() {
     document.getElementById("plToggle").classList.add("editing");
-    document.getElementById("plLabel").textContent = " En cours d'\u00e9dition\u2026";
-    document.getElementById("plActions").style.display = "flex";
+    document.getElementById("plLabel").textContent=" En cours d'\u00e9dition\u2026";
+    document.getElementById("plActions").style.display="flex";
     document.body.classList.add("pl-editing");
-    var sel = ".content-area p,.content-area h1,.content-area h2,.content-area h3,.content-area h4,.content-area li,.content-area td,.content-area b,.content-area span.text-block,.content-area div.text-block";
-    document.querySelectorAll(sel).forEach(function(el) { if (!el.closest("#plEditor") && !el.closest("#plModal")) { el.setAttribute("contenteditable","true"); el.style.cursor="text"; } });
-    document.querySelectorAll(".section-container").forEach(function(sec) {
-      if (sec.querySelector(".pl-section-ctrl")) return;
-      var title = sec.querySelector(".section-title"), name = title ? title.textContent.trim().slice(0,36) : "Section";
-      var ctrl = document.createElement("div"); ctrl.className = "pl-section-ctrl";
-      ctrl.innerHTML = "<button class='pl-ctrl-btn pl-hide-btn' data-hidden='false' onclick='plToggleSection(this)'>&#128065; Masquer</button><button class='pl-ctrl-btn pl-del-btn' onclick='plDeleteSection(this)'>&#x2715; Supprimer</button><span class='pl-ctrl-btn pl-label-btn'>" + name + "</span>";
-      sec.insertBefore(ctrl, sec.firstChild);
+    var sel=".content-area p,.content-area h1,.content-area h2,.content-area h3,.content-area h4,.content-area li,.content-area td,.content-area b,.content-area span.text-block,.content-area div.text-block";
+    document.querySelectorAll(sel).forEach(function(el){if(!el.closest("#plEditor")&&!el.closest("#plModal")){el.setAttribute("contenteditable","true");el.style.cursor="text";}});
+    document.querySelectorAll(".section-container").forEach(function(sec){
+      if(sec.querySelector(".pl-section-ctrl"))return;
+      var title=sec.querySelector(".section-title"),name=title?title.textContent.trim().slice(0,36):"Section";
+      var ctrl=document.createElement("div"); ctrl.className="pl-section-ctrl";
+      ctrl.innerHTML="<button class='pl-ctrl-btn pl-hide-btn' data-hidden='false' onclick='plToggleSection(this)'>&#128065; Masquer</button><button class='pl-ctrl-btn pl-del-btn' onclick='plDeleteSection(this)'>&#x2715; Supprimer</button><span class='pl-ctrl-btn pl-label-btn'>"+name+"</span>";
+      sec.insertBefore(ctrl,sec.firstChild);
     });
   }
 
   window.plToggleSection = function(btn) {
-    var sec = btn.closest(".section-container"), hidden = btn.dataset.hidden === "true";
-    Array.from(sec.children).forEach(function(c) { if (!c.classList.contains("pl-section-ctrl")) { c.style.opacity = hidden ? "1" : "0.1"; c.style.pointerEvents = hidden ? "" : "none"; } });
-    btn.dataset.hidden = hidden ? "false" : "true"; btn.textContent = hidden ? "\ud83d\udc41 Masquer" : "\ud83d\udeab Masqu\u00e9"; btn.style.background = hidden ? "" : "#0f1f33"; btn.style.color = hidden ? "" : "#fff";
+    var sec=btn.closest(".section-container"),hidden=btn.dataset.hidden==="true";
+    Array.from(sec.children).forEach(function(c){if(!c.classList.contains("pl-section-ctrl")){c.style.opacity=hidden?"1":"0.1";c.style.pointerEvents=hidden?"":"none";}});
+    btn.dataset.hidden=hidden?"false":"true"; btn.textContent=hidden?"\ud83d\udc41 Masquer":"\ud83d\udeab Masqu\u00e9"; btn.style.background=hidden?"":"#0f1f33"; btn.style.color=hidden?"":"#fff";
   };
 
   window.plDeleteSection = function(btn) {
-    var sec = btn.closest(".section-container"), t = sec.querySelector(".section-title");
-    showModal({ title: "Supprimer \u201c" + (t ? t.textContent.trim() : "cette section") + "\u201d ?", fields: [] }, function() { sec.remove(); plShowToast("Section supprim\u00e9e"); });
+    var sec=btn.closest(".section-container"),t=sec.querySelector(".section-title");
+    showModal({title:"Supprimer \u201c"+(t?t.textContent.trim():"cette section")+"\u201d ?",fields:[]},function(){sec.remove();plShowToast("Section supprim\u00e9e");});
   };
 
-  /* AJOUTER UNE SECTION — v3.6: champ "Insérer" dynamique */
+  /* AJOUTER UNE SECTION */
   window.plAddSection = function() {
-    /* Construire la liste des positions disponibles depuis le DOM */
-    var sectionOpts = buildSectionOptions();
-    var positionOptions = [{ value: "__end__", label: "Fin du document" }].concat(
-      sectionOpts.map(function(o) { return { value: o.value, label: "Après : " + o.label.slice(0,40) }; })
-    );
-
+    var sectionOpts=buildSectionOptions();
+    var positionOptions=[{value:"__end__",label:"Fin du document"}].concat(sectionOpts.map(function(o){return{value:o.value,label:"Après : "+o.label.slice(0,40)};}));
     showModal({
-      title: "Ajouter une section",
-      fields: [
-        { key: "type", label: "Type de section", type: "select", options: [
-          { value: "text",  label: "Texte libre" },
-          { value: "table", label: "Tableau financier" },
-          { value: "flags", label: "Risk flags & signaux" }
-        ]},
-        { key: "title",    label: "Titre",   placeholder: "Ex : Notes de Due Diligence" },
-        { key: "position", label: "Ins\u00e9rer", type: "select", options: positionOptions }
+      title:"Ajouter une section",
+      fields:[
+        {key:"type",label:"Type de section",type:"select",options:[{value:"text",label:"Texte libre"},{value:"table",label:"Tableau financier"},{value:"flags",label:"Risk flags & signaux"}]},
+        {key:"title",label:"Titre",placeholder:"Ex : Notes de Due Diligence"},
+        {key:"position",label:"Ins\u00e9rer",type:"select",options:positionOptions}
       ]
-    }, function(res) {
-      if (!res.type) return;
-      var sec = document.createElement("div"); sec.className = "section-container";
-      if (res.type === "text") {
-        sec.innerHTML = "<h2 class='section-title' contenteditable='true'>" + (res.title || "Nouvelle Section") + "</h2><p class='text-block' contenteditable='true' style='line-height:1.75;'>R\u00e9digez votre contenu ici\u2026</p>";
-
-      } else if (res.type === "table") {
-        /* Tableau avec boutons + ligne / + colonne */
-        sec.innerHTML = [
-          "<h2 class='section-title' contenteditable='true'>" + (res.title || "Tableau") + "</h2>",
-          "<div class='pl-table-wrap' style='overflow-x:auto;position:relative;'>",
+    },function(res){
+      if(!res.type)return;
+      var sec=document.createElement("div"); sec.className="section-container";
+      if(res.type==="text"){
+        sec.innerHTML="<h2 class='section-title' contenteditable='true'>"+(res.title||"Nouvelle Section")+"</h2><p class='text-block' contenteditable='true' style='line-height:1.75;'>R\u00e9digez votre contenu ici\u2026</p>";
+      } else if(res.type==="table"){
+        sec.innerHTML=[
+          "<h2 class='section-title' contenteditable='true'>"+(res.title||"Tableau")+"</h2>",
+          "<div class='pl-table-wrap' style='overflow-x:auto;'>",
             "<table class='pl-custom-table' style='width:100%;border-collapse:collapse;font-size:0.95rem;'>",
-              "<thead>",
-                "<tr style='background:#0f1f33;'>",
-                  "<th contenteditable='true' style='padding:10px 12px;text-align:left;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;border-right:1px solid rgba(255,255,255,0.1);min-width:120px;'>Métrique</th>",
-                  "<th contenteditable='true' style='padding:10px 12px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;border-right:1px solid rgba(255,255,255,0.1);min-width:80px;'>Y1</th>",
-                  "<th contenteditable='true' style='padding:10px 12px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;border-right:1px solid rgba(255,255,255,0.1);min-width:80px;'>Y2</th>",
-                  "<th contenteditable='true' style='padding:10px 12px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;min-width:80px;'>Y3</th>",
-                  /* Bouton + colonne dans le header */
-                  "<th style='padding:4px;background:#1e3553;width:32px;'>",
-                    "<button onclick='plTableAddCol(this)' title='Ajouter une colonne' style='background:#2d4a6e;color:#fff;border:none;width:24px;height:24px;cursor:pointer;font-size:14px;border-radius:2px;line-height:1;'>+</button>",
-                  "</th>",
-                "</tr>",
-              "</thead>",
-              "<tbody>",
-                "<tr>",
-                  "<td contenteditable='true' style='padding:10px 12px;border-bottom:1px solid #e4e7ed;border-right:1px solid #e4e7ed;font-weight:600;'>Revenu (M€)</td>",
-                  "<td contenteditable='true' style='padding:10px 12px;border-bottom:1px solid #e4e7ed;border-right:1px solid #e4e7ed;font-family:DM Mono,monospace;text-align:right;'>—</td>",
-                  "<td contenteditable='true' style='padding:10px 12px;border-bottom:1px solid #e4e7ed;border-right:1px solid #e4e7ed;font-family:DM Mono,monospace;text-align:right;'>—</td>",
-                  "<td contenteditable='true' style='padding:10px 12px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;text-align:right;'>—</td>",
-                  /* Cellule vide sous le bouton + col */
-                  "<td style='border-bottom:1px solid #e4e7ed;width:32px;'></td>",
-                "</tr>",
-              "</tbody>",
+              "<thead><tr style='background:#0f1f33;'>",
+                "<th contenteditable='true' style='padding:10px 12px;text-align:left;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;border-right:1px solid rgba(255,255,255,0.1);min-width:120px;'>Métrique</th>",
+                "<th contenteditable='true' style='padding:10px 12px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;border-right:1px solid rgba(255,255,255,0.1);min-width:80px;'>Y1</th>",
+                "<th contenteditable='true' style='padding:10px 12px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;border-right:1px solid rgba(255,255,255,0.1);min-width:80px;'>Y2</th>",
+                "<th contenteditable='true' style='padding:10px 12px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;min-width:80px;'>Y3</th>",
+                "<th style='padding:4px;background:#1e3553;width:32px;'><button onclick='plTableAddCol(this)' style='background:#2d4a6e;color:#fff;border:none;width:24px;height:24px;cursor:pointer;font-size:14px;border-radius:2px;'>+</button></th>",
+              "</tr></thead>",
+              "<tbody><tr>",
+                "<td contenteditable='true' style='padding:10px 12px;border-bottom:1px solid #e4e7ed;border-right:1px solid #e4e7ed;font-weight:600;'>Revenu (M\u20ac)</td>",
+                "<td contenteditable='true' style='padding:10px 12px;border-bottom:1px solid #e4e7ed;border-right:1px solid #e4e7ed;font-family:DM Mono,monospace;text-align:right;'>\u2014</td>",
+                "<td contenteditable='true' style='padding:10px 12px;border-bottom:1px solid #e4e7ed;border-right:1px solid #e4e7ed;font-family:DM Mono,monospace;text-align:right;'>\u2014</td>",
+                "<td contenteditable='true' style='padding:10px 12px;border-bottom:1px solid #e4e7ed;font-family:DM Mono,monospace;text-align:right;'>\u2014</td>",
+                "<td style='border-bottom:1px solid #e4e7ed;width:32px;'></td>",
+              "</tr></tbody>",
             "</table>",
-            /* Bouton + ligne sous le tableau */
-            "<button onclick='plTableAddRow(this)' title='Ajouter une ligne' style='margin-top:6px;background:#f0f2f5;border:1px dashed #c0ccd8;color:#526070;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;width:100%;'>+ Ligne</button>",
+            "<button onclick='plTableAddRow(this)' style='margin-top:6px;background:#f0f2f5;border:1px dashed #c0ccd8;color:#526070;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;width:100%;'>+ Ligne</button>",
           "</div>"
         ].join("");
-
-      } else if (res.type === "flags") {
-        /* Fix : pas d'italic sur les flags */
-        sec.innerHTML = [
-          "<h2 class='section-title' contenteditable='true'>" + (res.title || "Risk Flags") + "</h2>",
+      } else if(res.type==="flags"){
+        sec.innerHTML=[
+          "<h2 class='section-title' contenteditable='true'>"+(res.title||"Risk Flags")+"</h2>",
           "<div style='background:#faf0f1;border-left:3px solid #7a1824;padding:12px 15px;font-size:0.92rem;color:#7a1824;margin-bottom:8px;' contenteditable='true'>\u26a0 Nouveau risk flag</div>",
           "<div style='background:#f0faf5;border-left:3px solid #185c38;padding:12px 15px;font-size:0.92rem;color:#185c38;margin-bottom:8px;' contenteditable='true'>\u2705 Signal positif</div>",
-          "<button onclick='plFlagsAddRow(this,\"red\")' style='background:#f0f2f5;border:1px dashed #ddb8be;color:#7a1824;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;margin-right:6px;'>+ Risk flag</button>",
-          "<button onclick='plFlagsAddRow(this,\"green\")' style='background:#f0f2f5;border:1px dashed #b0d4c0;color:#185c38;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;'>+ Signal positif</button>"
+          "<button onclick='plFlagsAddRow(this,\"red\")' style='background:#f0f2f5;border:1px dashed #ddb8be;color:#7a1824;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;text-transform:uppercase;cursor:pointer;margin-right:6px;'>+ Risk flag</button>",
+          "<button onclick='plFlagsAddRow(this,\"green\")' style='background:#f0f2f5;border:1px dashed #b0d4c0;color:#185c38;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;text-transform:uppercase;cursor:pointer;'>+ Signal positif</button>"
         ].join("");
       }
-
-      /* Insertion à la position choisie */
-      var inserted = false;
-      if (res.position && res.position !== "__end__") {
-        var target = document.getElementById(res.position) ||
-                     document.querySelector("[data-pl-id='" + res.position + "']");
-        if (target && target.classList.contains("section-container")) {
-          target.insertAdjacentElement("afterend", sec);
-          inserted = true;
-        }
+      /* Insertion position */
+      var inserted=false;
+      if(res.position&&res.position!=="__end__"){
+        var target=document.getElementById(res.position)||document.querySelector("[data-pl-id='"+res.position+"']");
+        if(target&&target.classList.contains("section-container")){target.insertAdjacentElement("afterend",sec);inserted=true;}
       }
-      if (!inserted) document.querySelector(".content-area").appendChild(sec);
-
-      /* Ajouter les contrôles d'édition immédiatement */
-      var ctrl = document.createElement("div"); ctrl.className = "pl-section-ctrl";
-      var titleEl = sec.querySelector(".section-title");
-      var name = titleEl ? titleEl.textContent.trim().slice(0,36) : "Section";
-      ctrl.innerHTML = "<button class='pl-ctrl-btn pl-hide-btn' data-hidden='false' onclick='plToggleSection(this)'>&#128065; Masquer</button><button class='pl-ctrl-btn pl-del-btn' onclick='plDeleteSection(this)'>&#x2715; Supprimer</button><span class='pl-ctrl-btn pl-label-btn'>" + name + "</span>";
-      sec.insertBefore(ctrl, sec.firstChild);
-
+      if(!inserted)document.querySelector(".content-area").appendChild(sec);
+      /* Contrôles édition */
+      var ctrl=document.createElement("div"); ctrl.className="pl-section-ctrl";
+      var te=sec.querySelector(".section-title"),nm=te?te.textContent.trim().slice(0,36):"Section";
+      ctrl.innerHTML="<button class='pl-ctrl-btn pl-hide-btn' data-hidden='false' onclick='plToggleSection(this)'>&#128065; Masquer</button><button class='pl-ctrl-btn pl-del-btn' onclick='plDeleteSection(this)'>&#x2715; Supprimer</button><span class='pl-ctrl-btn pl-label-btn'>"+nm+"</span>";
+      sec.insertBefore(ctrl,sec.firstChild);
       plShowToast("Section ajout\u00e9e");
-      setTimeout(function() { sec.scrollIntoView({ behavior: "smooth", block: "start" }); }, 100);
+      setTimeout(function(){sec.scrollIntoView({behavior:"smooth",block:"start"});},100);
     });
   };
 
-  /* ── HELPERS TABLEAU DYNAMIQUE ── */
-
-  /* Ajouter une ligne */
+  /* HELPERS TABLEAU */
   window.plTableAddRow = function(btn) {
-    var table = btn.parentNode.querySelector("table");
-    if (!table) return;
-    var tbody = table.querySelector("tbody");
-    if (!tbody) return;
-    /* Compter les colonnes depuis le header */
-    var headerCells = table.querySelectorAll("thead tr th");
-    /* -1 pour ignorer la cellule du bouton +col */
-    var colCount = Math.max(headerCells.length - 1, 1);
-    var tr = document.createElement("tr");
-    for (var i = 0; i < colCount; i++) {
-      var td = document.createElement("td");
-      td.contentEditable = "true";
-      td.style.cssText = "padding:10px 12px;border-bottom:1px solid #e4e7ed;" +
-        (i === colCount - 1 ? "" : "border-right:1px solid #e4e7ed;") +
-        (i === 0 ? "font-weight:600;" : "font-family:DM Mono,monospace;text-align:right;");
-      td.textContent = i === 0 ? "Nouvelle ligne" : "—";
-      tr.appendChild(td);
+    var table=btn.parentNode.querySelector("table"); if(!table)return;
+    var tbody=table.querySelector("tbody"); if(!tbody)return;
+    var cols=Math.max(table.querySelectorAll("thead tr th").length-1,1);
+    var tr=document.createElement("tr");
+    for(var i=0;i<cols;i++){
+      var td=document.createElement("td"); td.contentEditable="true";
+      td.style.cssText="padding:10px 12px;border-bottom:1px solid #e4e7ed;"+(i<cols-1?"border-right:1px solid #e4e7ed;":"")+(i===0?"font-weight:600;":"font-family:DM Mono,monospace;text-align:right;");
+      td.textContent=i===0?"Nouvelle ligne":"\u2014"; tr.appendChild(td);
     }
-    /* Cellule vide sous le bouton +col */
-    var tdEmpty = document.createElement("td");
-    tdEmpty.style.cssText = "border-bottom:1px solid #e4e7ed;width:32px;";
-    tr.appendChild(tdEmpty);
+    var emp=document.createElement("td"); emp.style.cssText="border-bottom:1px solid #e4e7ed;width:32px;"; tr.appendChild(emp);
     tbody.appendChild(tr);
-    /* Focus sur la première cellule */
-    var first = tr.querySelector("td");
-    if (first) { first.focus(); var r=document.createRange();r.selectNodeContents(first);r.collapse(false);var s=window.getSelection();s.removeAllRanges();s.addRange(r); }
+    var first=tr.querySelector("td"); if(first){first.focus();var r=document.createRange();r.selectNodeContents(first);r.collapse(false);var s=window.getSelection();s.removeAllRanges();s.addRange(r);}
   };
 
-  /* Ajouter une colonne */
   window.plTableAddCol = function(btn) {
-    var table = btn.closest("table");
-    if (!table) return;
-    var headerRow = table.querySelector("thead tr");
-    if (!headerRow) return;
-    /* Insérer un nouveau th AVANT le th du bouton +col */
-    var addColTh = btn.closest("th");
-    var newTh = document.createElement("th");
-    newTh.contentEditable = "true";
-    newTh.style.cssText = "padding:10px 12px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;border-right:1px solid rgba(255,255,255,0.1);min-width:80px;";
-    newTh.textContent = "Col";
-    headerRow.insertBefore(newTh, addColTh);
-    /* Ajouter une cellule dans chaque ligne du tbody */
-    var rows = table.querySelectorAll("tbody tr");
-    rows.forEach(function(row) {
-      var cells = row.querySelectorAll("td");
-      /* La dernière cellule est toujours la cellule vide (sous +col) */
-      var lastEmpty = cells[cells.length - 1];
-      var newTd = document.createElement("td");
-      newTd.contentEditable = "true";
-      newTd.style.cssText = "padding:10px 12px;border-bottom:1px solid #e4e7ed;border-right:1px solid #e4e7ed;font-family:DM Mono,monospace;text-align:right;";
-      newTd.textContent = "—";
-      row.insertBefore(newTd, lastEmpty);
+    var table=btn.closest("table"); if(!table)return;
+    var hr=table.querySelector("thead tr"); if(!hr)return;
+    var addTh=btn.closest("th");
+    var newTh=document.createElement("th"); newTh.contentEditable="true";
+    newTh.style.cssText="padding:10px 12px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;border-right:1px solid rgba(255,255,255,0.1);min-width:80px;";
+    newTh.textContent="Col"; hr.insertBefore(newTh,addTh);
+    table.querySelectorAll("tbody tr").forEach(function(row){
+      var cells=row.querySelectorAll("td"),last=cells[cells.length-1];
+      var ntd=document.createElement("td"); ntd.contentEditable="true";
+      ntd.style.cssText="padding:10px 12px;border-bottom:1px solid #e4e7ed;border-right:1px solid #e4e7ed;font-family:DM Mono,monospace;text-align:right;";
+      ntd.textContent="\u2014"; row.insertBefore(ntd,last);
     });
     newTh.focus();
   };
 
-  /* Ajouter un flag ou signal */
-  window.plFlagsAddRow = function(btn, type) {
-    var isRed = type === "red";
-    var div = document.createElement("div");
-    div.contentEditable = "true";
-    div.style.cssText = "background:" + (isRed ? "#faf0f1" : "#f0faf5") + ";border-left:3px solid " + (isRed ? "#7a1824" : "#185c38") + ";padding:12px 15px;font-size:0.92rem;color:" + (isRed ? "#7a1824" : "#185c38") + ";margin-bottom:8px;";
-    div.textContent = isRed ? "\u26a0 Nouveau risk flag" : "\u2705 Signal positif";
-    /* Insérer avant les boutons */
-    btn.parentNode.insertBefore(div, btn);
-    div.focus();
-    var r=document.createRange();r.selectNodeContents(div);r.collapse(false);var s=window.getSelection();s.removeAllRanges();s.addRange(r);
+  window.plFlagsAddRow = function(btn,type) {
+    var isRed=type==="red";
+    var div=document.createElement("div"); div.contentEditable="true";
+    div.style.cssText="background:"+(isRed?"#faf0f1":"#f0faf5")+";border-left:3px solid "+(isRed?"#7a1824":"#185c38")+";padding:12px 15px;font-size:0.92rem;color:"+(isRed?"#7a1824":"#185c38")+";margin-bottom:8px;";
+    div.textContent=isRed?"\u26a0 Nouveau risk flag":"\u2705 Signal positif";
+    btn.parentNode.insertBefore(div,btn);
+    div.focus(); var r=document.createRange();r.selectNodeContents(div);r.collapse(false);var s=window.getSelection();s.removeAllRanges();s.addRange(r);
   };
 
+  /* SAVE */
   window.plSaveChanges = function() {
     plShowToast("Sauvegarde en cours\u2026");
-    var clone = document.documentElement.cloneNode(true);
+    var clone=document.documentElement.cloneNode(true);
     ["#plEditor","#plToast","#plModal"].forEach(function(s){var el=clone.querySelector(s);if(el)el.remove();});
     clone.querySelectorAll(".pl-section-ctrl").forEach(function(el){el.remove();});
-    /* Retirer les boutons +Ligne / +Col / +Flag avant de sauvegarder */
-    clone.querySelectorAll("button[onclick^='plTableAdd'], button[onclick^='plFlagsAdd']").forEach(function(el){el.remove();});
-    /* Retirer la colonne fantôme du bouton +col (th/td vide en fin de ligne) */
-    clone.querySelectorAll("table.pl-custom-table thead tr th:last-child").forEach(function(th){
-      if (th.querySelector("button[onclick^='plTableAddCol']") || th.style.width === "32px") th.remove();
-    });
-    clone.querySelectorAll("table.pl-custom-table tbody tr td:last-child").forEach(function(td){
-      if (td.style.width === "32px" && !td.textContent.trim()) td.remove();
-    });
+    clone.querySelectorAll("button[onclick^='plTableAdd'],button[onclick^='plFlagsAdd']").forEach(function(el){el.remove();});
+    clone.querySelectorAll("table.pl-custom-table thead tr th:last-child").forEach(function(th){if(th.querySelector("button")||th.style.width==="32px")th.remove();});
+    clone.querySelectorAll("table.pl-custom-table tbody tr td:last-child").forEach(function(td){if(td.style.width==="32px"&&!td.textContent.trim())td.remove();});
     clone.querySelectorAll("[contenteditable]").forEach(function(el){
-      el.removeAttribute("contenteditable");
-      el.style.cursor  = "";
-      el.style.outline = "";
-      /* Préserver les background inline des td/th (vert hurdle, jaune assumptions…).
-         On ne retire que le rgba semi-transparent injecté par l'éditeur. */
-      var bg = el.style.background || el.style.backgroundColor || "";
-      if (/rgba\(143,\s*168,\s*200/i.test(bg) || /rgba\(254,\s*249,\s*195/i.test(bg)) {
-        el.style.background = "";
-      }
+      el.removeAttribute("contenteditable"); el.style.cursor=""; el.style.outline="";
+      var bg=el.style.background||el.style.backgroundColor||"";
+      if(/rgba\(143,\s*168,\s*200/i.test(bg)||/rgba\(254,\s*249,\s*195/i.test(bg)){el.style.background="";}
     });
     if(clone.body)clone.body.classList.remove("pl-editing");
     var html="<!DOCTYPE html>\n"+clone.outerHTML;
     fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({deal_id:DEAL_ID,updated_html:html,updated_at:new Date().toISOString(),source:"live_editor"})})
-      .then(function(r){if(r.ok){plShowToast("\u2713 Sauvegard\u00e9 et synchronis\u00e9");plExitEditMode();}else{plShowToast("Erreur serveur");}})
-      .catch(function(){plShowToast("Connexion \u00e9chou\u00e9e");});
+    .then(function(r){if(r.ok){plShowToast("\u2713 Sauvegard\u00e9 et synchronis\u00e9");plExitEditMode();}else{plShowToast("Erreur serveur");}})
+    .catch(function(){plShowToast("Connexion \u00e9chou\u00e9e");});
   };
 
   window.plCancelEdit = function() {
-    if (savedHTML) {
-      try {
-        var parser=new DOMParser(),savedDoc=parser.parseFromString(savedHTML,"text/html");
-        var sc=savedDoc.querySelector(".content-area"),cc=document.querySelector(".content-area");
-        if(sc&&cc)cc.innerHTML=sc.innerHTML;
-      } catch(e){}
-    }
+    if(savedHTML){try{var p=new DOMParser(),d=p.parseFromString(savedHTML,"text/html"),sc=d.querySelector(".content-area"),cc=document.querySelector(".content-area");if(sc&&cc)cc.innerHTML=sc.innerHTML;}catch(e){}}
     plExitEditMode(); savedHTML="";
   };
 
@@ -630,18 +446,12 @@
     editMode=false; document.body.classList.remove("pl-editing");
     var toggle=document.getElementById("plToggle"); if(toggle)toggle.classList.remove("editing");
     var icon=document.getElementById("plIcon"); if(icon)icon.innerHTML=getMainIcon();
-    var lbl=document.getElementById("plLabel");  if(lbl)lbl.textContent=getMainLabel();
+    var lbl=document.getElementById("plLabel"); if(lbl)lbl.textContent=getMainLabel();
     var acts=document.getElementById("plActions"); if(acts)acts.style.display="none";
     document.querySelectorAll("[contenteditable]").forEach(function(el){
-      if(!el.closest("#plEditor")){
-        el.removeAttribute("contenteditable");
-        el.style.cursor  = "";
-        el.style.outline = "";
-        var bg = el.style.background || el.style.backgroundColor || "";
-        if (/rgba\(143,\s*168,\s*200/i.test(bg) || /rgba\(254,\s*249,\s*195/i.test(bg)) {
-          el.style.background = "";
-        }
-      }
+      if(!el.closest("#plEditor")){el.removeAttribute("contenteditable");el.style.cursor=el.style.outline="";
+      var bg=el.style.background||el.style.backgroundColor||"";
+      if(/rgba\(143,\s*168,\s*200/i.test(bg)||/rgba\(254,\s*249,\s*195/i.test(bg)){el.style.background="";}}
     });
     document.querySelectorAll(".pl-section-ctrl").forEach(function(el){el.remove();});
   }
@@ -653,5 +463,5 @@
     window._plTimer=setTimeout(function(){t.style.opacity="0";},4500);
   }
 
-  if (document.readyState==='loading') { document.addEventListener('DOMContentLoaded',init); } else { init(); }
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
 })();
