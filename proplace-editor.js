@@ -279,19 +279,44 @@
     });
   }
   function initLightboxHandlers() {
-    document.querySelectorAll('a.zoom-trigger').forEach(function(trigger) {
-      if(trigger.dataset.plLbReady)return; trigger.dataset.plLbReady='1';
-      trigger.addEventListener('click',function(e){
-        var href=trigger.getAttribute('href')||''; if(!href.startsWith('#'))return;
-        var lb=document.getElementById(href.slice(1)); if(!lb||!lb.classList.contains('img-lightbox'))return;
-        e.preventDefault(); lb.style.display='flex';
-      });
-    });
-    document.addEventListener('click',function(e){
-      var btn=e.target.closest&&e.target.closest('.lb-close');
-      if(btn){e.preventDefault();var sy=window.scrollY,lb=btn.closest('.img-lightbox');if(lb)lb.style.display='none';if(window.location.hash)history.replaceState(null,'',window.location.pathname+window.location.search);window.scrollTo(0,sy);return;}
-      if(e.target.classList&&e.target.classList.contains('img-lightbox')){var sy=window.scrollY;e.target.style.display='none';if(window.location.hash)history.replaceState(null,'',window.location.pathname+window.location.search);window.scrollTo(0,sy);}
-    });
+    /* Délégation sur document en phase CAPTURE (true) — passe avant tout autre handler.
+       setProperty('display','flex','important') écrase même un CSS display:none !important */
+    document.addEventListener('click', function(e) {
+
+      /* 1 — Clic sur zoom-trigger ou image à l'intérieur */
+      var trigger = e.target.closest && e.target.closest('a.zoom-trigger');
+      if (trigger) {
+        var href = trigger.getAttribute('href') || '';
+        if (href.charAt(0) === '#') {
+          var lb = document.getElementById(href.slice(1));
+          if (lb && lb.classList.contains('img-lightbox')) {
+            e.preventDefault(); e.stopPropagation();
+            lb.style.setProperty('display', 'flex', 'important');
+            return;
+          }
+        }
+      }
+
+      /* 2 — Clic sur le bouton × */
+      var closeBtn = e.target.closest && e.target.closest('.lb-close');
+      if (closeBtn) {
+        e.preventDefault();
+        var sy = window.scrollY;
+        var lb2 = closeBtn.closest('.img-lightbox');
+        if (lb2) lb2.style.setProperty('display', 'none', 'important');
+        if (window.location.hash) history.replaceState(null, '', window.location.pathname + window.location.search);
+        window.scrollTo(0, sy); return;
+      }
+
+      /* 3 — Clic sur le fond de l'overlay */
+      if (e.target.classList && e.target.classList.contains('img-lightbox')) {
+        var sy2 = window.scrollY;
+        e.target.style.setProperty('display', 'none', 'important');
+        if (window.location.hash) history.replaceState(null, '', window.location.pathname + window.location.search);
+        window.scrollTo(0, sy2);
+      }
+
+    }, true); /* true = phase capture */
   }
 
   /* HIDE EMPTY SYNERGIES */
