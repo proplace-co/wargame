@@ -239,7 +239,6 @@
       var fileName=selectedFile.name;
       cl();
 
-      /* Upload vers PDF.co → injecte la carte immédiatement → sauvegarde HTML */
       plShowToast("Upload en cours\u2026");
       fetch("https://api.pdf.co/v1/file/upload/base64",{
         method:"POST",
@@ -250,18 +249,10 @@
       .then(function(data){
         if(!data.url){plShowToast("\u26a0 PDF.co \u00e9chou\u00e9 : "+(data.message||"erreur"));return;}
 
-        /* 1 — Injecter la carte dans la section cible */
-        plInjectFileCard(data.url, fileName, sectionLabel, note, section);
+        plShowToast("Upload Drive en cours\u2026");
 
-        /* 2 — Sauvegarder le HTML immédiatement sur GitHub */
-        plShowToast("Sauvegarde en cours\u2026");
-        plSaveHTMLNow(function(ok){
-          if(ok) plShowToast("\u2713 Fichier li\u00e9 et m\u00e9mo mis \u00e0 jour !");
-          else   plShowToast("\u2713 Carte ajout\u00e9e \u2014 \u00e9chec sync GitHub");
-        });
-
-        /* 3 — Envoyer aussi à Make pour Drive storage (async, pas bloquant) */
-        fetch(WEBHOOK_URL,{
+        /* Envoyer à Make et attendre la réponse avec l'URL Drive permanente */
+        return fetch(WEBHOOK_URL,{
           method:"POST", headers:{"Content-Type":"application/json"},
           body:JSON.stringify({
             deal_id:      DEAL_ID,
@@ -274,7 +265,22 @@
             note:         note,
             updated_at:   new Date().toISOString()
           })
-        }).catch(function(){/* silencieux */});
+        })
+        .then(function(r){return r.json().catch(function(){return{};});})
+        .then(function(resp){
+          /* Utiliser l'URL Drive si Make la retourne, sinon URL temp PDF.co */
+          var finalUrl = (resp && resp.drive_url) ? resp.drive_url : data.url;
+
+          /* Injecter la carte avec l'URL finale */
+          plInjectFileCard(finalUrl, fileName, sectionLabel, note, section);
+
+          /* Sauvegarder le HTML avec l'URL Drive permanente */
+          plShowToast("Sauvegarde\u2026");
+          plSaveHTMLNow(function(ok){
+            if(ok) plShowToast("\u2713 Fichier li\u00e9 \u2014 lien Drive permanent !");
+            else   plShowToast("\u2713 Carte ajout\u00e9e \u2014 \u00e9chec sync");
+          });
+        });
       })
       .catch(function(){plShowToast(!navigator.onLine?"\u26a0 Pas de connexion":"\u26a0 \u00c9chou\u00e9 \u2014 v\u00e9rifiez cl\u00e9 PDF.co");});
     };
@@ -507,6 +513,17 @@
       ctrl.innerHTML="<button class='pl-ctrl-btn pl-hide-btn' data-hidden='false' onclick='plToggleSection(this)'>&#128065; Masquer</button><button class='pl-ctrl-btn pl-del-btn' onclick='plDeleteSection(this)'>&#x2715; Supprimer</button><span class='pl-ctrl-btn pl-label-btn'>"+name+"</span>";
       sec.insertBefore(ctrl,sec.firstChild);
     });
+    /* Ajouter bouton × sur toutes les cartes fichier liées */
+    document.querySelectorAll(".pl-linked-file").forEach(function(card){
+      if(card.querySelector(".pl-card-del"))return;
+      var btn=document.createElement("button");
+      btn.className="pl-card-del";
+      btn.title="Supprimer ce fichier lié";
+      btn.innerHTML="&#x2715;";
+      btn.style.cssText="margin-left:auto;flex-shrink:0;background:none;border:none;color:#7a1824;font-size:14px;cursor:pointer;padding:2px 6px;opacity:0.6;";
+      btn.onclick=function(e){e.stopPropagation();card.remove();plShowToast("Fichier retiré du mémo");};
+      card.appendChild(btn);
+    });
   }
 
   /* Ancien alias conservé pour compatibilité interne */
@@ -688,6 +705,7 @@
     clone.querySelectorAll(".pl-section-ctrl").forEach(function(el){el.remove();});
     clone.querySelectorAll("button[onclick^='plTableAdd'],button[onclick^='plFlagsAdd']").forEach(function(el){el.remove();});
     clone.querySelectorAll(".pl-flag-wrap button").forEach(function(el){el.remove();});
+    clone.querySelectorAll(".pl-card-del").forEach(function(el){el.remove();});
     clone.querySelectorAll("table.pl-custom-table thead tr th:last-child").forEach(function(th){if(th.querySelector("button")||th.style.width==="32px")th.remove();});
     clone.querySelectorAll("table.pl-custom-table tbody tr td:last-child").forEach(function(td){if(td.style.width==="32px"&&!td.textContent.trim())td.remove();});
     clone.querySelectorAll("[contenteditable]").forEach(function(el){
