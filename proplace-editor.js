@@ -717,12 +717,19 @@
     return "<!DOCTYPE html>\n"+clone.outerHTML;
   }
 
-  /* ── PUSH HTML VERS GITHUB via Make (token dans Make, pas dans le HTML) ── */
+  /* Extrait le nom de fichier depuis l'URL de la page courante */
+  function plGetFilename() {
+    var path = window.location.pathname;
+    return path.substring(path.lastIndexOf("/") + 1) || "";
+  }
+
+  /* u2500u2500 PUSH HTML VERS GITHUB via Make (token dans Make, pas dans le HTML) u2500u2500 */
   function plPushToGitHub(html, source, callback) {
     fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
         deal_id:     DEAL_ID,
         source:      source || "live_editor",
+        filename:    plGetFilename(),
         updated_html:html,
         updated_at:  new Date().toISOString()
       })
