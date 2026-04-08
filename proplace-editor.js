@@ -1,12 +1,14 @@
-/* PROPLACE LIVE EDITOR - v3.6
-   Base : v3.5 (lightbox JS, double pen fix, auto-lightbox, hide empty synergies)
-   v3.6 adds:
-   - PDF upload via PDF.co pre-upload (data-pdfco-key) — taille illimitée
-   - "Ajouter une section" : champ "Insérer" dynamique (position dans le mémo)
-   - "Lier un fichier" : liste toutes les sections du mémo
-   - Tableau dynamique avec +Ligne / +Colonne
-   - Risk flags sans italic + boutons +Flag / +Signal
-   - Fix backgrounds inline tableaux préservés au save
+/* PROPLACE LIVE EDITOR - v3.7
+   Base : v3.6 (PDF.co, Ajouter section, Lier fichier, Tableau dynamique, Risk flags)
+   v3.7 adds:
+   - Suppression des cartes injectées DD/PM : event cards (DD_FEED, PM_FEED) et
+     snippets de sous-sections (DD_TEAM, DD_MARKET, DD_PRODUCT, DD_BUSINESS,
+     DD_TRACTION, PM_BOARD, PM_REPORTING, PM_LEGAL) via bouton × en mode
+     "Éditer le texte du mémo"
+   - getElementsBetweenComments() : localise les nœuds éléments entre deux
+     ancres HTML comment (ex : DD_FEED_START / DD_FEED_END)
+   - addDeleteButtonsToInjectedCards() : applique les × sur les 10 zones d'ancres
+   - Nettoyage complet des .pl-card-del à la sortie du mode édition
 */
 (function() {
   'use strict';
@@ -51,6 +53,9 @@
     ".pl-hide-btn{color:#526070;border-color:#d4d9e2;}.pl-hide-btn:hover{background:#0f1f33;color:#fff;border-color:#0f1f33;}",
     ".pl-del-btn{color:#7a1824;border-color:#ddb8be;}.pl-del-btn:hover{background:#7a1824;color:#fff;}",
     ".pl-label-btn{color:#9eaaba;border-color:transparent;background:transparent;cursor:default;font-size:9px;}",
+    /* ── v3.7 : bouton × carte injectée ── */
+    ".pl-card-del{position:absolute;top:8px;right:8px;background:rgba(122,24,36,0.07);border:1px solid #ddb8be;color:#7a1824;font-size:10px;cursor:pointer;padding:3px 8px;font-family:'DM Mono','Courier New',monospace;letter-spacing:0.06em;text-transform:uppercase;z-index:10;transition:background 0.15s;}",
+    ".pl-card-del:hover{background:#7a1824;color:#fff;}",
     "#plModal{position:fixed;inset:0;background:rgba(11,25,41,0.65);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;}",
     "#plModalBox{background:#fff;padding:28px;max-width:460px;width:100%;box-shadow:0 8px 40px rgba(11,25,41,0.2);border-top:3px solid #0f1f33;max-height:90vh;overflow-y:auto;}",
     "#plModalTitle{font-family:'EB Garamond',Georgia,serif;font-size:1.25rem;font-weight:600;color:#0f1f33;margin:0 0 6px;}",
@@ -159,7 +164,6 @@
       cl();
 
       if (hasPdfco) {
-        /* Circuit PDF.co : upload d'abord, puis envoie l'URL à Make */
         plShowToast("Upload PDF en cours\u2026");
         fetch("https://api.pdf.co/v1/file/upload/base64", {
           method:"POST",
@@ -179,7 +183,6 @@
         .catch(function(){plShowToast(!navigator.onLine?"\u26a0 Pas de connexion":"\u26a0 \u00c9chou\u00e9 \u2014 v\u00e9rifiez cl\u00e9 PDF.co");});
 
       } else {
-        /* Circuit fallback : base64 direct */
         plShowToast("Envoi en cours\u2026");
         fetch(WEBHOOK_URL,{
           method:"POST",headers:{"Content-Type":"application/json"},
@@ -251,7 +254,6 @@
 
         plShowToast("Upload Drive en cours\u2026");
 
-        /* Envoyer à Make et attendre la réponse avec l'URL Drive permanente */
         return fetch(WEBHOOK_URL,{
           method:"POST", headers:{"Content-Type":"application/json"},
           body:JSON.stringify({
@@ -268,13 +270,8 @@
         })
         .then(function(r){return r.json().catch(function(){return{};});})
         .then(function(resp){
-          /* Utiliser l'URL Drive si Make la retourne, sinon URL temp PDF.co */
           var finalUrl = (resp && resp.drive_url) ? resp.drive_url : data.url;
-
-          /* Injecter la carte avec l'URL finale */
           plInjectFileCard(finalUrl, fileName, sectionLabel, note, section);
-
-          /* Sauvegarder le HTML avec l'URL Drive permanente */
           plShowToast("Sauvegarde\u2026");
           plSaveHTMLNow(function(ok){
             if(ok) plShowToast("\u2713 Fichier li\u00e9 \u2014 lien Drive permanent !");
@@ -301,7 +298,6 @@
       "</div>"
     ].join("");
 
-    /* Trouver la section cible */
     var target = document.getElementById(sectionId) ||
                  document.querySelector("[data-pl-id='"+sectionId+"']") ||
                  document.getElementById(sectionId.toLowerCase().replace(/\s+/g,"-")) ||
@@ -309,7 +305,6 @@
                  document.querySelector(".section-container");
 
     if (target) {
-      /* Insérer après le section-title */
       var title = target.querySelector(".section-title");
       if (title && title.nextSibling) {
         target.insertBefore(card, title.nextSibling);
@@ -322,31 +317,7 @@
 
   /* Sauvegarde le HTML courant sur GitHub via le webhook live_editor */
   function plSaveHTMLNow(callback) {
-    var editorEl = document.getElementById("plEditor");
-    var ep = editorEl ? editorEl.parentNode : null;
-    if (editorEl && ep) editorEl.remove();
-    var clone = document.documentElement.cloneNode(true);
-    if (editorEl && ep) ep.appendChild(editorEl);
-
-    /* Nettoyer les éléments éditeur */
-    ["#plEditor","#plToast","#plModal"].forEach(function(s){var el=clone.querySelector(s);if(el)el.remove();});
-    clone.querySelectorAll(".pl-section-ctrl").forEach(function(el){el.remove();});
-    clone.querySelectorAll("[contenteditable]").forEach(function(el){
-      el.removeAttribute("contenteditable"); el.style.cursor=""; el.style.outline="";
-    });
-    var html = "<!DOCTYPE html>\n" + clone.outerHTML;
-
-    fetch(WEBHOOK_URL,{
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({
-        deal_id:     DEAL_ID,
-        source:      "live_editor",
-        updated_html:html,
-        updated_at:  new Date().toISOString()
-      })
-    })
-    .then(function(r){ callback(r.ok); })
-    .catch(function(){ callback(false); });
+    plPushToGitHub(plCleanHTML(), "live_editor", callback);
   }
 
   /* INIT UI */
@@ -358,7 +329,6 @@
         "<span id='plIcon'>"+getMainIcon()+"</span>",
         "<span id='plLabel'>"+getMainLabel()+"</span>",
       "</button>",
-      /* Phase 1 : actions immédiates (PDF/Link/Section) — pas de Save */
       "<div id='plActionsP1' style='display:none;flex-direction:column;gap:6px;align-items:flex-end;'>",
         "<button class='pl-action-btn pl-btn-pdf'     onclick='plOpenPDFUpload()'>&#128196; Analyser un document PDF</button>",
         "<button class='pl-action-btn pl-btn-link'    onclick='plAttachLink()'>&#128279; Lier un fichier (sans analyse)</button>",
@@ -366,7 +336,6 @@
         "<button class='pl-action-btn' style='background:#526070;color:#fff;' onclick='plStartTextEdit()'>&#9998; Éditer le texte du mémo</button>",
         "<button class='pl-action-btn pl-btn-cancel'  onclick='plCloseActions()'>&#x2715; Fermer</button>",
       "</div>",
-      /* Phase 2 : après ajout section ou édition texte — Save visible */
       "<div id='plActionsP2' style='display:none;flex-direction:column;gap:6px;align-items:flex-end;'>",
         "<button class='pl-action-btn pl-btn-save'   onclick='plSaveChanges()'>&#128190; Sauvegarder &amp; Sync</button>",
         "<button class='pl-action-btn pl-btn-cancel' onclick='plCancelEdit()'>&#x2715; Annuler les modifications</button>",
@@ -381,7 +350,6 @@
 
   /* LIGHTBOX */
   function initAutoLightbox() {
-    /* 1. Créer des overlays pour les images sans lightbox */
     document.querySelectorAll('.sticky-img').forEach(function(img, i) {
       if (img.closest('.zoom-trigger') || img.closest('.img-lightbox')) return;
       var id = 'lb-auto-' + i;
@@ -393,23 +361,13 @@
       trigger.href = '#' + id; trigger.className = 'zoom-trigger';
       img.parentNode.insertBefore(trigger, img); trigger.appendChild(img);
     });
-
-    /* 2. Déplacer TOUS les .img-lightbox vers document.body
-          (évite que overflow/transform d'un parent piège position:fixed) */
     document.querySelectorAll('.img-lightbox').forEach(function(lb) {
-      if (lb.parentNode !== document.body) {
-        document.body.appendChild(lb);
-      }
-      /* Forcer display:none inline sur tous */
+      if (lb.parentNode !== document.body) document.body.appendChild(lb);
       lb.style.display = 'none';
     });
   }
   function initLightboxHandlers() {
-    /* Délégation sur document en phase CAPTURE (true) — passe avant tout autre handler.
-       setProperty('display','flex','important') écrase même un CSS display:none !important */
     document.addEventListener('click', function(e) {
-
-      /* 1 — Clic sur zoom-trigger ou image à l'intérieur */
       var trigger = e.target.closest && e.target.closest('a.zoom-trigger');
       if (trigger) {
         var href = trigger.getAttribute('href') || '';
@@ -422,8 +380,6 @@
           }
         }
       }
-
-      /* 2 — Clic sur le bouton × */
       var closeBtn = e.target.closest && e.target.closest('.lb-close');
       if (closeBtn) {
         e.preventDefault();
@@ -433,16 +389,13 @@
         if (window.location.hash) history.replaceState(null, '', window.location.pathname + window.location.search);
         window.scrollTo(0, sy); return;
       }
-
-      /* 3 — Clic sur le fond de l'overlay */
       if (e.target.classList && e.target.classList.contains('img-lightbox')) {
         var sy2 = window.scrollY;
         e.target.style.setProperty('display', 'none', 'important');
         if (window.location.hash) history.replaceState(null, '', window.location.pathname + window.location.search);
         window.scrollTo(0, sy2);
       }
-
-    }, true); /* true = phase capture */
+    }, true);
   }
 
   /* HIDE EMPTY SYNERGIES */
@@ -457,21 +410,107 @@
     document.querySelectorAll('.sb-nav-heading').forEach(function(h){var next=h.nextElementSibling;if(next&&next.getAttribute('href')==='#synergies-custom'&&next.style.display==='none')h.style.display='none';});
   }
 
+  /* ══════════════════════════════════════════════════════════
+     v3.7 — HELPER : trouver les éléments entre deux ancres HTML comment
+     Parcourt récursivement le DOM pour localiser le comment START,
+     puis collecte les frères éléments directs jusqu'au comment END.
+  ══════════════════════════════════════════════════════════ */
+  function getElementsBetweenComments(startText, endText) {
+    var result = [];
+    function searchNode(node) {
+      // Itérer sur les enfants directs
+      var children = node.childNodes;
+      var collecting = false;
+      var startParent = null;
+      for (var i = 0; i < children.length; i++) {
+        var child = children[i];
+        if (child.nodeType === 8) { // comment node
+          var t = child.data.trim();
+          if (t === startText) { collecting = true; startParent = node; continue; }
+          if (t === endText && collecting) { return true; } // found + collected
+        }
+        if (collecting && child.nodeType === 1) {
+          result.push(child);
+        }
+        // Chercher récursivement si pas encore trouvé le start
+        if (!collecting && child.nodeType === 1) {
+          if (searchNode(child)) return true;
+        }
+      }
+      return false;
+    }
+    searchNode(document.body);
+    return result;
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     v3.7 — AJOUTER boutons × sur les cartes injectées DD/PM
+     Couvre les 10 zones d'ancres Make.com :
+       DD_FEED, DD_TEAM, DD_MARKET, DD_PRODUCT, DD_BUSINESS, DD_TRACTION
+       PM_FEED, PM_BOARD, PM_REPORTING, PM_LEGAL
+  ══════════════════════════════════════════════════════════ */
+  function addDeleteButtonsToInjectedCards() {
+    var zones = [
+      ["DD_FEED_START",       "DD_FEED_END"],
+      ["DD_TEAM_START",       "DD_TEAM_END"],
+      ["DD_MARKET_START",     "DD_MARKET_END"],
+      ["DD_PRODUCT_START",    "DD_PRODUCT_END"],
+      ["DD_BUSINESS_START",   "DD_BUSINESS_END"],
+      ["DD_TRACTION_START",   "DD_TRACTION_END"],
+      ["PM_FEED_START",       "PM_FEED_END"],
+      ["PM_BOARD_START",      "PM_BOARD_END"],
+      ["PM_REPORTING_START",  "PM_REPORTING_END"],
+      ["PM_LEGAL_START",      "PM_LEGAL_END"]
+    ];
+
+    zones.forEach(function(pair) {
+      var cards = getElementsBetweenComments(pair[0], pair[1]);
+      cards.forEach(function(card) {
+        // Ignorer les spans pl-empty (placeholders vides)
+        if (card.tagName === "SPAN" && card.classList.contains("pl-empty")) return;
+        // Ignorer si déjà un bouton × présent
+        if (card.querySelector(".pl-card-del")) return;
+        // Ignorer les éléments purement structurels sans contenu visible
+        if (!card.textContent.trim() && !card.querySelector("a,img")) return;
+
+        // position:relative pour l'absolute du bouton
+        var origPos = card.style.position;
+        if (!origPos || origPos === "static" || origPos === "") {
+          card.style.position = "relative";
+          card.dataset.plOrigPos = origPos; // mémoriser pour restauration éventuelle
+        }
+
+        var btn = document.createElement("button");
+        btn.className = "pl-card-del";
+        btn.title = "Supprimer cette carte";
+        btn.innerHTML = "&#x2715; Retirer";
+
+        // Closure sur la carte pour éviter référence stale
+        (function(theCard) {
+          btn.onclick = function(e) {
+            e.stopPropagation();
+            theCard.remove();
+            plShowToast("Carte retir\u00e9e \u2014 sauvegardez pour confirmer");
+          };
+        })(card);
+
+        card.appendChild(btn);
+      });
+    });
+  }
+
   /* EDITOR ACTIONS */
   window.plToggleEdit = function() {
     var p1=document.getElementById("plActionsP1");
     var p2=document.getElementById("plActionsP2");
     if(!editMode && p1.style.display==="none") {
-      /* Ouvrir le panneau Phase 1 */
       p1.style.display="flex"; p2.style.display="none";
       document.getElementById("plLabel").textContent=" Options";
     } else {
-      /* Fermer tout */
       plCloseActions();
     }
   };
 
-  /* Ferme le panneau sans modifier le contenu */
   window.plCloseActions = function() {
     var p1=document.getElementById("plActionsP1");
     var p2=document.getElementById("plActionsP2");
@@ -482,7 +521,6 @@
     document.getElementById("plToggle").classList.remove("editing");
   };
 
-  /* Passe en mode édition texte → Phase 2 */
   window.plStartTextEdit = function() {
     var p1=document.getElementById("plActionsP1");
     var p2=document.getElementById("plActionsP2");
@@ -490,7 +528,6 @@
     if(p2)p2.style.display="flex";
     document.getElementById("plToggle").classList.add("editing");
     document.getElementById("plLabel").textContent=" En cours d'\u00e9dition\u2026";
-    /* Snapshot avant édition */
     var editorEl=document.getElementById("plEditor"),ep=editorEl?editorEl.parentNode:null;
     if(editorEl&&ep)editorEl.remove();
     savedHTML=document.documentElement.outerHTML;
@@ -502,10 +539,11 @@
   window.plOpenPDFUpload = function(){showPDFModal();};
   window.plAttachLink    = function(){showLinkFileModal();};
 
-  /* Active contenteditable sur les éléments texte */
+  /* Active contenteditable + boutons section + boutons cartes injectées */
   function plEnableContentEditing() {
     var sel=".content-area p,.content-area h1,.content-area h2,.content-area h3,.content-area h4,.content-area li,.content-area td,.content-area b,.content-area span.text-block,.content-area div.text-block";
     document.querySelectorAll(sel).forEach(function(el){if(!el.closest("#plEditor")&&!el.closest("#plModal")){el.setAttribute("contenteditable","true");el.style.cursor="text";}});
+
     document.querySelectorAll(".section-container").forEach(function(sec){
       if(sec.querySelector(".pl-section-ctrl"))return;
       var title=sec.querySelector(".section-title"),name=title?title.textContent.trim().slice(0,36):"Section";
@@ -513,7 +551,8 @@
       ctrl.innerHTML="<button class='pl-ctrl-btn pl-hide-btn' data-hidden='false' onclick='plToggleSection(this)'>&#128065; Masquer</button><button class='pl-ctrl-btn pl-del-btn' onclick='plDeleteSection(this)'>&#x2715; Supprimer</button><span class='pl-ctrl-btn pl-label-btn'>"+name+"</span>";
       sec.insertBefore(ctrl,sec.firstChild);
     });
-    /* Ajouter bouton × sur toutes les cartes fichier liées */
+
+    /* Boutons × sur cartes fichiers liées (.pl-linked-file) */
     document.querySelectorAll(".pl-linked-file").forEach(function(card){
       if(card.querySelector(".pl-card-del"))return;
       var btn=document.createElement("button");
@@ -524,9 +563,11 @@
       btn.onclick=function(e){e.stopPropagation();card.remove();plShowToast("Fichier retiré du mémo");};
       card.appendChild(btn);
     });
+
+    /* ── v3.7 : boutons × sur les cartes injectées DD/PM ── */
+    addDeleteButtonsToInjectedCards();
   }
 
-  /* Ancien alias conservé pour compatibilité interne */
   function plEnableEditing() { plEnableContentEditing(); }
 
   window.plToggleSection = function(btn) {
@@ -596,20 +637,17 @@
           "</div>"
         ].join("");
       }
-      /* Insertion position */
       var inserted=false;
       if(res.position&&res.position!=="__end__"){
         var target=document.getElementById(res.position)||document.querySelector("[data-pl-id='"+res.position+"']");
         if(target&&target.classList.contains("section-container")){target.insertAdjacentElement("afterend",sec);inserted=true;}
       }
       if(!inserted)document.querySelector(".content-area").appendChild(sec);
-      /* Contrôles édition */
       var ctrl=document.createElement("div"); ctrl.className="pl-section-ctrl";
       var te=sec.querySelector(".section-title"),nm=te?te.textContent.trim().slice(0,36):"Section";
       ctrl.innerHTML="<button class='pl-ctrl-btn pl-hide-btn' data-hidden='false' onclick='plToggleSection(this)'>&#128065; Masquer</button><button class='pl-ctrl-btn pl-del-btn' onclick='plDeleteSection(this)'>&#x2715; Supprimer</button><span class='pl-ctrl-btn pl-label-btn'>"+nm+"</span>";
       sec.insertBefore(ctrl,sec.firstChild);
       plShowToast("Section ajout\u00e9e");
-      /* Snapshot + passer en Phase 2 pour pouvoir sauvegarder */
       if(!editMode) {
         var editorEl=document.getElementById("plEditor"),ep=editorEl?editorEl.parentNode:null;
         if(editorEl&&ep)editorEl.remove();
@@ -665,7 +703,6 @@
     var border = isRed ? "#7a1824" : "#185c38";
     var text   = isRed ? "\u26a0 Nouveau risk flag" : "\u2705 Signal positif";
 
-    /* Wrapper avec bouton × */
     var wrap = document.createElement("div");
     wrap.className = "pl-flag-wrap";
     wrap.style.cssText = "position:relative;margin-bottom:8px;";
@@ -685,11 +722,9 @@
     wrap.appendChild(div);
     wrap.appendChild(del);
 
-    /* Insérer avant le div des boutons + (dernier enfant du section-container) */
     var container = btn.closest("div[style*='margin-top']") || btn.parentNode;
     container.parentNode.insertBefore(wrap, container);
 
-    /* Focus sans getSelection pour éviter le freeze */
     setTimeout(function() {
       try { div.focus(); } catch(e) {}
     }, 50);
@@ -705,6 +740,7 @@
     clone.querySelectorAll(".pl-section-ctrl").forEach(function(el){el.remove();});
     clone.querySelectorAll("button[onclick^='plTableAdd'],button[onclick^='plFlagsAdd']").forEach(function(el){el.remove();});
     clone.querySelectorAll(".pl-flag-wrap button").forEach(function(el){el.remove();});
+    /* v3.7 : retire TOUS les boutons × (cartes liées + cartes injectées) */
     clone.querySelectorAll(".pl-card-del").forEach(function(el){el.remove();});
     clone.querySelectorAll("table.pl-custom-table thead tr th:last-child").forEach(function(th){if(th.querySelector("button")||th.style.width==="32px")th.remove();});
     clone.querySelectorAll("table.pl-custom-table tbody tr td:last-child").forEach(function(td){if(td.style.width==="32px"&&!td.textContent.trim())td.remove();});
@@ -717,13 +753,11 @@
     return "<!DOCTYPE html>\n"+clone.outerHTML;
   }
 
-  /* Extrait le nom de fichier depuis l'URL de la page courante */
   function plGetFilename() {
     var path = window.location.pathname;
     return path.substring(path.lastIndexOf("/") + 1) || "";
   }
 
-  /* u2500u2500 PUSH HTML VERS GITHUB via Make (token dans Make, pas dans le HTML) u2500u2500 */
   function plPushToGitHub(html, source, callback) {
     fetch(WEBHOOK_URL,{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
@@ -736,7 +770,6 @@
     }).then(function(r){callback(r.ok);}).catch(function(){callback(false);});
   }
 
-  /* ── SAVE (bouton Sauvegarder & Sync) ── */
   window.plSaveChanges = function() {
     plShowToast("Sauvegarde en cours\u2026");
     var html = plCleanHTML();
@@ -745,11 +778,6 @@
       else  {plShowToast("\u26a0 \u00c9chec \u2014 v\u00e9rifiez Make");}
     });
   };
-
-  /* ── SAVE silencieux pour link_file ── */
-  function plSaveHTMLNow(callback) {
-    plPushToGitHub(plCleanHTML(), "live_editor", callback);
-  }
 
   window.plCancelEdit = function() {
     if(savedHTML){try{var p=new DOMParser(),d=p.parseFromString(savedHTML,"text/html"),sc=d.querySelector(".content-area"),cc=document.querySelector(".content-area");if(sc&&cc)cc.innerHTML=sc.innerHTML;}catch(e){}}
@@ -769,6 +797,8 @@
       if(/rgba\(143,\s*168,\s*200/i.test(bg)||/rgba\(254,\s*249,\s*195/i.test(bg)){el.style.background="";}}
     });
     document.querySelectorAll(".pl-section-ctrl").forEach(function(el){el.remove();});
+    /* v3.7 : retire les boutons × des cartes injectées à la sortie du mode édition */
+    document.querySelectorAll(".pl-card-del").forEach(function(el){el.remove();});
   }
 
   function plShowToast(msg) {
