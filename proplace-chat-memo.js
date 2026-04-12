@@ -1462,12 +1462,51 @@
       };
 
       var launchBtn = document.getElementById("stan-dir-launch-btn-" + dirId);
-      if (launchBtn) launchBtn.onclick = function() {
+      if (launchBtn) launchBtn.onclick = async function() {
         launchBtn.textContent = t("dir_running"); launchBtn.disabled = true; launchBtn.style.opacity = ".6";
         closeModal("stan-outModal");
+        switchTab("chat");
         var tw = document.getElementById("stan-typingW"); tw.classList.add("show");
-        setTimeout(function() {
+        addUser(dir.name);
+
+        try {
+          // Re-read params from editable inputs
+          var updatedParams = {};
+          Object.keys(params).forEach(function(k) {
+            if (typeof params[k] === "object") { updatedParams[k] = params[k]; return; }
+            var inp = document.getElementById("stan-dp-" + dirId + "-" + k);
+            updatedParams[k] = inp ? inp.value : params[k];
+          });
+          var updatedPrompt = dir.prompt_template(updatedParams);
+
+          var memoEl = document.querySelector(".stan-main") || document.body;
+          var response = await fetch(MODAL_BASE + "stan-skills-fastapi-app.modal.run/directive/" + dirId, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              company_name: DEAL_CONTEXT.name || "",
+              prompt: updatedPrompt,
+              lang: window.STAN_LANG || "fr",
+              memo_html: memoEl.innerHTML || ""
+            })
+          });
+
+          var result = await response.json();
           tw.classList.remove("show");
+
+          if (result.error) {
+            addMsg("<strong>Erreur :</strong> " + result.error, "");
+            return;
+          }
+
+          // Save as output
+          if (result.output_html) {
+            var outData = { title: result.output_title || dir.name, html: result.output_html };
+            var outKey = "dir_" + dirId;
+            window.OUT_CONTENT[outKey] = outData;
+            saveOutput(outKey, outData);
+          }
+
           var msg = '<strong>' + dir.name + ' \u2014 ' + t("dir_result_received") + '</strong><br><br>';
           if (dir.file_type === "xlsx") msg += t("dir_excel_result");
           else if (dir.file_type === "pptx") msg += t("dir_pptx_result");
@@ -1477,7 +1516,12 @@
           if (dir.inject_target) fups.push({ label: t("choose_inject"), fn: function() { askWhereToInject(dirId); } });
           addFups(el, fups);
           pushHist("Directive " + dir.name + " lanc\u00e9e");
-        }, 2200);
+          await persistStanState();
+        } catch (err) {
+          tw.classList.remove("show");
+          addMsg("<strong>Erreur r\u00e9seau.</strong> V\u00e9rifiez la connexion et r\u00e9essayez.", "");
+          console.error("Stan directive error:", err);
+        }
       };
     }, 50);
 
