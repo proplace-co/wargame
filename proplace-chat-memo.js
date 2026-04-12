@@ -886,7 +886,7 @@
   }
 
   /* ── Skill execution ── */
-  function sc(key) {
+  async function sc(key) {
     // Check if it's a directive
     if (window.DIRECTIVES && window.DIRECTIVES[key]) {
       launchDirective(key);
@@ -903,23 +903,52 @@
     document.getElementById("stan-msgs").scrollTop = 99999;
 
     if (direct) {
-      // Week 1: simulate with delay, Week 2: call executeSkill
-      setTimeout(function() {
+      try {
+        var memoEl = document.querySelector(".stan-main") || document.body;
+        var memoHtml = memoEl.innerHTML || "";
+
+        var response = await fetch(MODAL_BASE + "stan-skills-fastapi-app.modal.run/skill/" + key, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            company_name: DEAL_CONTEXT.name || "",
+            arr: DEAL_CONTEXT.arr || "",
+            ev: DEAL_CONTEXT.ev || "",
+            lang: window.STAN_LANG || "fr",
+            memo_html: memoHtml
+          })
+        });
+
+        var result = await response.json();
         tw.classList.remove("show");
-        if (direct.run) direct.run();
-        // Save output if applicable
-        if (direct.out && window.OUT_CONTENT[direct.out]) {
-          pendingOut = { key: direct.out, data: window.OUT_CONTENT[direct.out] };
-          saveOutput(direct.out, window.OUT_CONTENT[direct.out]);
+
+        if (result.error) {
+          addMsg("<strong>Erreur :</strong> " + result.error, "");
+          return;
         }
-        // Build response text (Week 1: from SKILL_DIRECT, Week 2: from API)
-        var chatHtml = '<strong>' + displayName + ' \u2014 termin\u00e9.</strong><br><br>' + t("view_in_outputs");
-        var el = addMsg(chatHtml, "ok");
+
+        if (direct.run) direct.run();
+
+        if (result.output_html && direct.out) {
+          var outData = { title: result.output_title || displayName, html: result.output_html };
+          window.OUT_CONTENT[direct.out] = outData;
+          pendingOut = { key: direct.out, data: outData };
+          saveOutput(direct.out, outData);
+        }
+
+        if (result.task_to_complete) completeTask(result.task_to_complete);
+
+        var el = addMsg(result.chat_html || ("<strong>" + displayName + " \u2014 termin\u00e9.</strong>"), "ok");
         addFups(el, direct.f || []);
         document.getElementById("stan-msgs").scrollTop = 99999;
-      }, 1600);
+
+        await persistStanState();
+      } catch (err) {
+        tw.classList.remove("show");
+        addMsg("<strong>Erreur r\u00e9seau.</strong> V\u00e9rifiez la connexion et r\u00e9essayez.", "");
+        console.error("Stan skill error:", err);
+      }
     } else {
-      // Fallback
       setTimeout(function() {
         tw.classList.remove("show");
         var el = addMsg(t("fallback_msg"), "ok");
@@ -929,55 +958,8 @@
     }
   }
 
-  /* Production skill execution (Week 2) */
-  async function executeSkill(key) {
-    var skill = window.SKILL_DIRECT[key];
-    var displayName = (window.SKILL_NAMES && window.SKILL_NAMES[key]) || key;
-    addUser(displayName);
-    switchTab("chat");
 
-    var tw = document.getElementById("stan-typingW");
-    tw.classList.add("show");
-
-    try {
-      var response = await fetch(MODAL_BASE + "stan-skills-fastapi-app.modal.run/skill/" + key, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          deal_id: DEAL_CONTEXT.deal_id,
-          company_name: DEAL_CONTEXT.name,
-          arr: DEAL_CONTEXT.arr,
-          ev: DEAL_CONTEXT.ev,
-          fund_type: DEAL_CONTEXT.fund_type,
-          thesis_angle: DEAL_CONTEXT.thesis_angle,
-          lang: window.STAN_LANG,
-          memo_html: (document.getElementById("memo-content") || {}).innerHTML || ""
-        })
-      });
-
-      var result = await response.json();
-      tw.classList.remove("show");
-
-      var el = addMsg(result.chat_html, "ok");
-
-      if (result.output_html && skill && skill.out) {
-        var outData = { title: result.output_title, html: result.output_html };
-        window.OUT_CONTENT[skill.out] = outData;
-        pendingOut = { key: skill.out, data: outData };
-        saveOutput(skill.out, outData);
-      }
-
-      if (result.task_to_complete) completeTask(result.task_to_complete);
-      addFups(el, (skill && skill.f) || []);
-      await persistStanState();
-    } catch (err) {
-      tw.classList.remove("show");
-      addMsg(t("skill_error"), "");
-      console.error("Stan skill error:", err);
-    }
-  }
-
-  function sendMsg() {
+  async function sendMsg() {
     var inp = document.getElementById("stan-chatInput");
     var txt = inp.value.trim();
     if (!txt && !attached.length) return;
@@ -993,14 +975,36 @@
     tw.classList.add("show");
     document.getElementById("stan-msgs").scrollTop = 99999;
 
-    // Week 1: fallback response. Week 2: call chat API
-    setTimeout(function() {
+    try {
+      var memoEl = document.querySelector(".stan-main") || document.body;
+      var memoHtml = memoEl.innerHTML || "";
+
+      var response = await fetch(MODAL_BASE + "stan-skills-fastapi-app.modal.run/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: txt,
+          company_name: DEAL_CONTEXT.name || "",
+          memo_html: memoHtml
+        })
+      });
+
+      var result = await response.json();
       tw.classList.remove("show");
-      var el = addMsg(t("fallback_msg"), "ok");
-      addFups(el, [{ label: t("nav_roadmap"), tab: "roadmap" }, { label: t("nav_skills"), tab: "skills" }]);
-      if (sendBtn) sendBtn.disabled = false;
-      document.getElementById("stan-msgs").scrollTop = 99999;
-    }, 1400);
+
+      if (result.error) {
+        addMsg("<strong>Erreur :</strong> " + result.error, "");
+      } else {
+        addMsg(result.chat_html || t("fallback_msg"), "ok");
+      }
+    } catch (err) {
+      tw.classList.remove("show");
+      addMsg("<strong>Erreur r\u00e9seau.</strong> V\u00e9rifiez la connexion et r\u00e9essayez.", "");
+      console.error("Stan chat error:", err);
+    }
+
+    if (sendBtn) sendBtn.disabled = false;
+    document.getElementById("stan-msgs").scrollTop = 99999;
   }
 
   /* ── History ── */
