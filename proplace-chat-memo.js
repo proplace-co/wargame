@@ -963,6 +963,37 @@
   }
 
 
+  function applyMemoEdits(edits) {
+    var target = document.querySelector(".stan-main") || document.body;
+    var applied = 0;
+    edits.forEach(function(e) {
+      var find = e.find, replace = e.replace;
+      if (!find) return;
+      var walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT, null);
+      var nodes = [], n;
+      while ((n = walker.nextNode())) nodes.push(n);
+      for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        if (node.nodeValue && node.nodeValue.indexOf(find) !== -1) {
+          node.nodeValue = node.nodeValue.split(find).join(replace || "");
+          applied++;
+          if (node.parentElement) {
+            var el = node.parentElement;
+            el.style.transition = "background 1.2s ease";
+            var prev = el.style.background;
+            el.style.background = "rgba(255,220,100,.5)";
+            setTimeout(function(el, prev) { return function() { el.style.background = prev; }; }(el, prev), 1500);
+          }
+          break;
+        }
+      }
+    });
+    if (applied > 0 && typeof pushCommitToGitHub === "function") {
+      try { pushCommitToGitHub("Chat edit via Stan"); } catch (_) {}
+    }
+    return applied;
+  }
+
   async function sendMsg() {
     var inp = document.getElementById("stan-chatInput");
     var txt = inp.value.trim();
@@ -1000,6 +1031,14 @@
         addMsg("<strong>Erreur :</strong> " + result.error, "");
       } else {
         addMsg(result.chat_html || t("fallback_msg"), "ok");
+        if (Array.isArray(result.edits) && result.edits.length) {
+          var applied = applyMemoEdits(result.edits);
+          if (applied > 0) {
+            pushHist("Chat edit : " + applied + " modification(s) appliqu\u00e9e(s)");
+          } else {
+            addMsg("<em>\u26a0\ufe0f Texte \u00e0 remplacer introuvable dans le m\u00e9mo.</em>", "");
+          }
+        }
       }
     } catch (err) {
       tw.classList.remove("show");
