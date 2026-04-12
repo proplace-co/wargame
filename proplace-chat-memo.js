@@ -99,6 +99,7 @@
 
   /* ── 5. Wrap body in layout ── */
   function wrapLayout() {
+    document.documentElement.classList.add("stan-active");
     var body = document.body;
     var children = Array.prototype.slice.call(body.childNodes);
     var memoWrap = document.createElement("div");
