@@ -1052,11 +1052,28 @@
   }
 
   /* ── History ── */
+  function snapshotMemo() {
+    var target = document.querySelector(".stan-main") || document.getElementById("memo-content");
+    return target ? target.innerHTML : "";
+  }
+
   function pushHist(msg) {
     var time = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-    historyItems.unshift({ t: time, msg: msg });
+    historyItems.unshift({ t: time, msg: msg, snapshot: snapshotMemo() });
     renderHist();
     pushCommitToGitHub(msg);
+  }
+
+  function restoreHist(idx) {
+    var h = historyItems[idx];
+    if (!h || !h.snapshot) { alert("Pas de snapshot disponible pour cette entr\u00e9e."); return; }
+    if (!confirm("Restaurer le m\u00e9mo \u00e0 l'\u00e9tat : \"" + h.msg + "\" (" + h.t + ") ?")) return;
+    var target = document.querySelector(".stan-main") || document.getElementById("memo-content");
+    if (target) {
+      target.innerHTML = h.snapshot;
+      pushCommitToGitHub("Restauration : " + h.msg);
+      alert("M\u00e9mo restaur\u00e9.");
+    }
   }
 
   function renderHist() {
@@ -1065,15 +1082,26 @@
     if (e && historyItems.length) e.style.display = "none";
     if (!l) return;
     l.querySelectorAll(".stan-hist-item").forEach(function(i) { i.remove(); });
-    historyItems.forEach(function(h) {
+    historyItems.forEach(function(h, idx) {
       var d = document.createElement("div"); d.className = "stan-hist-item";
       d.innerHTML =
         '<div class="stan-hist-t">' + h.t + '</div>' +
         '<div class="stan-hist-msg">' + h.msg + '</div>' +
         '<div class="stan-hist-btns">' +
-          '<button class="stan-hb">' + t("hist_view_diff") + '</button>' +
-          '<button class="stan-hb">' + t("hist_restore") + '</button>' +
+          '<button class="stan-hb" data-act="diff" data-idx="' + idx + '">' + t("hist_view_diff") + '</button>' +
+          '<button class="stan-hb" data-act="restore" data-idx="' + idx + '">' + t("hist_restore") + '</button>' +
         '</div>';
+      d.querySelectorAll(".stan-hb").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+          var act = btn.getAttribute("data-act");
+          var i = parseInt(btn.getAttribute("data-idx"), 10);
+          if (act === "restore") restoreHist(i);
+          else if (act === "diff") {
+            var item = historyItems[i];
+            alert("Snapshot du " + item.t + " \u2014 " + (item.snapshot ? item.snapshot.length + " caract\u00e8res" : "aucun snapshot"));
+          }
+        });
+      });
       l.appendChild(d);
     });
   }
