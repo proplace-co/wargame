@@ -333,28 +333,27 @@
     '</div>';
 
     window.SKILLS_TAB_LAYOUT.forEach(function(group) {
-      html += '<div class="stan-sk-ph">' + group.icon + ' ' + group.label + '</div>';
-      group.skills.forEach(function(key) {
-        var name = window.SKILL_NAMES[key] || key;
-        var desc = window.SKILLS[key] || "";
-        var ico = getSkillIcon(key);
-        html += '<div class="stan-sk-card" data-skill="' + key + '">' +
-          '<span class="stan-sk-ico">' + ico + '</span>' +
-          '<div><div class="stan-sk-nm">' + name + '</div><div class="stan-sk-ds">' + desc + '</div></div>' +
-          '<div class="stan-sk-arr">\u2192</div>' +
-        '</div>';
-      });
-      // Add directives for this phase group
-      if (group.directives) {
-        group.directives.forEach(function(dirId) {
-          var dir = window.DIRECTIVES && window.DIRECTIVES[dirId];
-          if (!dir) return;
-          html += '<div class="stan-sk-card" data-directive="' + dirId + '">' +
-            '<div style="flex:1;min-width:0;"><div class="stan-sk-nm">\u26a1 ' + dir.name + '</div><div class="stan-sk-ds">' + (dir.description || "").substring(0, 80) + '\u2026</div></div>' +
+      html += '<div class="stan-sk-ph">' + (group.phase || group.label || "") + '</div>';
+      (group.items || []).forEach(function(item) {
+        if (item.type === "directive") {
+          var dir = window.DIRECTIVES && window.DIRECTIVES[item.key];
+          var dirName = item.name || (dir && dir.name) || item.key;
+          var dirDesc = item.desc || (dir && dir.description) || "";
+          html += '<div class="stan-sk-card" data-directive="' + item.key + '">' +
+            '<div style="flex:1;min-width:0;"><div class="stan-sk-nm">' + dirName + '</div><div class="stan-sk-ds">' + dirDesc + '</div></div>' +
             '<div class="stan-sk-arr">\u2192</div>' +
           '</div>';
-        });
-      }
+        } else {
+          var name = item.name || (window.SKILL_NAMES && window.SKILL_NAMES[item.key]) || item.key;
+          var desc = item.desc || (window.SKILLS && window.SKILLS[item.key]) || "";
+          var ico = getSkillIcon(item.key);
+          html += '<div class="stan-sk-card" data-skill="' + item.key + '">' +
+            '<span class="stan-sk-ico">' + ico + '</span>' +
+            '<div><div class="stan-sk-nm">' + name + '</div><div class="stan-sk-ds">' + desc + '</div></div>' +
+            '<div class="stan-sk-arr">\u2192</div>' +
+          '</div>';
+        }
+      });
     });
 
     container.innerHTML = html;
