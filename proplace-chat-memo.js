@@ -240,6 +240,7 @@
     fab.className = "stan-fab";
     fab.id = "stan-fabBtn";
     fab.textContent = "Stan \u2192";
+    fab.onclick = openSidebar;
     document.body.appendChild(fab);
 
     return sb;
@@ -1796,26 +1797,30 @@
     var sidebar = buildSidebar(layout);
 
     loadAssets(function() {
-      // Assets loaded — now we can use window.* data
-      PHASES = (window.PHASES_BY_STATUS && window.PHASES_BY_STATUS[DEAL_STATUS]) ||
-               (window.PHASES_BY_STATUS && window.PHASES_BY_STATUS["CALL"]) || [];
+      // Wire the essential events FIRST so FAB/close always work
+      // even if a later step throws.
+      try { wireEvents(); } catch (e) { console.error("Stan wireEvents failed:", e); }
 
-      buildSkillsTab();
-      buildWelcomeMessage();
-      buildGuide();
-      mapMemoSections();
-      initMemoControls();
-      initTextSelection();
-      wireEvents();
+      try {
+        PHASES = (window.PHASES_BY_STATUS && window.PHASES_BY_STATUS[DEAL_STATUS]) ||
+                 (window.PHASES_BY_STATUS && window.PHASES_BY_STATUS["CALL"]) || [];
 
-      // Render initial state
-      renderTimeline();
-      updateProgress();
-      updateNextAction();
-      renderStatusButtons();
+        buildSkillsTab();
+        buildWelcomeMessage();
+        buildGuide();
+        mapMemoSections();
+        initMemoControls();
+        initTextSelection();
 
-      // Load persisted state from Airtable
-      loadStanState();
+        renderTimeline();
+        updateProgress();
+        updateNextAction();
+        renderStatusButtons();
+
+        loadStanState();
+      } catch (e) {
+        console.error("Stan init failed:", e);
+      }
 
       // Auto-open sidebar after short delay
       setTimeout(openSidebar, 400);
