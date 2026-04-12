@@ -44,6 +44,10 @@
     var loaded = 0;
     var total = 3;
 
+    var hideOldEditor = document.createElement("style");
+    hideOldEditor.textContent = "#plEditor{display:none!important;}";
+    document.head.appendChild(hideOldEditor);
+
     function tick() { loaded++; if (loaded >= total && cb) cb(); }
 
     // CSS
