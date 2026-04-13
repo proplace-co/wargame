@@ -1889,8 +1889,10 @@
         console.error("Stan init failed:", e);
       }
 
-      // Auto-open sidebar after short delay
-      setTimeout(openSidebar, 400);
+      // Auto-open sidebar after short delay (desktop only)
+      if (window.innerWidth > 600) {
+        setTimeout(openSidebar, 400);
+      }
     });
   }
 
