@@ -240,7 +240,7 @@
     var fab = document.createElement("button");
     fab.className = "stan-fab";
     fab.id = "stan-fabBtn";
-    fab.textContent = "Stan \u2192";
+    fab.innerHTML = "Stan \u2192<span class=\"stan-beta-badge\">Beta</span>";
     fab.onclick = openSidebar;
     document.body.appendChild(fab);
 
@@ -497,11 +497,11 @@
     var pill = document.getElementById("stan-guidePillBtn");
     if (guideOpen) {
       if (el) el.style.display = "flex";
-      if (pill) { pill.textContent = "\u00d7"; pill.style.background = "var(--navy)"; pill.style.color = "#fff"; pill.style.borderColor = "var(--navy)"; }
+      if (pill) { pill.textContent = "\u00d7"; pill.style.background = "var(--navy)"; pill.style.color = "#fff"; pill.style.borderColor = "var(--navy)"; pill.style.fontStyle = "normal"; }
       openSidebar();
     } else {
       if (el) el.style.display = "none";
-      if (pill) { pill.textContent = "?"; pill.style.background = "var(--off)"; pill.style.color = "var(--tl)"; pill.style.borderColor = "var(--border)"; }
+      if (pill) { pill.textContent = "?"; pill.style.background = "var(--white)"; pill.style.color = "var(--navy)"; pill.style.borderColor = "var(--navy)"; pill.style.fontStyle = "italic"; }
     }
   }
 
@@ -1889,10 +1889,6 @@
         console.error("Stan init failed:", e);
       }
 
-      // Auto-open sidebar after short delay (desktop only)
-      if (window.innerWidth > 600) {
-        setTimeout(openSidebar, 400);
-      }
     });
   }
 
