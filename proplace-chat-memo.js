@@ -41,11 +41,14 @@
   /* ── CEO Decision constants ── */
   var STAN_PROXY_URL        = "https://alexandre-79537--stan-skills-fastapi-app.modal.run";
   var AIRTABLE_BRIDGE_URL   = "https://alexandre-79537--airtable-bridge-fastapi-app.modal.run";
-  var STATUS_COLORS = {
-    CALL:     { bg: "#4ac67f", text: "#fff" },
-    CONSIDER: { bg: "#ca8a04", text: "#fff" },
-    MONITOR:  { bg: "#2563eb", text: "#fff" },
-    PASS:     { bg: "#dc2626", text: "#fff" },
+  // Unified pill colors — same source of truth everywhere (sidebar top, body, card)
+  var PILL_COLORS = {
+    "CALL YES":   { bg: "#4ac67f", text: "#fff" },
+    "CALL NO":    { bg: "#dc2626", text: "#fff" },
+    "⏳ PENDING": { bg: "#ca8a04", text: "#fff" },
+    "CONSIDER":   { bg: "#ca8a04", text: "#fff" },
+    "MONITOR":    { bg: "#2563eb", text: "#fff" },
+    "PASS":       { bg: "#dc2626", text: "#fff" },
   };
   var _stanPendingDecision = null;
 
@@ -648,21 +651,20 @@
 
     // CAS 2 — CEO a déjà décidé (prioritaire sur tout le reste)
     if (hasCeoDecision) {
-      var decColor = ceoDecision === "YES" ? "#4ac67f" : "#dc2626";
-      var decLabel = ceoDecision === "YES" ? "\u2713 YES" : "\u2717 NO";
+      var decLabel = ceoDecision === "YES" ? "CALL YES" : "CALL NO";
+      var col2 = PILL_COLORS[decLabel];
       var overrideUrl2 = "https://forms.proplace.co/t/c2246dXQEVus?status=CALL" +
         "&action_timestamp=" + new Date().toISOString() +
         "&user_action_log=CALL&feedback_reason=no%20feedback&thesis_impact_status=processed&id=" + record;
       var noteHtml = ceoNote ? ''
-        + '<div style="background:#fffbe6;border:1px solid #f0e6a8;border-radius:4px;padding:8px 10px;margin-top:8px">'
-        +   '<span style="font-size:8px;font-weight:700;text-transform:uppercase;color:#94a3b8;letter-spacing:.06em;display:block;margin-bottom:3px">Your note</span>'
-        +   '<p style="font-family:Georgia,serif;font-style:italic;font-size:11px;color:#334155;margin:0;line-height:1.55">' + ceoNote + '</p>'
+        + '<div style="background:#fffbe6;border:1px solid #f0e6a8;border-radius:4px;padding:9px 11px;margin-top:10px">'
+        +   '<span style="font-size:9px;font-weight:700;text-transform:uppercase;color:#94a3b8;letter-spacing:.06em;display:block;margin-bottom:4px">Your note</span>'
+        +   '<p style="font-family:Georgia,serif;font-size:13px;color:#0f172a;margin:0;line-height:1.55">' + ceoNote + '</p>'
         + '</div>' : "";
       return ''
         + '<div style="margin-bottom:8px">'
         +   '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
-        +     '<span style="display:inline-block;padding:3px 10px;border-radius:4px;font-size:9px;font-weight:700;text-transform:uppercase;background:#4ac67f;color:#fff">CALL</span>'
-        +     '<span style="display:inline-block;padding:3px 10px;border-radius:4px;font-size:9px;font-weight:700;text-transform:uppercase;background:' + decColor + ';color:#fff">' + decLabel + '</span>'
+        +     '<span style="display:inline-block;padding:4px 12px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:' + col2.bg + ';color:' + col2.text + '">' + decLabel + '</span>'
         +     '<button onclick="stanEditDecision()" style="font-size:9px;color:#64748b;background:transparent;border:1px solid #e2e8f0;border-radius:3px;padding:3px 8px;cursor:pointer;font-family:monospace;text-transform:uppercase">\u270f Modify</button>'
         +   '</div>'
         +   noteHtml
@@ -674,7 +676,7 @@
 
     // CAS 1 — verdict autonome Stan (CONSIDER / MONITOR / PASS uniquement)
     if (isAutonomous) {
-      var col = STATUS_COLORS[status] || { bg: "#94a3b8", text: "#fff" };
+      var col = PILL_COLORS[status] || { bg: "#94a3b8", text: "#fff" };
       var overrideUrl1 = "https://forms.proplace.co/t/c2246dXQEVus?status=" + status +
         "&action_timestamp=" + new Date().toISOString() +
         "&user_action_log=" + status +
@@ -683,7 +685,7 @@
         + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
         +   '<div>'
         +     '<span style="font-size:8px;color:#94a3b8;font-family:monospace;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:2px">Stan decided autonomously</span>'
-        +     '<span style="display:inline-block;padding:3px 10px;border-radius:4px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:' + col.bg + ';color:' + col.text + '">'
+        +     '<span style="display:inline-block;padding:4px 12px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:' + col.bg + ';color:' + col.text + '">'
         +       status
         +     '</span>'
         +   '</div>'
@@ -691,7 +693,7 @@
         + '</div>';
     }
 
-    // CAS 3 — CALL (ou NEW) en attente de décision CEO
+    // CAS 3 — CALL en attente de décision CEO (⏳ PENDING)
     return ''
       + '<div style="background:#fffbeb;border-left:3px solid #f59e0b;padding:8px 11px;border-radius:0 4px 4px 0;margin-bottom:10px">'
       +   '<span style="font-size:9px;font-weight:700;color:#ca8a04;font-family:monospace;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:2px">'
@@ -733,22 +735,35 @@
     stanUpdateTopPill();
   }
 
-  // Display status for the top-right pill = what the body is showing:
-  //   CEO decided (YES/NO) OR status is CALL/NEW → "CALL"
-  //   status is CONSIDER / MONITOR / PASS → the real status
+  // Display status for the top-right pill = the 4 unified states:
+  //   CEO YES    → "CALL YES"    (green)
+  //   CEO NO     → "CALL NO"     (red)
+  //   CALL, no decision → "⏳ PENDING" (orange)
+  //   CONSIDER / MONITOR / PASS → the real status (amber / blue / red)
   function stanDisplayStatus() {
     var ctx = window.DEAL_CONTEXT || {};
-    if (ctx.ceo_decision === "YES" || ctx.ceo_decision === "NO") return "CALL";
+    if (ctx.ceo_decision === "YES") return "CALL YES";
+    if (ctx.ceo_decision === "NO")  return "CALL NO";
     if (ctx.status === "CONSIDER" || ctx.status === "MONITOR" || ctx.status === "PASS") return ctx.status;
-    return "CALL";
+    return "\u23f3 PENDING";
   }
 
   function stanUpdateTopPill() {
     var b = document.getElementById("stan-curBadge");
     if (!b) return;
     var ds = stanDisplayStatus();
+    var col = PILL_COLORS[ds] || { bg: "#94a3b8", text: "#fff" };
     b.textContent = ds;
-    b.className = "stan-tpil " + ((window.STATUS_STYLE && window.STATUS_STYLE[ds]) || "call");
+    b.className = "stan-tpil";
+    b.style.background = col.bg;
+    b.style.color = col.text;
+    b.style.padding = "4px 12px";
+    b.style.borderRadius = "4px";
+    b.style.fontSize = "10px";
+    b.style.fontWeight = "700";
+    b.style.textTransform = "uppercase";
+    b.style.letterSpacing = ".04em";
+    b.style.whiteSpace = "nowrap";
   }
 
   function stanHandleDecision(decision) {
