@@ -730,6 +730,25 @@
       (window.DEAL_CONTEXT && window.DEAL_CONTEXT.ceo_decision) || null,
       (window.DEAL_CONTEXT && window.DEAL_CONTEXT.ceo_note) || null
     );
+    stanUpdateTopPill();
+  }
+
+  // Display status for the top-right pill = what the body is showing:
+  //   CEO decided (YES/NO) OR status is CALL/NEW → "CALL"
+  //   status is CONSIDER / MONITOR / PASS → the real status
+  function stanDisplayStatus() {
+    var ctx = window.DEAL_CONTEXT || {};
+    if (ctx.ceo_decision === "YES" || ctx.ceo_decision === "NO") return "CALL";
+    if (ctx.status === "CONSIDER" || ctx.status === "MONITOR" || ctx.status === "PASS") return ctx.status;
+    return "CALL";
+  }
+
+  function stanUpdateTopPill() {
+    var b = document.getElementById("stan-curBadge");
+    if (!b) return;
+    var ds = stanDisplayStatus();
+    b.textContent = ds;
+    b.className = "stan-tpil " + ((window.STATUS_STYLE && window.STATUS_STYLE[ds]) || "call");
   }
 
   function stanHandleDecision(decision) {
@@ -770,16 +789,17 @@
     box.style.marginTop   = "10px";
 
     box.innerHTML = ''
-      + '<p style="font-size:11px;font-weight:700;color:' + (isNo ? "#dc2626" : "#166534") + ';margin:0 0 8px 0;font-family:monospace;text-transform:uppercase;letter-spacing:.04em">'
+      + '<style>#stan-ceo-note::placeholder{font-style:normal;color:#94a3b8;font-family:Georgia,serif;font-size:13px;}</style>'
+      + '<p style="font-size:13px;font-weight:700;color:' + (isNo ? "#dc2626" : "#166534") + ';margin:0 0 10px 0;font-family:monospace;text-transform:uppercase;letter-spacing:.04em">'
       +   (isNo ? "\u2717 NO saved \u2014 Stan will recalibrate." : "\u2713 YES saved \u2014 Stan is on it.")
       + '</p>'
-      + '<p style="font-size:10px;color:#64748b;margin:0 0 5px 0">Your note (optional)</p>'
-      + '<textarea id="stan-ceo-note" placeholder="' + (isNo ? "e.g. Founders too junior, wrong B2C focus..." : "e.g. API-native, founder ex-Amadeus...") + '" rows="2" style="width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:4px;padding:7px 9px;font-size:12px;font-family:Georgia,serif;font-style:italic;color:#334155;resize:none;outline:none;background:#fff"></textarea>'
-      + '<div style="display:flex;gap:8px;margin-top:8px">'
-      +   '<button onclick="stanSaveCeoDecision()" style="flex:1;padding:8px 0;background:' + (isNo ? "#dc2626" : "#4ac67f") + ';color:#fff;border:none;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;text-transform:uppercase;letter-spacing:.06em">Save</button>'
-      +   '<button onclick="stanSkipCeoNote()" style="padding:8px 14px;background:#f8fafc;color:#64748b;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;cursor:pointer">Skip</button>'
+      + '<p style="font-size:12px;color:#475569;margin:0 0 6px 0">Your note (optional)</p>'
+      + '<textarea id="stan-ceo-note" placeholder="' + (isNo ? "e.g. Founders too junior, wrong B2C focus..." : "e.g. API-native, founder ex-Amadeus...") + '" rows="2" style="width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:4px;padding:8px 10px;font-size:14px;font-family:Georgia,serif;font-style:normal;color:#0f172a;line-height:1.55;resize:none;outline:none;background:#fff"></textarea>'
+      + '<div style="display:flex;gap:8px;margin-top:10px">'
+      +   '<button onclick="stanSaveCeoDecision()" style="flex:1;padding:9px 0;background:' + (isNo ? "#dc2626" : "#4ac67f") + ';color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;text-transform:uppercase;letter-spacing:.06em">Save</button>'
+      +   '<button onclick="stanSkipCeoNote()" style="padding:9px 16px;background:#f8fafc;color:#64748b;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;cursor:pointer">Skip</button>'
       + '</div>'
-      + (isNo ? '<p style="font-size:10px;color:#94a3b8;margin:6px 0 0 0;font-style:italic">One line doubles Stan\'s convergence speed on this angle.</p>' : "");
+      + (isNo ? '<p style="font-size:11px;color:#94a3b8;margin:8px 0 0 0;font-style:italic">One line doubles Stan\'s convergence speed on this angle.</p>' : "");
 
     setTimeout(function() { var ta = document.getElementById("stan-ceo-note"); if (ta) ta.focus(); }, 80);
   }
@@ -2110,6 +2130,7 @@
         updateNextAction();
         renderStatusButtons();
         stanRenderStatusBlock();
+        stanUpdateTopPill();
 
         loadStanState();
       } catch (e) {
