@@ -38,6 +38,17 @@
   /* ── Modal API base URL ── */
   var MODAL_BASE = "https://alexandre-79537--";
 
+  /* ── CEO Decision constants ── */
+  var STAN_PROXY_URL        = "https://alexandre-79537--stan-skills-fastapi-app.modal.run";
+  var AIRTABLE_BRIDGE_URL   = "https://alexandre-79537--airtable-bridge-fastapi-app.modal.run";
+  var STATUS_COLORS = {
+    CALL:     { bg: "#4ac67f", text: "#fff" },
+    CONSIDER: { bg: "#ca8a04", text: "#fff" },
+    MONITOR:  { bg: "#2563eb", text: "#fff" },
+    PASS:     { bg: "#dc2626", text: "#fff" },
+  };
+  var _stanPendingDecision = null;
+
   /* ── 3. Load assets dynamically ── */
   function loadAssets(cb) {
     var base = getBaseUrl();
@@ -143,10 +154,7 @@
             '<button class="stan-s-close" id="stan-close-btn">\u00d7</button>' +
           '</div>' +
         '</div>' +
-        '<div class="stan-s-status">' +
-          '<span class="stan-s-to">\u2192</span>' +
-          '<div id="stan-nextBtns"></div>' +
-        '</div>' +
+        '<div id="stan-status-block" style="padding:10px 12px 4px"></div>' +
       '</div>' +
 
       /* Next action */
@@ -631,6 +639,228 @@
     switchTab("chat");
     addMsg('<span style="font-family:var(--mono);font-size:11px;color:var(--green);">\u2192 ' + t("form_opened") + '</span><br><br>Statut <strong>' + status + '</strong> s\u00e9lectionn\u00e9.', "ok");
   }
+
+  /* ── CEO YES/NO decision block ── */
+  function buildStatusBlock(status, ceoDecision, ceoNote) {
+    var col = STATUS_COLORS[status] || { bg: "#94a3b8", text: "#fff" };
+    var record = (window.DEAL_CONTEXT && window.DEAL_CONTEXT.airtable_record) || "";
+
+    // CAS 1 — verdict autonome Stan (CONSIDER / MONITOR / PASS)
+    if (status !== "CALL") {
+      var overrideUrl1 = "https://forms.proplace.co/t/c2246dXQEVus?status=" + status +
+        "&action_timestamp=" + new Date().toISOString() +
+        "&user_action_log=" + status +
+        "&feedback_reason=no%20feedback&thesis_impact_status=processed&id=" + record;
+      return ''
+        + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
+        +   '<div>'
+        +     '<span style="font-size:8px;color:#94a3b8;font-family:monospace;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:2px">Stan decided autonomously</span>'
+        +     '<span style="display:inline-block;padding:3px 10px;border-radius:4px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:' + col.bg + ';color:' + col.text + '">'
+        +       status
+        +     '</span>'
+        +   '</div>'
+        +   '<a href="' + overrideUrl1 + '" target="_blank" style="font-size:9px;color:#94a3b8;text-decoration:underline">Override \u2192</a>'
+        + '</div>';
+    }
+
+    // CAS 2 — CALL + CEO a déjà décidé
+    if (status === "CALL" && ceoDecision) {
+      var decColor = ceoDecision === "YES" ? "#4ac67f" : "#dc2626";
+      var decLabel = ceoDecision === "YES" ? "\u2713 YES" : "\u2717 NO";
+      var overrideUrl2 = "https://forms.proplace.co/t/c2246dXQEVus?status=CALL" +
+        "&action_timestamp=" + new Date().toISOString() +
+        "&user_action_log=CALL&feedback_reason=no%20feedback&thesis_impact_status=processed&id=" + record;
+      var noteHtml = ceoNote ? ''
+        + '<div style="background:#fffbe6;border:1px solid #f0e6a8;border-radius:4px;padding:8px 10px;margin-top:8px">'
+        +   '<span style="font-size:8px;font-weight:700;text-transform:uppercase;color:#94a3b8;letter-spacing:.06em;display:block;margin-bottom:3px">Your note</span>'
+        +   '<p style="font-family:Georgia,serif;font-style:italic;font-size:11px;color:#334155;margin:0;line-height:1.55">' + ceoNote + '</p>'
+        + '</div>' : "";
+      return ''
+        + '<div style="margin-bottom:8px">'
+        +   '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+        +     '<span style="display:inline-block;padding:3px 10px;border-radius:4px;font-size:9px;font-weight:700;text-transform:uppercase;background:#4ac67f;color:#fff">CALL</span>'
+        +     '<span style="display:inline-block;padding:3px 10px;border-radius:4px;font-size:9px;font-weight:700;text-transform:uppercase;background:' + decColor + ';color:#fff">' + decLabel + '</span>'
+        +     '<button onclick="stanEditDecision()" style="font-size:9px;color:#64748b;background:transparent;border:1px solid #e2e8f0;border-radius:3px;padding:3px 8px;cursor:pointer;font-family:monospace;text-transform:uppercase">\u270f Modify</button>'
+        +   '</div>'
+        +   noteHtml
+        +   '<div style="text-align:right;margin-top:4px">'
+        +     '<a href="' + overrideUrl2 + '" target="_blank" style="font-size:9px;color:#94a3b8;text-decoration:underline">Override \u2192</a>'
+        +   '</div>'
+        + '</div>';
+    }
+
+    // CAS 3 — CALL en attente de décision CEO
+    return ''
+      + '<div style="background:#fffbeb;border-left:3px solid #f59e0b;padding:8px 11px;border-radius:0 4px 4px 0;margin-bottom:10px">'
+      +   '<span style="font-size:9px;font-weight:700;color:#ca8a04;font-family:monospace;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:2px">'
+      +     '\u23f3 Stan\'s top pick \u2014 your decision'
+      +   '</span>'
+      +   '<span style="font-size:10px;color:#64748b">Stan identified this as a particularly interesting opportunity. YES or NO.</span>'
+      + '</div>'
+      + '<div id="stan-yes-no-block">'
+      +   '<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:7px"><tr>'
+      +     '<td width="48%" style="padding-right:5px">'
+      +       '<button id="stan-btn-yes" onclick="stanHandleDecision(\'YES\')" style="display:block;width:100%;padding:11px 0;text-align:center;font-size:13px;font-weight:800;text-transform:uppercase;border-radius:4px;box-sizing:border-box;background:#4ac67f;color:#fff;border:none;letter-spacing:1px;cursor:pointer">'
+      +         '\u2713 YES'
+      +       '</button>'
+      +     '</td>'
+      +     '<td width="4%" style="text-align:center"><span style="color:#cbd5e1;font-size:12px">|</span></td>'
+      +     '<td width="48%" style="padding-left:5px">'
+      +       '<button id="stan-btn-no" onclick="stanHandleDecision(\'NO\')" style="display:block;width:100%;padding:11px 0;text-align:center;font-size:13px;font-weight:800;text-transform:uppercase;border-radius:4px;box-sizing:border-box;background:#fff;color:#dc2626;border:2px solid #dc2626;letter-spacing:1px;cursor:pointer">'
+      +         '\u2717 NO'
+      +       '</button>'
+      +     '</td>'
+      +   '</tr></table>'
+      +   '<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px"><tr>'
+      +     '<td width="48%" style="text-align:center;padding-right:5px"><p style="font-size:10px;color:#64748b;margin:0">You reach out, or <a href="#" style="color:#4ac67f;font-weight:700;text-decoration:underline">we do it for you</a></p></td>'
+      +     '<td width="4%"></td>'
+      +     '<td width="48%" style="text-align:center;padding-left:5px"><p style="font-size:10px;color:#94a3b8;margin:0">Stan recalibrates thesis</p></td>'
+      +   '</tr></table>'
+      + '</div>'
+      + '<div id="stan-note-box" style="display:none"></div>';
+  }
+
+  function stanRenderStatusBlock() {
+    var container = document.getElementById("stan-status-block");
+    if (!container) return;
+    container.innerHTML = buildStatusBlock(
+      (window.DEAL_CONTEXT && window.DEAL_CONTEXT.status) || DEAL_STATUS || "CALL",
+      (window.DEAL_CONTEXT && window.DEAL_CONTEXT.ceo_decision) || null,
+      (window.DEAL_CONTEXT && window.DEAL_CONTEXT.ceo_note) || null
+    );
+  }
+
+  function stanHandleDecision(decision) {
+    _stanPendingDecision = decision;
+    var yesNoBlock = document.getElementById("stan-yes-no-block");
+    if (yesNoBlock) yesNoBlock.style.display = "none";
+
+    var record = window.DEAL_CONTEXT && window.DEAL_CONTEXT.airtable_record;
+    if (!record) { console.error("Stan: no airtable_record in DEAL_CONTEXT"); return; }
+
+    // PATCH immédiat (ceo_decision + ceo_decision_date)
+    fetch(AIRTABLE_BRIDGE_URL + "/stan-state", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        record_id: record,
+        ceo_decision: decision,
+        ceo_decision_date: new Date().toISOString().split("T")[0],
+      }),
+    }).catch(function(e) { console.error("Stan: immediate PATCH failed", e); });
+
+    // Update local context immediately for UX (note box still open)
+    window.DEAL_CONTEXT = Object.assign({}, window.DEAL_CONTEXT || {}, { ceo_decision: decision });
+
+    stanShowNoteBox(decision);
+  }
+
+  function stanShowNoteBox(decision) {
+    var isNo = decision === "NO";
+    var box = document.getElementById("stan-note-box");
+    if (!box) return;
+
+    box.style.display     = "block";
+    box.style.background  = isNo ? "#fff8f8" : "#f0fdf4";
+    box.style.border      = "1px solid " + (isNo ? "#fecaca" : "#bbf7d0");
+    box.style.borderRadius = "6px";
+    box.style.padding     = "12px 14px";
+    box.style.marginTop   = "10px";
+
+    box.innerHTML = ''
+      + '<p style="font-size:11px;font-weight:700;color:' + (isNo ? "#dc2626" : "#166534") + ';margin:0 0 8px 0;font-family:monospace;text-transform:uppercase;letter-spacing:.04em">'
+      +   (isNo ? "\u2717 NO saved \u2014 Stan will recalibrate." : "\u2713 YES saved \u2014 Stan is on it.")
+      + '</p>'
+      + '<p style="font-size:10px;color:#64748b;margin:0 0 5px 0">Your note (optional)</p>'
+      + '<textarea id="stan-ceo-note" placeholder="' + (isNo ? "e.g. Founders too junior, wrong B2C focus..." : "e.g. API-native, founder ex-Amadeus...") + '" rows="2" style="width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:4px;padding:7px 9px;font-size:12px;font-family:Georgia,serif;font-style:italic;color:#334155;resize:none;outline:none;background:#fff"></textarea>'
+      + '<div style="display:flex;gap:8px;margin-top:8px">'
+      +   '<button onclick="stanSaveCeoDecision()" style="flex:1;padding:8px 0;background:' + (isNo ? "#dc2626" : "#4ac67f") + ';color:#fff;border:none;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;text-transform:uppercase;letter-spacing:.06em">Save</button>'
+      +   '<button onclick="stanSkipCeoNote()" style="padding:8px 14px;background:#f8fafc;color:#64748b;border:1px solid #e2e8f0;border-radius:4px;font-size:11px;cursor:pointer">Skip</button>'
+      + '</div>'
+      + (isNo ? '<p style="font-size:10px;color:#94a3b8;margin:6px 0 0 0;font-style:italic">One line doubles Stan\'s convergence speed on this angle.</p>' : "");
+
+    setTimeout(function() { var ta = document.getElementById("stan-ceo-note"); if (ta) ta.focus(); }, 80);
+  }
+
+  async function stanSaveCeoDecision() {
+    var noteEl = document.getElementById("stan-ceo-note");
+    var note = noteEl ? noteEl.value.trim() : "";
+    await stanPersistCeoDecision(_stanPendingDecision, note);
+  }
+
+  async function stanSkipCeoNote() {
+    await stanPersistCeoDecision(_stanPendingDecision, "");
+  }
+
+  async function stanPersistCeoDecision(decision, note) {
+    var record = window.DEAL_CONTEXT && window.DEAL_CONTEXT.airtable_record;
+    var company = (window.DEAL_CONTEXT && window.DEAL_CONTEXT.company_name) || "";
+    var origNcl = (window.DEAL_CONTEXT && window.DEAL_CONTEXT.neural_command_line_final) || "";
+
+    if (!record) { console.error("Stan: no airtable_record in DEAL_CONTEXT"); return; }
+
+    var ceoNcl = "";
+    try {
+      if (note) {
+        var res = await fetch(STAN_PROXY_URL + "/ceo-signal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            decision: decision,
+            note: note,
+            company: company,
+            angle_id: (window.DEAL_CONTEXT && window.DEAL_CONTEXT.angle_id) || "",
+            original_ncl: origNcl,
+          }),
+        });
+        if (res.ok) {
+          var data = await res.json();
+          ceoNcl = data.ceo_ncl || "";
+        }
+      } else if (decision === "NO") {
+        ceoNcl = "\ud83d\udd34 CEO_VETO: " + company + " \u00b7 angle:unknown \u00b7 TOXIC_KEYWORD: profile_rejected \u00b7 NARRATIVE_INSIGHT: CEO rejected Stan's top pick without providing a specific reason.";
+      } else {
+        ceoNcl = origNcl;
+      }
+
+      var fields = {};
+      if (note) fields.ceo_note = note;
+      if (ceoNcl) fields.ceo_ncl = ceoNcl;
+
+      if (Object.keys(fields).length > 0) {
+        fields.record_id = record;
+        await fetch(AIRTABLE_BRIDGE_URL + "/stan-state", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(fields),
+        });
+      }
+    } catch (err) {
+      console.error("Stan: CEO decision note save failed", err);
+    }
+
+    window.DEAL_CONTEXT = Object.assign({}, window.DEAL_CONTEXT || {}, {
+      ceo_decision: decision,
+      ceo_note: note || null,
+      ceo_ncl: ceoNcl || null,
+    });
+
+    stanRenderStatusBlock();
+  }
+
+  function stanEditDecision() {
+    window.DEAL_CONTEXT = Object.assign({}, window.DEAL_CONTEXT || {}, {
+      ceo_decision: null,
+      ceo_note: null,
+    });
+    stanRenderStatusBlock();
+  }
+
+  // Expose for inline onclick handlers
+  window.stanHandleDecision   = stanHandleDecision;
+  window.stanSaveCeoDecision  = stanSaveCeoDecision;
+  window.stanSkipCeoNote      = stanSkipCeoNote;
+  window.stanEditDecision     = stanEditDecision;
 
   /* ── Task Management ── */
   window.stanCompleteTask = function(tid) { completeTask(tid); };
@@ -1695,8 +1925,18 @@
           if (Array.isArray(outs)) savedOutputs = outs;
         } catch(e) {}
       }
+      // Restore CEO decision state
+      if (data.ceo_decision || data.ceo_note || data.ceo_decision_date) {
+        window.DEAL_CONTEXT = Object.assign({}, window.DEAL_CONTEXT || {}, {
+          ceo_decision:      data.ceo_decision || null,
+          ceo_note:          data.ceo_note || null,
+          ceo_decision_date: data.ceo_decision_date || null,
+          ceo_ncl:           data.ceo_ncl || null,
+        });
+      }
       // Refresh UI
       renderTimeline(); updateProgress(); updateNextAction(); renderOutputs();
+      stanRenderStatusBlock();
     } catch(e) {
       console.warn("Stan: impossible de charger l\u2019\u00e9tat depuis Airtable", e);
     }
@@ -1883,6 +2123,7 @@
         updateProgress();
         updateNextAction();
         renderStatusButtons();
+        stanRenderStatusBlock();
 
         loadStanState();
       } catch (e) {
