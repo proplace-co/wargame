@@ -642,29 +642,12 @@
 
   /* ── CEO YES/NO decision block ── */
   function buildStatusBlock(status, ceoDecision, ceoNote) {
-    var col = STATUS_COLORS[status] || { bg: "#94a3b8", text: "#fff" };
     var record = (window.DEAL_CONTEXT && window.DEAL_CONTEXT.airtable_record) || "";
+    var isAutonomous = status === "CONSIDER" || status === "MONITOR" || status === "PASS";
+    var hasCeoDecision = ceoDecision === "YES" || ceoDecision === "NO";
 
-    // CAS 1 — verdict autonome Stan (CONSIDER / MONITOR / PASS)
-    if (status !== "CALL") {
-      var overrideUrl1 = "https://forms.proplace.co/t/c2246dXQEVus?status=" + status +
-        "&action_timestamp=" + new Date().toISOString() +
-        "&user_action_log=" + status +
-        "&feedback_reason=no%20feedback&thesis_impact_status=processed&id=" + record;
-      return ''
-        + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
-        +   '<div>'
-        +     '<span style="font-size:8px;color:#94a3b8;font-family:monospace;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:2px">Stan decided autonomously</span>'
-        +     '<span style="display:inline-block;padding:3px 10px;border-radius:4px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:' + col.bg + ';color:' + col.text + '">'
-        +       status
-        +     '</span>'
-        +   '</div>'
-        +   '<a href="' + overrideUrl1 + '" target="_blank" style="font-size:9px;color:#94a3b8;text-decoration:underline">Override \u2192</a>'
-        + '</div>';
-    }
-
-    // CAS 2 — CALL + CEO a déjà décidé
-    if (status === "CALL" && ceoDecision) {
+    // CAS 2 — CEO a déjà décidé (prioritaire sur tout le reste)
+    if (hasCeoDecision) {
       var decColor = ceoDecision === "YES" ? "#4ac67f" : "#dc2626";
       var decLabel = ceoDecision === "YES" ? "\u2713 YES" : "\u2717 NO";
       var overrideUrl2 = "https://forms.proplace.co/t/c2246dXQEVus?status=CALL" +
@@ -689,7 +672,26 @@
         + '</div>';
     }
 
-    // CAS 3 — CALL en attente de décision CEO
+    // CAS 1 — verdict autonome Stan (CONSIDER / MONITOR / PASS uniquement)
+    if (isAutonomous) {
+      var col = STATUS_COLORS[status] || { bg: "#94a3b8", text: "#fff" };
+      var overrideUrl1 = "https://forms.proplace.co/t/c2246dXQEVus?status=" + status +
+        "&action_timestamp=" + new Date().toISOString() +
+        "&user_action_log=" + status +
+        "&feedback_reason=no%20feedback&thesis_impact_status=processed&id=" + record;
+      return ''
+        + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
+        +   '<div>'
+        +     '<span style="font-size:8px;color:#94a3b8;font-family:monospace;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:2px">Stan decided autonomously</span>'
+        +     '<span style="display:inline-block;padding:3px 10px;border-radius:4px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:' + col.bg + ';color:' + col.text + '">'
+        +       status
+        +     '</span>'
+        +   '</div>'
+        +   '<a href="' + overrideUrl1 + '" target="_blank" style="font-size:9px;color:#94a3b8;text-decoration:underline">Override \u2192</a>'
+        + '</div>';
+    }
+
+    // CAS 3 — CALL (ou NEW) en attente de décision CEO
     return ''
       + '<div style="background:#fffbeb;border-left:3px solid #f59e0b;padding:8px 11px;border-radius:0 4px 4px 0;margin-bottom:10px">'
       +   '<span style="font-size:9px;font-weight:700;color:#ca8a04;font-family:monospace;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:2px">'
@@ -1874,26 +1876,10 @@
     if (inp) { inp.value = t("edit_section_prefix") + sectionName + " : "; inp.focus(); }
   }
 
-  /* ── Text selection → Chat ── */
+  /* ── Text selection → Chat ── (disabled: text selection in memo no longer auto-fills the chat) */
   function initTextSelection() {
-    document.addEventListener("mouseup", function() {
-      var sel = window.getSelection();
-      var txt = sel && sel.toString().trim();
-      if (!txt || txt.length < 10) return;
-      var node = sel.anchorNode;
-      var inMemo = false;
-      var el = node && node.parentElement;
-      while (el) {
-        if (el.classList && (el.classList.contains("stan-memo-scroll") || el.classList.contains("stan-memo-col"))) { inMemo = true; break; }
-        el = el.parentElement;
-      }
-      if (!inMemo) return;
-      var inp = document.getElementById("stan-chatInput");
-      if (inp) inp.value = '"' + txt + '" \u2014 ';
-      openSidebar();
-      switchTab("chat");
-      setTimeout(function() { var inp2 = document.getElementById("stan-chatInput"); if (inp2) inp2.focus(); }, 100);
-    });
+    // Intentionally a no-op. Selecting text in the memo should not hijack the
+    // chat input or open the sidebar. Users copy/paste manually if they need to.
   }
 
   /* ── Persistence (Airtable bridge) ── */
