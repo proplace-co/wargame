@@ -2017,6 +2017,20 @@
       if (btn) btn.onclick = function() { switchTab(name, btn); };
     });
 
+    // External open trigger — used by memo CTAs (Due Diligence, Portfolio Company)
+    // Payload: { tab: "parcours"|"roadmap"|"chat"|..., section?: "due-diligence"|"portfolio-management" }
+    window.addEventListener("stan:open", function(e) {
+      try {
+        var d = (e && e.detail) || {};
+        var tab = d.tab || "roadmap";
+        if (tab === "parcours") tab = "roadmap";
+        openSidebar();
+        switchTab(tab);
+      } catch (err) {
+        console.error("Stan stan:open handler failed:", err);
+      }
+    });
+
     // Chat input
     var chatInput = document.getElementById("stan-chatInput");
     if (chatInput) chatInput.onkeydown = handleKey;
