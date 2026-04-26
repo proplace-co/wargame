@@ -41,14 +41,16 @@
   /* ── CEO Decision constants ── */
   var STAN_PROXY_URL        = "https://alexandre-79537--stan-skills-fastapi-app.modal.run";
   var AIRTABLE_BRIDGE_URL   = "https://alexandre-79537--airtable-bridge-fastapi-app.modal.run";
-  // Unified pill colors — same source of truth everywhere (sidebar top, body, card)
+  // Unified pill colors — same source of truth everywhere (sidebar top, body, card).
+  // CALL family (PENDING/YES/NO) is ALWAYS green; only the icon distinguishes
+  // the state (matches the Place Chat / daily-mail palette).
   var PILL_COLORS = {
-    "CALL YES":   { bg: "#4ac67f", text: "#fff" },
-    "CALL NO":    { bg: "#dc2626", text: "#fff" },
-    "⏳ PENDING": { bg: "#ca8a04", text: "#fff" },
-    "CONSIDER":   { bg: "#ca8a04", text: "#fff" },
-    "MONITOR":    { bg: "#2563eb", text: "#fff" },
-    "PASS":       { bg: "#dc2626", text: "#fff" },
+    "✓ CALL YES":      { bg: "#4ac67f", text: "#fff" },
+    "❌ CALL NO":       { bg: "#4ac67f", text: "#fff" },
+    "⏳ CALL PENDING":  { bg: "#4ac67f", text: "#fff" },
+    "CONSIDER":         { bg: "#ca8a04", text: "#fff" },
+    "MONITOR":          { bg: "#2563eb", text: "#fff" },
+    "PASS":             { bg: "#dc2626", text: "#fff" },
   };
   var _stanPendingDecision = null;
 
@@ -649,9 +651,9 @@
     var isAutonomous = status === "CONSIDER" || status === "MONITOR" || status === "PASS";
     var hasCeoDecision = ceoDecision === "YES" || ceoDecision === "NO";
 
-    // CAS 2 — CEO a déjà décidé (prioritaire sur tout le reste)
-    if (hasCeoDecision) {
-      var decLabel = ceoDecision === "YES" ? "CALL YES" : "CALL NO";
+    // CAS 2 — CEO a déjà décidé (only fires if NOT autonomous; isAutonomous handled below first)
+    if (hasCeoDecision && !isAutonomous) {
+      var decLabel = ceoDecision === "YES" ? "✓ CALL YES" : "❌ CALL NO";
       var col2 = PILL_COLORS[decLabel];
       var overrideUrl2 = "https://forms.proplace.co/t/c2246dXQEVus?status=CALL" +
         "&action_timestamp=" + new Date().toISOString() +
@@ -742,10 +744,13 @@
   //   CONSIDER / MONITOR / PASS → the real status (amber / blue / red)
   function stanDisplayStatus() {
     var ctx = window.DEAL_CONTEXT || {};
-    if (ctx.ceo_decision === "YES") return "CALL YES";
-    if (ctx.ceo_decision === "NO")  return "CALL NO";
+    // Autonomous Stan re-classification trumps any prior ceo_decision so a
+    // deal that flipped to PASS no longer shows \u2713 CALL YES from a stale
+    // historical decision (matches Place Chat priority).
     if (ctx.status === "CONSIDER" || ctx.status === "MONITOR" || ctx.status === "PASS") return ctx.status;
-    return "\u23f3 PENDING";
+    if (ctx.ceo_decision === "YES") return "\u2713 CALL YES";
+    if (ctx.ceo_decision === "NO")  return "\u274c CALL NO";
+    return "\u23f3 CALL PENDING";
   }
 
   function stanUpdateTopPill() {
