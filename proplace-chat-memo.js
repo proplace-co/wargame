@@ -667,7 +667,6 @@
         + '<div style="margin-bottom:8px">'
         +   '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
         +     '<span style="display:inline-block;padding:4px 12px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:' + col2.bg + ';color:' + col2.text + '">' + decLabel + '</span>'
-        +     '<button onclick="stanEditDecision()" style="font-size:9px;color:#64748b;background:transparent;border:1px solid #e2e8f0;border-radius:3px;padding:3px 8px;cursor:pointer;font-family:monospace;text-transform:uppercase">\u270f Modify</button>'
         +   '</div>'
         +   noteHtml
         +   '<div style="text-align:right;margin-top:4px">'
@@ -695,35 +694,8 @@
         + '</div>';
     }
 
-    // CAS 3 — CALL en attente de décision CEO (⏳ PENDING)
-    return ''
-      + '<div style="background:#fffbeb;border-left:3px solid #f59e0b;padding:8px 11px;border-radius:0 4px 4px 0;margin-bottom:10px">'
-      +   '<span style="font-size:9px;font-weight:700;color:#ca8a04;font-family:monospace;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:2px">'
-      +     '\u23f3 Stan\'s top pick \u2014 your decision'
-      +   '</span>'
-      +   '<span style="font-size:10px;color:#64748b">Stan identified this as a particularly interesting opportunity. YES or NO.</span>'
-      + '</div>'
-      + '<div id="stan-yes-no-block">'
-      +   '<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:7px"><tr>'
-      +     '<td width="48%" style="padding-right:5px">'
-      +       '<button id="stan-btn-yes" onclick="stanHandleDecision(\'YES\')" style="display:block;width:100%;padding:11px 0;text-align:center;font-size:13px;font-weight:800;text-transform:uppercase;border-radius:4px;box-sizing:border-box;background:#4ac67f;color:#fff;border:none;letter-spacing:1px;cursor:pointer">'
-      +         '\u2713 YES'
-      +       '</button>'
-      +     '</td>'
-      +     '<td width="4%" style="text-align:center"><span style="color:#cbd5e1;font-size:12px">|</span></td>'
-      +     '<td width="48%" style="padding-left:5px">'
-      +       '<button id="stan-btn-no" onclick="stanHandleDecision(\'NO\')" style="display:block;width:100%;padding:11px 0;text-align:center;font-size:13px;font-weight:800;text-transform:uppercase;border-radius:4px;box-sizing:border-box;background:#fff;color:#dc2626;border:2px solid #dc2626;letter-spacing:1px;cursor:pointer">'
-      +         '\u2717 NO'
-      +       '</button>'
-      +     '</td>'
-      +   '</tr></table>'
-      +   '<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px"><tr>'
-      +     '<td width="48%" style="text-align:center;padding-right:5px"><p style="font-size:10px;color:#64748b;margin:0">You reach out, or <a href="#" style="color:#4ac67f;font-weight:700;text-decoration:underline">we do it for you</a></p></td>'
-      +     '<td width="4%"></td>'
-      +     '<td width="48%" style="text-align:center;padding-left:5px"><p style="font-size:10px;color:#94a3b8;margin:0">Stan recalibrates thesis</p></td>'
-      +   '</tr></table>'
-      + '</div>'
-      + '<div id="stan-note-box" style="display:none"></div>';
+    // CAS 3 — CALL en attente: bloc décision retiré (data jamais à jour).
+    return '';
   }
 
   function stanRenderStatusBlock() {
@@ -756,6 +728,14 @@
   function stanUpdateTopPill() {
     var b = document.getElementById("stan-curBadge");
     if (!b) return;
+    var ctx = window.DEAL_CONTEXT || {};
+    var isPending = ctx.status === "CALL" && ctx.ceo_decision !== "YES" && ctx.ceo_decision !== "NO";
+    if (isPending) {
+      b.style.display = "none";
+      b.textContent = "";
+      return;
+    }
+    b.style.display = "";
     var ds = stanDisplayStatus();
     var col = PILL_COLORS[ds] || { bg: "#94a3b8", text: "#fff" };
     b.textContent = ds;
