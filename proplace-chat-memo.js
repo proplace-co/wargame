@@ -728,15 +728,15 @@
   function stanUpdateTopPill() {
     var b = document.getElementById("stan-curBadge");
     if (!b) return;
-    var ctx = window.DEAL_CONTEXT || {};
-    var isPending = ctx.status === "CALL" && ctx.ceo_decision !== "YES" && ctx.ceo_decision !== "NO";
-    if (isPending) {
+    var ds = stanDisplayStatus();
+    // CALL PENDING is never shown — hide on any code path that resolves to it
+    // (covers legacy memos with status="NEW" where the meta-patch never ran).
+    if (ds === "⏳ CALL PENDING") {
       b.style.display = "none";
       b.textContent = "";
       return;
     }
     b.style.display = "";
-    var ds = stanDisplayStatus();
     var col = PILL_COLORS[ds] || { bg: "#94a3b8", text: "#fff" };
     b.textContent = ds;
     b.className = "stan-tpil";
