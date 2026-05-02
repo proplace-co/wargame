@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>Lancer un memo · Proplace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #f8fafc;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+      padding: 32px;
+      max-width: 480px;
+      width: 100%;
+      text-align: center;
+    }
+    h1 { font-size: 18px; font-weight: 600; color: #0f172a; margin-bottom: 8px; }
+    .company {
+      font-size: 22px; font-weight: 700; color: #1d4ed8;
+      margin: 12px 0 24px; word-break: break-word;
+    }
+    .status {
+      padding: 16px; border-radius: 8px; font-size: 14px;
+      margin-bottom: 16px;
+    }
+    .status.pending { background: #eff6ff; color: #1d4ed8; }
+    .status.ok { background: #ecfdf5; color: #047857; }
+    .status.err { background: #fef2f2; color: #b91c1c; }
+    .meta {
+      font-size: 12px; color: #64748b; margin-top: 16px;
+      text-align: left; background: #f8fafc; padding: 12px;
+      border-radius: 6px; word-break: break-all;
+    }
+    .meta strong { color: #334155; }
+    .spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid currentColor; border-top-color: transparent;
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+      margin-right: 8px; vertical-align: -2px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    button {
+      background: #1d4ed8; color: #fff; border: none;
+      padding: 10px 20px; border-radius: 6px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+      font-family: inherit;
+    }
+    button:hover { background: #1e40af; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>📝 Lancement memo</h1>
+    <div id="company" class="company">…</div>
+    <div id="status" class="status pending">
+      <span class="spinner"></span>Envoi vers Make…
+    </div>
+    <div id="meta" class="meta" style="display:none"></div>
+    <button id="closeBtn" onclick="window.close()" style="display:none">Fermer</button>
+  </div>
+
+  <script>
+    (function () {
+      var HOOK_URL = 'https://hook.eu1.make.com/c4iwefrp7oj8z578zqkctdm2lm6n1rb4';
+      var params = new URLSearchParams(window.location.search);
+
+      // Forward all incoming query params to Make · same shape que la formule Airtable
+      var forwardParams = new URLSearchParams();
+      params.forEach(function (value, key) { forwardParams.set(key, value); });
+
+      var company = params.get('company_name') || '(sans nom)';
+      var fund = params.get('fund_type') || '';
+      var memo = params.get('memo') || 'fast';
+
+      document.getElementById('company').textContent = company;
+      document.getElementById('meta').style.display = 'block';
+      document.getElementById('meta').innerHTML =
+        '<strong>fund_type</strong> : ' + fund + '<br>' +
+        '<strong>memo</strong> : ' + memo;
+
+      // Anti-double-fire guard · sessionStorage keyed sur l'URL exacte.
+      // Empêche tout double tir si:
+      //   - le navigateur mobile prefetch ET load la page (peu probable mais ceinture+bretelles)
+      //   - React StrictMode / dev tools rechargent
+      //   - utilisateur F5
+      var fireKey = 'memo-launch-fired:' + window.location.search;
+      if (sessionStorage.getItem(fireKey)) {
+        document.getElementById('status').className = 'status ok';
+        document.getElementById('status').textContent = '✓ Memo déjà lancé dans cette session · pas de re-tir';
+        document.getElementById('closeBtn').style.display = 'inline-block';
+        return;
+      }
+      sessionStorage.setItem(fireKey, String(Date.now()));
+
+      var url = HOOK_URL + '?' + forwardParams.toString();
+
+      // mode: 'no-cors' · Make webhook répond avec un body opaque, on peut pas
+      // lire le status, mais on a un succès si pas d'erreur réseau.
+      // keepalive: true · garantit que la requête se finit même si l'utilisateur
+      // ferme l'onglet rapidement.
+      fetch(url, { method: 'POST', mode: 'no-cors', keepalive: true })
+        .then(function () {
+          document.getElementById('status').className = 'status ok';
+          document.getElementById('status').innerHTML =
+            '✓ <strong>Memo lancé !</strong><br>' +
+            '<small>Ton scénario Make a reçu la requête. Tu peux fermer cet onglet.</small>';
+          document.getElementById('closeBtn').style.display = 'inline-block';
+        })
+        .catch(function (err) {
+          document.getElementById('status').className = 'status err';
+          document.getElementById('status').innerHTML =
+            '✗ Erreur réseau : ' + (err.message || err) + '<br>' +
+            '<small>Vérifie ta connexion et réessaie.</small>';
+          // En cas d'erreur, on libère le guard pour permettre un retry
+          sessionStorage.removeItem(fireKey);
+          document.getElementById('closeBtn').style.display = 'inline-block';
+        });
+    })();
+  </script>
+</body>
+</html>
