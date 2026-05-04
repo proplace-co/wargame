@@ -13,6 +13,30 @@
 (function() {
   'use strict';
 
+  /* Merge orphan battlefield-col elements (no <h4 class="stage-header">)
+     into the previous column. The LLM that generates the value chain players
+     section sometimes splits actor cards belonging to the same stage across
+     extra columns, leaving them headerless on the right side of the grid. */
+  function mergeOrphanBattlefieldCols() {
+    var grids = document.querySelectorAll(".battlefield-grid");
+    for (var g = 0; g < grids.length; g++) {
+      var cols = grids[g].querySelectorAll(":scope > .battlefield-col");
+      var lastWithHeader = null;
+      for (var i = 0; i < cols.length; i++) {
+        var col = cols[i];
+        var hasHeader = col.querySelector(":scope > .stage-header");
+        var hasCards  = col.querySelector(":scope > .actor-card");
+        if (hasHeader) {
+          lastWithHeader = col;
+        } else if (hasCards && lastWithHeader) {
+          while (col.firstChild) lastWithHeader.appendChild(col.firstChild);
+          col.parentNode.removeChild(col);
+        }
+      }
+    }
+  }
+  try { mergeOrphanBattlefieldCols(); } catch (e) {}
+
   var currentScript = document.currentScript || (function() {
     var s = document.getElementsByTagName("script");
     return s[s.length - 1];
