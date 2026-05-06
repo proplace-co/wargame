@@ -1,0 +1,1454 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Mémo TravelSwitch — sforbt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+/**
+ * <deck-stage noscale> — reusable web component for HTML decks.
+ *
+ * Handles:
+ *  (a) speaker notes — reads <script type="application/json" id="speaker-notes">
+ *      and posts {slideIndexChanged: N} to the parent window on nav.
+ *  (b) keyboard navigation — ←/→, PgUp/PgDn, Space, Home/End, number keys.
+ *  (c) press R to reset to slide 0 (with a tasteful keyboard hint).
+ *  (d) bottom-center overlay showing slide count + hints, fades out on idle.
+ *  (e) auto-scaling — inner canvas is a fixed design size (default 1920×1080)
+ *      scaled with `transform: scale()` to fit the viewport, letterboxed.
+ *      Set the `noscale` attribute to render at authored size (1:1) — the
+ *      PPTX exporter sets this so its DOM capture sees unscaled geometry.
+ *  (f) print — `@media print` lays every slide out as its own page at the
+ *      design size, so the browser's Print → Save as PDF produces a clean
+ *      one-page-per-slide PDF with no extra setup.
+ *
+ * Slides are HIDDEN, not unmounted. Non-active slides stay in the DOM with
+ * `visibility: hidden` + `opacity: 0`, so their state (videos, iframes,
+ * form inputs, React trees) is preserved across navigation.
+ *
+ * Lifecycle event — the component dispatches a `slidechange` CustomEvent on
+ * itself whenever the active slide changes (including the initial mount).
+ * The event bubbles and composes out of shadow DOM, so you can listen on
+ * the <deck-stage> element or on document:
+ *
+ *   document.querySelector('deck-stage').addEventListener('slidechange', (e) => {
+ *     e.detail.index         // new 0-based index
+ *     e.detail.previousIndex // previous index, or -1 on init
+ *     e.detail.total         // total slide count
+ *     e.detail.slide         // the new active slide element
+ *     e.detail.previousSlide // the prior slide element, or null on init
+ *     e.detail.reason        // 'init' | 'keyboard' | 'click' | 'tap' | 'api'
+ *   });
+ *
+ * Persistence: none at the deck level. The host app keeps the current slide
+ * in its own URL (?slide=) and re-delivers it via location.hash on load, so a
+ * bare load with no hash always starts at slide 1.
+ *
+ * Usage:
+ *   <deck-stage width="1920" height="1080">
+ *     <section data-label="Title">...</section>
+ *     <section data-label="Agenda">...</section>
+ *   </deck-stage>
+ *
+ * Slides are the direct element children of <deck-stage>. Each slide is
+ * automatically tagged with:
+ *   - data-screen-label="NN Label"   (1-indexed, for comment flow)
+ *   - data-om-validate="no_overflowing_text,no_overlapping_text,slide_sized_text"
+ */
+
+(() => {
+  const DESIGN_W_DEFAULT = 1920;
+  const DESIGN_H_DEFAULT = 1080;
+  const OVERLAY_HIDE_MS = 1800;
+  const VALIDATE_ATTR = 'no_overflowing_text,no_overlapping_text,slide_sized_text';
+
+  const pad2 = (n) => String(n).padStart(2, '0');
+
+  const stylesheet = `
+    :host {
+      position: fixed;
+      inset: 0;
+      display: block;
+      background: #000;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+      overflow: hidden;
+    }
+
+    .stage {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .canvas {
+      position: relative;
+      transform-origin: center center;
+      flex-shrink: 0;
+      background: #fff;
+      will-change: transform;
+    }
+
+    /* Slides live in light DOM (via <slot>) so authored CSS still applies.
+       We absolutely position each slotted child to stack them. */
+    ::slotted(*) {
+      position: absolute !important;
+      inset: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      box-sizing: border-box !important;
+      overflow: hidden;
+      opacity: 0;
+      pointer-events: none;
+      visibility: hidden;
+    }
+    ::slotted([data-deck-active]) {
+      opacity: 1;
+      pointer-events: auto;
+      visibility: visible;
+    }
+
+    /* Tap zones for mobile — back/forward thirds like Stories.
+       Transparent, no visible UI, don't block the overlay. */
+    .tapzones {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      z-index: 2147482000;
+      pointer-events: none;
+    }
+    .tapzone {
+      flex: 1;
+      pointer-events: auto;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* Only activate tap zones on coarse pointers (touch devices). */
+    @media (hover: hover) and (pointer: fine) {
+      .tapzones { display: none; }
+    }
+
+    .overlay {
+      position: fixed;
+      left: 50%;
+      bottom: 22px;
+      transform: translate(-50%, 6px) scale(0.92);
+      filter: blur(6px);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      background: #000;
+      color: #fff;
+      border-radius: 999px;
+      font-size: 12px;
+      font-feature-settings: "tnum" 1;
+      letter-spacing: 0.01em;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 260ms ease, transform 260ms cubic-bezier(.2,.8,.2,1), filter 260ms ease;
+      transform-origin: center bottom;
+      z-index: 2147483000;
+      user-select: none;
+    }
+    .overlay[data-visible] {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translate(-50%, 0) scale(1);
+      filter: blur(0);
+    }
+
+    .btn {
+      appearance: none;
+      -webkit-appearance: none;
+      background: transparent;
+      border: 0;
+      margin: 0;
+      padding: 0;
+      color: inherit;
+      font: inherit;
+      cursor: default;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 28px;
+      min-width: 28px;
+      border-radius: 999px;
+      color: rgba(255,255,255,0.72);
+      transition: background 140ms ease, color 140ms ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+    .btn:active { background: rgba(255,255,255,0.18); }
+    .btn:focus { outline: none; }
+    .btn:focus-visible { outline: none; }
+    .btn::-moz-focus-inner { border: 0; }
+    .btn svg { width: 14px; height: 14px; display: block; }
+    .btn.reset {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      padding: 0 10px 0 12px;
+      gap: 6px;
+      color: rgba(255,255,255,0.72);
+    }
+    .btn.reset .kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 10px;
+      line-height: 1;
+      color: rgba(255,255,255,0.88);
+      background: rgba(255,255,255,0.12);
+      border-radius: 4px;
+    }
+
+    .count {
+      font-variant-numeric: tabular-nums;
+      color: #fff;
+      font-weight: 500;
+      padding: 0 8px;
+      min-width: 42px;
+      text-align: center;
+      font-size: 12px;
+    }
+    .count .sep { color: rgba(255,255,255,0.45); margin: 0 3px; font-weight: 400; }
+    .count .total { color: rgba(255,255,255,0.55); }
+
+    .divider {
+      width: 1px;
+      height: 14px;
+      background: rgba(255,255,255,0.18);
+      margin: 0 2px;
+    }
+
+    /* ── Print: one page per slide, no chrome ────────────────────────────
+       The screen layout stacks every slide at inset:0 inside a scaled
+       canvas; for print we want them in document flow at the authored
+       design size so the browser paginates one slide per sheet. The
+       @page size is set from the width/height attributes via the inline
+       <style id="deck-stage-print-page"> that connectedCallback injects
+       into <head> (the @page at-rule has no effect inside shadow DOM). */
+    @media print {
+      :host {
+        position: static;
+        inset: auto;
+        background: none;
+        overflow: visible;
+        color: inherit;
+      }
+      .stage { position: static; display: block; }
+      .canvas {
+        transform: none !important;
+        width: auto !important;
+        height: auto !important;
+        background: none;
+        will-change: auto;
+      }
+      ::slotted(*) {
+        position: relative !important;
+        inset: auto !important;
+        width: var(--deck-design-w) !important;
+        height: var(--deck-design-h) !important;
+        box-sizing: border-box !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        pointer-events: auto;
+        break-after: page;
+        page-break-after: always;
+        break-inside: avoid;
+        overflow: hidden;
+      }
+      ::slotted(*:last-child) {
+        break-after: auto;
+        page-break-after: auto;
+      }
+      .overlay, .tapzones { display: none !important; }
+    }
+  `;
+
+  class DeckStage extends HTMLElement {
+    static get observedAttributes() { return ['width', 'height', 'noscale']; }
+
+    constructor() {
+      super();
+      this._root = this.attachShadow({ mode: 'open' });
+      this._index = 0;
+      this._slides = [];
+      this._notes = [];
+      this._hideTimer = null;
+      this._mouseIdleTimer = null;
+
+      this._onKey = this._onKey.bind(this);
+      this._onResize = this._onResize.bind(this);
+      this._onSlotChange = this._onSlotChange.bind(this);
+      this._onMouseMove = this._onMouseMove.bind(this);
+      this._onTapBack = this._onTapBack.bind(this);
+      this._onTapForward = this._onTapForward.bind(this);
+    }
+
+    get designWidth() {
+      return parseInt(this.getAttribute('width'), 10) || DESIGN_W_DEFAULT;
+    }
+    get designHeight() {
+      return parseInt(this.getAttribute('height'), 10) || DESIGN_H_DEFAULT;
+    }
+
+    connectedCallback() {
+      this._render();
+      this._loadNotes();
+      this._syncPrintPageRule();
+      window.addEventListener('keydown', this._onKey);
+      window.addEventListener('resize', this._onResize);
+      window.addEventListener('mousemove', this._onMouseMove, { passive: true });
+      // Initial collection + layout happens via slotchange, which fires on mount.
+    }
+
+    disconnectedCallback() {
+      window.removeEventListener('keydown', this._onKey);
+      window.removeEventListener('resize', this._onResize);
+      window.removeEventListener('mousemove', this._onMouseMove);
+      if (this._hideTimer) clearTimeout(this._hideTimer);
+      if (this._mouseIdleTimer) clearTimeout(this._mouseIdleTimer);
+    }
+
+    attributeChangedCallback() {
+      if (this._canvas) {
+        this._canvas.style.width = this.designWidth + 'px';
+        this._canvas.style.height = this.designHeight + 'px';
+        this._canvas.style.setProperty('--deck-design-w', this.designWidth + 'px');
+        this._canvas.style.setProperty('--deck-design-h', this.designHeight + 'px');
+        this._fit();
+        this._syncPrintPageRule();
+      }
+    }
+
+    _render() {
+      const style = document.createElement('style');
+      style.textContent = stylesheet;
+
+      const stage = document.createElement('div');
+      stage.className = 'stage';
+
+      const canvas = document.createElement('div');
+      canvas.className = 'canvas';
+      canvas.style.width = this.designWidth + 'px';
+      canvas.style.height = this.designHeight + 'px';
+      canvas.style.setProperty('--deck-design-w', this.designWidth + 'px');
+      canvas.style.setProperty('--deck-design-h', this.designHeight + 'px');
+
+      const slot = document.createElement('slot');
+      slot.addEventListener('slotchange', this._onSlotChange);
+      canvas.appendChild(slot);
+      stage.appendChild(canvas);
+
+      // Tap zones (mobile): left third = back, right third = forward.
+      const tapzones = document.createElement('div');
+      tapzones.className = 'tapzones export-hidden';
+      tapzones.setAttribute('aria-hidden', 'true');
+      tapzones.setAttribute('data-noncommentable', '');
+      const tzBack = document.createElement('div');
+      tzBack.className = 'tapzone tapzone--back';
+      const tzMid = document.createElement('div');
+      tzMid.className = 'tapzone tapzone--mid';
+      tzMid.style.pointerEvents = 'none';
+      const tzFwd = document.createElement('div');
+      tzFwd.className = 'tapzone tapzone--fwd';
+      tzBack.addEventListener('click', this._onTapBack);
+      tzFwd.addEventListener('click', this._onTapForward);
+      tapzones.append(tzBack, tzMid, tzFwd);
+
+      // Overlay: compact, solid black, with clickable controls.
+      const overlay = document.createElement('div');
+      overlay.className = 'overlay export-hidden';
+      overlay.setAttribute('role', 'toolbar');
+      overlay.setAttribute('aria-label', 'Deck controls');
+      overlay.setAttribute('data-noncommentable', '');
+      overlay.innerHTML = `
+        <button class="btn prev" type="button" aria-label="Previous slide" title="Previous (←)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>
+        </button>
+        <span class="count" aria-live="polite"><span class="current">1</span><span class="sep">/</span><span class="total">1</span></span>
+        <button class="btn next" type="button" aria-label="Next slide" title="Next (→)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg>
+        </button>
+        <span class="divider"></span>
+        <button class="btn reset" type="button" aria-label="Reset to first slide" title="Reset (R)">Reset<span class="kbd">R</span></button>
+      `;
+
+      overlay.querySelector('.prev').addEventListener('click', () => this._go(this._index - 1, 'click'));
+      overlay.querySelector('.next').addEventListener('click', () => this._go(this._index + 1, 'click'));
+      overlay.querySelector('.reset').addEventListener('click', () => this._go(0, 'click'));
+
+      this._root.append(style, stage, tapzones, overlay);
+      this._canvas = canvas;
+      this._slot = slot;
+      this._overlay = overlay;
+      this._countEl = overlay.querySelector('.current');
+      this._totalEl = overlay.querySelector('.total');
+    }
+
+    /** @page must live in the document stylesheet — it's a no-op inside
+     *  shadow DOM. Inject/update a single <head> style tag so the print
+     *  sheet matches the design size and Save-as-PDF yields one slide per
+     *  page with no margins. */
+    _syncPrintPageRule() {
+      const id = 'deck-stage-print-page';
+      let tag = document.getElementById(id);
+      if (!tag) {
+        tag = document.createElement('style');
+        tag.id = id;
+        document.head.appendChild(tag);
+      }
+      tag.textContent =
+        '@page { size: ' + this.designWidth + 'px ' + this.designHeight + 'px; margin: 0; } ' +
+        '@media print { html, body { margin: 0 !important; padding: 0 !important; background: none !important; overflow: visible !important; height: auto !important; } ' +
+        '* { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }';
+    }
+
+    _onSlotChange() {
+      this._collectSlides();
+      this._restoreIndex();
+      this._applyIndex({ showOverlay: false, broadcast: true, reason: 'init' });
+      this._fit();
+    }
+
+    _collectSlides() {
+      const assigned = this._slot.assignedElements({ flatten: true });
+      this._slides = assigned.filter((el) => {
+        // Skip template/style/script nodes even if someone slots them.
+        const tag = el.tagName;
+        return tag !== 'TEMPLATE' && tag !== 'SCRIPT' && tag !== 'STYLE';
+      });
+
+      this._slides.forEach((slide, i) => {
+        const n = i + 1;
+        // Determine a label for comment flow: prefer explicit data-label,
+        // then an existing data-screen-label, then first heading, else "Slide".
+        let label = slide.getAttribute('data-label');
+        if (!label) {
+          const existing = slide.getAttribute('data-screen-label');
+          if (existing) {
+            // Strip any leading number the author may have included.
+            label = existing.replace(/^\s*\d+\s*/, '').trim() || existing;
+          }
+        }
+        if (!label) {
+          const h = slide.querySelector('h1, h2, h3, [data-title]');
+          if (h) label = (h.textContent || '').trim().slice(0, 40);
+        }
+        if (!label) label = 'Slide';
+        slide.setAttribute('data-screen-label', `${pad2(n)} ${label}`);
+
+        // Validation attribute for comment flow / auto-checks.
+        if (!slide.hasAttribute('data-om-validate')) {
+          slide.setAttribute('data-om-validate', VALIDATE_ATTR);
+        }
+
+        slide.setAttribute('data-deck-slide', String(i));
+      });
+
+      if (this._totalEl) this._totalEl.textContent = String(this._slides.length || 1);
+      if (this._index >= this._slides.length) this._index = Math.max(0, this._slides.length - 1);
+    }
+
+    _loadNotes() {
+      const tag = document.getElementById('speaker-notes');
+      if (!tag) { this._notes = []; return; }
+      try {
+        const parsed = JSON.parse(tag.textContent || '[]');
+        if (Array.isArray(parsed)) this._notes = parsed;
+      } catch (e) {
+        console.warn('[deck-stage] Failed to parse #speaker-notes JSON:', e);
+        this._notes = [];
+      }
+    }
+
+    _restoreIndex() {
+      // The host's ?slide= param is delivered as a #<int> hash (1-indexed) on
+      // the iframe src. No hash → slide 1; the deck itself keeps no position
+      // state across loads.
+      const h = (location.hash || '').match(/^#(\d+)$/);
+      if (h) {
+        const n = parseInt(h[1], 10) - 1;
+        if (n >= 0 && n < this._slides.length) this._index = n;
+      }
+    }
+
+    _applyIndex({ showOverlay = true, broadcast = true, reason = 'init' } = {}) {
+      if (!this._slides.length) return;
+      const prev = this._prevIndex == null ? -1 : this._prevIndex;
+      const curr = this._index;
+      // Keep the iframe's own hash in sync so an in-iframe location.reload()
+      // (reload banner path in viewer-handle.ts) lands on the current slide,
+      // not the stale deep-link hash from initial load.
+      try { history.replaceState(null, '', '#' + (curr + 1)); } catch (e) {}
+      this._slides.forEach((s, i) => {
+        if (i === curr) s.setAttribute('data-deck-active', '');
+        else s.removeAttribute('data-deck-active');
+      });
+      if (this._countEl) this._countEl.textContent = String(curr + 1);
+
+      if (broadcast) {
+        // (1) Legacy: host-window postMessage for speaker-notes renderers.
+        try { window.postMessage({ slideIndexChanged: curr }, '*'); } catch (e) {}
+
+        // (2) In-page CustomEvent on the <deck-stage> element itself.
+        //     Bubbles and composes out of shadow DOM so slide code can listen:
+        //       document.querySelector('deck-stage').addEventListener('slidechange', e => {
+        //         e.detail.index, e.detail.previousIndex, e.detail.total, e.detail.slide, e.detail.reason
+        //       });
+        const detail = {
+          index: curr,
+          previousIndex: prev,
+          total: this._slides.length,
+          slide: this._slides[curr] || null,
+          previousSlide: prev >= 0 ? (this._slides[prev] || null) : null,
+          reason: reason, // 'init' | 'keyboard' | 'click' | 'tap' | 'api'
+        };
+        this.dispatchEvent(new CustomEvent('slidechange', {
+          detail,
+          bubbles: true,
+          composed: true,
+        }));
+      }
+
+      this._prevIndex = curr;
+      if (showOverlay) this._flashOverlay();
+    }
+
+    _flashOverlay() {
+      if (!this._overlay) return;
+      this._overlay.setAttribute('data-visible', '');
+      if (this._hideTimer) clearTimeout(this._hideTimer);
+      this._hideTimer = setTimeout(() => {
+        this._overlay.removeAttribute('data-visible');
+      }, OVERLAY_HIDE_MS);
+    }
+
+    _fit() {
+      if (!this._canvas) return;
+      // PPTX export sets noscale so the DOM capture sees authored-size
+      // geometry — the scaled canvas is in shadow DOM, so the exporter's
+      // resetTransformSelector can't reach .canvas.style.transform directly.
+      if (this.hasAttribute('noscale')) {
+        this._canvas.style.transform = 'none';
+        return;
+      }
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const s = Math.min(vw / this.designWidth, vh / this.designHeight);
+      this._canvas.style.transform = `scale(${s})`;
+    }
+
+    _onResize() { this._fit(); }
+
+    _onMouseMove() {
+      // Keep overlay visible while mouse moves; hide after idle.
+      this._flashOverlay();
+    }
+
+    _onTapBack(e) {
+      e.preventDefault();
+      this._go(this._index - 1, 'tap');
+    }
+
+    _onTapForward(e) {
+      e.preventDefault();
+      this._go(this._index + 1, 'tap');
+    }
+
+    _onKey(e) {
+      // Ignore when the user is typing.
+      const t = e.target;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const key = e.key;
+      let handled = true;
+
+      if (key === 'ArrowRight' || key === 'PageDown' || key === ' ' || key === 'Spacebar') {
+        this._go(this._index + 1, 'keyboard');
+      } else if (key === 'ArrowLeft' || key === 'PageUp') {
+        this._go(this._index - 1, 'keyboard');
+      } else if (key === 'Home') {
+        this._go(0, 'keyboard');
+      } else if (key === 'End') {
+        this._go(this._slides.length - 1, 'keyboard');
+      } else if (key === 'r' || key === 'R') {
+        this._go(0, 'keyboard');
+      } else if (/^[0-9]$/.test(key)) {
+        // 1..9 jump to that slide; 0 jumps to 10.
+        const n = key === '0' ? 9 : parseInt(key, 10) - 1;
+        if (n < this._slides.length) this._go(n, 'keyboard');
+      } else {
+        handled = false;
+      }
+
+      if (handled) {
+        e.preventDefault();
+        this._flashOverlay();
+      }
+    }
+
+    _go(i, reason = 'api') {
+      if (!this._slides.length) return;
+      const clamped = Math.max(0, Math.min(this._slides.length - 1, i));
+      if (clamped === this._index) {
+        this._flashOverlay();
+        return;
+      }
+      this._index = clamped;
+      this._applyIndex({ showOverlay: true, broadcast: true, reason });
+    }
+
+    // Public API ------------------------------------------------------------
+
+    /** Current slide index (0-based). */
+    get index() { return this._index; }
+    /** Total slide count. */
+    get length() { return this._slides.length; }
+    /** Programmatically navigate. */
+    goTo(i) { this._go(i, 'api'); }
+    next() { this._go(this._index + 1, 'api'); }
+    prev() { this._go(this._index - 1, 'api'); }
+    reset() { this._go(0, 'api'); }
+  }
+
+  if (!customElements.get('deck-stage')) {
+    customElements.define('deck-stage', DeckStage);
+  }
+})();
+
+</script>
+<style>
+:root{
+  --paper:#F5F1E8;
+  --paper-2:#EFEAE0;
+  --ink:#0E1116;
+  --ink-2:#2A3038;
+  --muted:#5C6470;
+  --rule:#1A1F26;
+  --rule-soft:#C9C0AE;
+  --accent:#7A1F1F;
+  --pos:#1F4D2E;
+  --neg:#7A1F1F;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#0a0a0a;font-family:'Inter',sans-serif;color:var(--ink)}
+deck-stage{display:block}
+deck-stage > section{
+  width:1920px;height:1080px;background:var(--paper);color:var(--ink);
+  font-family:'Inter',sans-serif;font-size:22px;line-height:1.5;
+  position:relative;overflow:hidden;padding:90px 120px;
+  display:flex;flex-direction:column;
+}
+.s-head{display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:18px;border-bottom:1px solid var(--rule);margin-bottom:48px;flex-shrink:0}
+.s-head .brand{font-family:'EB Garamond',serif;font-size:24px;font-style:italic;color:var(--ink-2);letter-spacing:0.01em}
+.s-head .meta{font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted)}
+.s-title{font-family:'EB Garamond',serif;font-weight:500;font-size:60px;line-height:1.05;letter-spacing:-0.01em;color:var(--ink);margin-bottom:14px}
+.s-kicker{font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);margin-bottom:24px}
+.s-sub{font-size:24px;color:var(--ink-2);line-height:1.45;max-width:1500px;margin-bottom:40px}
+.s-body{flex:1;min-height:0;display:flex;flex-direction:column}
+.s-body p{font-size:21px;line-height:1.55;color:var(--ink-2);margin-bottom:16px;text-wrap:pretty}
+.s-body p strong, .s-body b{color:var(--ink);font-weight:600}
+.s-body ul{list-style:none;padding:0}
+.s-body ul li{position:relative;padding-left:28px;margin-bottom:12px;font-size:21px;line-height:1.5;color:var(--ink-2)}
+.s-body ul li::before{content:"";position:absolute;left:0;top:14px;width:14px;height:1px;background:var(--ink)}
+.s-body h3{font-family:'EB Garamond',serif;font-weight:500;font-size:30px;color:var(--ink);margin-bottom:16px}
+.s-body h4{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;margin-top:20px;padding-bottom:8px;border-bottom:1px solid var(--rule-soft)}
+.s-foot{position:absolute;left:120px;right:120px;bottom:42px;display:flex;justify-content:space-between;align-items:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);padding-top:18px;border-top:1px solid var(--rule-soft)}
+.s-foot .lhs{display:flex;gap:32px}
+
+/* COVER */
+.cover{padding:140px 160px;justify-content:space-between}
+.cover-top{display:flex;justify-content:space-between;align-items:flex-start}
+.cover-mark{font-family:'EB Garamond',serif;font-style:italic;font-size:28px;color:var(--ink-2)}
+.cover-mark::before{content:"§";font-style:normal;margin-right:10px;color:var(--accent);font-weight:700}
+.cover-tag{font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);text-align:right;line-height:2}
+.cover-mid{margin-top:80px}
+.cover-eyebrow{font-family:'JetBrains Mono',monospace;font-size:15px;letter-spacing:0.3em;text-transform:uppercase;color:var(--muted);margin-bottom:32px}
+.cover h1{font-family:'EB Garamond',serif;font-weight:500;font-size:240px;line-height:0.92;letter-spacing:-0.025em;color:var(--ink)}
+.cover-sub{font-family:'EB Garamond',serif;font-style:italic;font-weight:400;font-size:36px;color:var(--ink-2);line-height:1.3;margin-top:36px;max-width:1400px}
+.cover-bot{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:48px;padding-top:36px;border-top:1px solid var(--rule)}
+.cover-bot dt{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.cover-bot dd{font-family:'EB Garamond',serif;font-size:30px;color:var(--ink);font-weight:500}
+
+/* DIVIDER */
+.divider{padding:140px 160px;justify-content:flex-end}
+.divider .roman{position:absolute;top:120px;right:160px;font-family:'EB Garamond',serif;font-style:italic;font-size:96px;color:var(--rule-soft);font-weight:400;letter-spacing:0.05em}
+.divider .div-eyebrow{font-family:'JetBrains Mono',monospace;font-size:15px;letter-spacing:0.3em;text-transform:uppercase;color:var(--muted);margin-bottom:32px}
+.divider h2{font-family:'EB Garamond',serif;font-weight:500;font-size:140px;line-height:0.95;letter-spacing:-0.02em;color:var(--ink);max-width:1400px}
+.divider .div-sub{font-family:'EB Garamond',serif;font-style:italic;font-size:30px;color:var(--ink-2);margin-top:36px;max-width:1100px;line-height:1.4}
+.divider .div-rule{width:120px;height:2px;background:var(--ink);margin-top:48px}
+
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:80px;flex:1;min-height:0}
+.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:60px;flex:1;min-height:0}
+.col-block h4:first-child{margin-top:0}
+
+/* Image block — tasteful figure with caption, contained height so slides stay composed */
+.s-figure{margin-top:18px;display:flex;flex-direction:column;gap:10px;flex:0 0 auto}
+.s-figure .frame{border:1px solid var(--rule);background:var(--paper-2);border-radius:2px;overflow:hidden;display:flex;align-items:center;justify-content:center;max-height:380px}
+.s-figure .frame img{width:100%;height:auto;max-height:380px;object-fit:contain;display:block}
+.s-figure figcaption{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted)}
+.s-figure.compact .frame{max-height:280px}
+.s-figure.compact .frame img{max-height:280px}
+/* Side-by-side text + image layout */
+.text-image{display:grid;grid-template-columns:1fr 1.1fr;gap:48px;flex:1;min-height:0;align-items:start}
+.text-image > .col-block{min-width:0}
+.text-image .s-figure{margin-top:0;align-self:stretch;height:100%}
+.text-image .s-figure .frame{max-height:480px;height:100%}
+.text-image .s-figure .frame img{max-height:480px}
+
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin:24px 0 36px}
+.kpi{padding:24px 24px 24px 0;border-right:1px solid var(--rule-soft)}
+.kpi:last-child{border-right:none}
+.kpi:not(:first-child){padding-left:24px}
+.kpi-label{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+.kpi-value{font-family:'EB Garamond',serif;font-weight:500;font-size:48px;line-height:1;color:var(--ink);letter-spacing:-0.01em}
+.kpi-note{font-size:14px;color:var(--muted);margin-top:8px;line-height:1.4}
+
+table.fin{width:100%;border-collapse:collapse;font-size:17px;font-variant-numeric:tabular-nums}
+table.fin thead th{background:transparent;color:var(--ink);font-weight:600;text-align:left;padding:11px 14px;border-bottom:2px solid var(--ink);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.18em;text-transform:uppercase}
+table.fin tbody td{padding:12px 14px;border-bottom:1px solid var(--rule-soft);color:var(--ink-2);vertical-align:top}
+table.fin tbody tr:last-child td{border-bottom:none}
+table.fin tbody td.num{text-align:right;font-family:'JetBrains Mono',monospace;color:var(--ink);white-space:nowrap}
+table.fin tbody tr.total td{font-weight:600;color:var(--ink);border-top:1px solid var(--ink);border-bottom:1px solid var(--ink);background:rgba(0,0,0,0.03)}
+table.fin tbody tr.total td.num{font-weight:700}
+table.fin.pnl-dense{font-size:15px}
+table.fin.pnl-dense thead th{padding:8px 12px;font-size:11px}
+table.fin.pnl-dense tbody td{padding:7px 12px}
+
+.swot{display:grid;grid-template-columns:1fr 1fr;gap:36px;flex:1;min-height:0}
+.swot-cell{padding:28px 32px;background:rgba(255,255,255,0.4);border:1px solid var(--rule-soft);border-top:3px solid var(--ink)}
+.swot-cell h4{margin:0 0 14px 0;border:none;padding:0}
+.swot-cell ul li{font-size:18px;margin-bottom:10px;padding-left:22px}
+.swot-cell ul li::before{top:11px;width:10px}
+
+.verdict{display:inline-flex;align-items:baseline;gap:18px;padding:18px 28px;border:2px solid var(--ink);background:var(--paper-2);font-family:'EB Garamond',serif}
+.verdict .v-tag{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted)}
+.verdict .v-text{font-size:36px;font-weight:600;color:var(--ink);letter-spacing:-0.01em}
+
+.closing{padding:140px 160px;justify-content:space-between}
+.closing-mark{font-family:'EB Garamond',serif;font-style:italic;font-size:200px;color:var(--ink);line-height:1}
+.closing h2{font-family:'EB Garamond',serif;font-weight:500;font-size:96px;line-height:1.05;letter-spacing:-0.02em;color:var(--ink);max-width:1400px;margin-top:48px}
+.closing-sig{display:flex;justify-content:space-between;align-items:flex-end;padding-top:36px;border-top:1px solid var(--rule)}
+
+.lead{font-size:25px;color:var(--ink);line-height:1.45;margin-bottom:28px;max-width:1500px;font-weight:400}
+.callout{padding:22px 26px;background:var(--paper-2);border-left:3px solid var(--ink);font-size:20px;line-height:1.55;color:var(--ink-2);margin:20px 0}
+.dl-grid{display:grid;grid-template-columns:220px 1fr;gap:16px 28px;align-items:baseline}
+.dl-grid dt{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);padding-top:4px}
+.dl-grid dd{font-size:20px;color:var(--ink-2);line-height:1.5}
+.tag{display:inline-block;padding:4px 10px;border:1px solid var(--rule);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.15em;text-transform:uppercase;margin-right:6px;color:var(--ink-2)}
+</style>
+</head>
+<body>
+
+<script type="application/json" id="speaker-notes">["Bonjour à tous. Nous allons examiner aujourd'hui un dossier très intéressant : TravelSwitch. C'est une entreprise qui opère dans l'infrastructure TravelTech, proposant une solution SaaS AI-first. Elle cible les agences de gestion de voyages, dites TMC, et les compagnies aériennes, en se concentrant sur les acteurs avec plus de 50 employés et un volume de voyages d'affaires dépassant les 10 millions de dollars.", "TravelSwitch se positionne comme un SaaS modulaire alimenté par l'IA, visant à automatiser la distribution et la gestion des voyages d'affaires. C'est une solution d'infrastructure qui promet de fluidifier des processus souvent complexes et coûteux dans ce secteur. Géographiquement, son siège est à Dubaï, et la société opérerait en Inde et au Moyen-Orient.", "TravelSwitch se trouve dans le secteur de la mobilité et du transport, plus précisément dans l'infrastructure TravelTech. Sa proposition de valeur principale est de fournir une solution logicielle modulable et intelligente pour les voyages d'affaires. C'est un marché où l'innovation technologique, notamment l'IA, devient cruciale pour gérer la complexité grandissante de la distribution de voyages.", "Passons à l'évaluation rapide du marché. TravelSwitch évolue dans l'Infrastructure TravelTech SaaS AI pour les voyages d'affaires. Nous avons attribué un score d'opportunité marché de 77.5/100, ce qui indique un marché attractif mais avec une intensité concurrentielle. Le timing est propice en raison de la transformation vers le standard NDC.", "Notre thèse de marché est claire : le passage du standard EDIFACT au NDC a créé une rupture irréversible, rendant les infrastructures existantes obsolètes. TravelSwitch, avec son approche modulaire et API, permet une transition fluide. La fenêtre d'opportunité est cruciale, autour de 24 mois, avant une fragmentation du marché.", "Notre conviction est haute. La tension réside dans la capacité à maintenir des marges tout en gérant les coûts d'accès aux contenus NDC. Nous parions que l'IA de TravelSwitch optimisera tellement les coûts opérationnels des TMC que le logiciel deviendra indispensable, même à un coût élevé. Le volume de transactions via l'IA sera un indicateur clé.", "Le marché est jugé très attractif, avec un score de 85/100. Sa taille est de plusieurs dizaines de milliards, portée par la reprise du corporate travel. Les moteurs de croissance incluent l'adoption de l'IA générative. Le timing est idéal grâce à la convergence de l'IA et du NDC. Les risques sont liés à un potentiel ralentissement économique.", "En termes de gagnabilité, nous sommes à 75/100. Les sortants comme Amadeus et Sabre dominent mais sont lents à innover. Des challengers comme Spotnana lèvent beaucoup de capitaux. TravelSwitch se distingue par son besoin d'une solution agnostique et modulaire. La défendabilité est modérée, l'IA devenant une norme.", "La pénétration du marché est forte, à 80/100. Le modèle B2B direct et les partenariats stratégiques sont efficaces. La tarification tend vers l'abonnement SaaS ou le coût par transaction. Les coûts de service sont faibles grâce à l'automatisation IA, et l'architecture cloud multi-tenant facilite l'expansion géographique.", "Enfin, le marché est récompenseur à 70/100. Les multiples de sortie en TravelTech SaaS sont sains. Les GDS cherchant la modernisation et les géants de la gestion des dépenses pourraient être des acquéreurs stratégiques. Le profil général du marché montre une haute vélocité, mais exige une fidélité technologique rapide via l'IA.", "Les données sur les tendances NDC et les besoins des TMC sont fiables. Toutefois, les informations sur les multiples de sortie spécifiques à cette région sont plus volatiles. Cette analyse globale confirme que, malgré un environnement concurrentiel, TravelSwitch est positionné sur un segment en forte croissance. [IMG src=\"https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-830f493d60ebf24858d3b50c0f43bedf-ez0mffdw.jpg\"]", "Passons à la proposition de valeur de TravelSwitch. L'entreprise offre une infrastructure de voyage moderne et basée sur l'IA, éliminant les frictions et réduisant les coûts pour les entreprises ambitieuses et les opérateurs de voyage. Leur credo est simple : 'Just Flick The Switch And Go' – un hub technologique modulaire pour la réservation et la gestion, déployable en quelques jours.", "Leur plateforme se positionne comme un hub technologique modulaire, permettant aux entreprises de lancer des portails de voyage et des outils de réservation automatisés par IA en quelques jours. Le profil client idéal inclut les TMC, les transporteurs aériens comme Oman Air, les agrégateurs d'hôtels, les banques et les super apps, avec une approche ciblée B2B2B au Moyen-Orient.", "Les clients clés incluent Flyday, ITL, Tripmaker, Jetpac, SITC, Blueberry Travel, Fursan, Oman Air pour la certification NDC, et Hotelbeds. Les retours clients sont excellents, avec des chiffres comme 61% de réduction des coûts cloud, 42% plus rapide dans le temps de cotation et 25% d'augmentation des réservations. La société est basée à Dubaï avec des opérations en Inde et au Moyen-Orient.", "La solution principale de TravelSwitch est une plateforme unifiée et modulaire pour la distribution, la réservation et la gestion des voyages d'affaires. Elle offre un système complet pour les entreprises, une suite d'IA pour optimiser les ventes et la gestion, et des APIs de voyage robustes pour tous les services : vols, hôtels, packages. L'intégration est rapide : 30 jours, pas 6 mois.", "La plateforme TravelSwitch est construite avec des capacités techniques avancées, allant des API de voyage à la connectivité GDS, NDC et LCC. Elle intègre l'OCR pour les reçus, supporte plus de 10 langues, et offre des tableaux de bord en temps réel. Cette architecture garantit conformité, sécurité, et une capacité à gérer des millions de sessions avec une faible latence.", "Les cas d'utilisation sont variés, de la modernisation des outils de réservation pour les TMC à la réduction des coûts cloud pour les OTA. La plateforme automatise les approbations de voyages, gère les dépenses et facilite le lancement rapide de portails de voyage d'entreprise. Les résultats incluent jusqu'à 61% de réduction des coûts cloud et 15-30% d'économies la première année.", "Le modèle d'affaires est un Software as a Service, ou SaaS, avec une offre modulaire où les clients ''choisissent ce dont ils ont besoin''. Il combine des revenus récurrents SaaS avec des modules transactionnels ou de licence pour les solutions White-label. Les clients bénéficient d'un ROI rapide via des économies substantielles, par exemple 120 000 dollars par an pour une ETI. Les prix publics ne sont pas affichés mais les économies générées sont un argument clé.", "L'équipe de TravelSwitch est composée d'experts ayant une profonde expérience du secteur. Fateh Darvesh, le CEO, possède plus de 15 ans d'expérience dans la modernisation des systèmes existants. Niraj Kumar, le CTO, est un spécialiste de l'IA/ML avec 16 ans d'expérience. Mohit Sharma, le CCO, a déjà créé et vendu une entreprise. La présence de conseillers seniors comme Lim Say Cheong renforce la crédibilité. L'équilibre entre l'ingénierie AI/ML et la stratégie commerciale globale est bien établi, bien que l'empreinte RH reste concentrée géographiquement.", "Passons au fondateur, Fateh Darvesh. Il incarne le profil du fondateur missionnaire avec plus de 15 ans d'expérience à moderniser les systèmes TravelTech. Son parcours l'a convaincu que la modularité API-first est l'unique issue face à la rigidité des GDS. Son leadership est clé dans l'approche agile et innovante de TravelSwitch.", "Le parcours de Fateh Darvesh est marqué par une expertise de plus de 15 ans en TravelTech, avec un accent sur la modernisation des systèmes hérités. Il a démontré sa capacité à construire des équipes performantes et à livrer des produits évolutifs. Sa vision est d'intégrer l'IA pour révolutionner l'industrie du voyage. Un point d'attention : son profil LinkedIn ne semble pas disponible publiquement, ce qui limite une visibilité additionnelle sur son réseau.", "Le score global de pré-sélection est de 82.6/100, un 'Signal Positif'. L'entreprise est une infrastructure TravelTech SaaS AI-first qui modernise les systèmes de réservation via une approche modulaire. Le problème est l'obsolescence des systèmes qui coûtent des contrats aux TMC. La solution est une plateforme 'AI-first' unifiant les contenus via des API. L'approche est B2B2B ciblant le Moyen-Orient.", "Le score d'excellence de l'équipe atteint 82/100. Fateh Darvesh possède 15 ans d'expérience et comprend l'importance de la modularité face aux GDS. L'équipe inclut des profils avec des succès passés. La présence de conseillers seniors apporte une crédibilité institutionnelle. L'équilibre entre l'ingénierie AI/ML et la stratégie commerciale est solide mais l'empreinte RH reste concentrée géographiquement. [IMG src=\"https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-4895b9233f964e3f7c428f630d60c65e-o94wroez.jpg\"]", "Concernant l'opportunité marché, le score est de 85/100. La TravelTech est en pleine transformation, le timing est dicté par le NDC et la nécessité de réduire les coûts. Face à des géants, la différenciation est la rapidité de déploiement et l'IA native. L'expansion vers les Super Apps et les banques offre de nouveaux vecteurs de croissance.", "L'innovation produit est notée 88/100. L'architecture modulaire 'Pick what you need' est une rupture. La suite AI (JetBot, Inspire AI) et l'infrastructure certifiée NDC Oman Air offrent un avantage technique. Les témoignages clients confirment l'efficacité. La scalabilité est élevée grâce à des API gérant des millions de sessions. L'IP et les barrières sont renforcées par l'automatisation des workflows.", "Le modèle d'affaires obtient 80/100. C'est un SaaS robuste, axé sur l'efficacité des coûts pour le client, ce qui favorise la rétention. Bien que la visibilité sur les prix publics soit limitée, les économies générées offrent un ROI rapide. Il y a des chemins d'upsell clairs et une structure optimisée pour la rentabilité.", "En termes d'analyse SWOT, les forces comprennent une plateforme modulaire AI-first, des clients notables offrant des économies prouvées, une équipe très expérimentée, un déploiement rapide et un support multilingue. Ces atouts permettent à TravelSwitch de se positionner de manière agressive sur le marché. Un point fort important est la réduction annuelle de 120 000 $ pour les entreprises moyennes via l'automatisation des dépenses.", "Les faiblesses incluent une année de fondation non précisée, un manque de visibilité sur le profil LinkedIn du CEO, une tarification non publique qui complique l'évaluation des revenus, et une équipe restreinte sans offres d'emploi détaillées. L'absence de stratégie M&A documentée est également un point faible. Ces éléments soulèvent des questions sur la maturité de l'entreprise.", "Les opportunités sont significatives : la demande croissante pour des infrastructures AI modulaires, l'expansion vers les super apps et les banques, les marchés émergents du GCC et de l'Afrique, ainsi que l'automatisation de l'IA pour réduire les fuites de bookings. L'intégration NDC et le contenu global sont également des leviers pour concurrencer les systèmes legacy.", "Les menaces comprennent la concurrence des géants comme Amadeus et Sabre, l'existence de plateformes similaires, la sensibilité économique du secteur des voyages, la dépendance aux fournisseurs de contenu, et le risque de churn si la scalabilité n'est pas prouvée à volume élevé. Tous ces éléments nécessitent une vigilance constante et une exécution agile.", "Le plan d'action pour la défense repose sur la modularité de l'AI suite, qui crée une personnalisation unique. Maintenir une haute disponibilité et des certifications protège la clientèle. Il est crucial d'investir en R&D AI pour démontrer un ROI continu. L'offensive passe par cibler les TMC et les corporates frustrés par les systèmes legacy, en priorité au GCC et en Afrique pour scaler les revenus SaaS modulaires. Notre équipe TravelTech expérimentée exécute rapidement les intégrations NDC/GDS.", "Un kill shot serait une récession combinée à un échec d'intégration fournisseur critique, érodant la confiance et la preuve de valeur. Si les géants rachètent ou copient la modularité AI avant que TravelSwitch n'atteigne une masse critique, la proposition s'érode. Un churn des clients majeurs comme Flyday ou Oman Air menacerait les revenus. Pour y remédier, il faut publier la tarification et les métriques de traction (ARR, churn) pour attirer investisseurs et clients. Le recrutement en ventes GTM est également crucial pour soutenir cette croissance.", "La thèse d'investissement pour TravelSwitch est de type 'Acquisition Quality Signal — M&A and Profitable Businesses'. Elle se concentre sur l'acquisition d'actifs technologiques difficiles à répliquer. TravelSwitch offre une architecture API-first modulaire, une suite IA intégrée, et des certifications NDC qui représentent un gain de temps considérable pour un acquéreur comme Sforbt. Ces éléments combinés avec le volume de transactions de Sforbt créent une plateforme paneuropéenne capable de traiter les mandats NDC et GDS pour de grandes entreprises.", "TravelSwitch est identifiable comme une cible stratégique pour des acteurs comme TravelPerk et Navan. Sforbt souhaite donc renforcer sa propre capacité technologique tout en neutralisant une menace concurrentielle. L'intégration technique des stacks, cependant, présente une complexité élevée. La valeur de cette opération est conditionnelle à la solidité financière de TravelSwitch, notamment son ARR et son taux de rétention, qui restent des points à valider.", "Le ROI de l'acquisition synergetique est de 76%, ce qui est un excellent rendement. La NPV nette des synergies est de 6,08 millions d'euros, et le délai de récupération est estimé à seulement 2 ans. Cela démontre une pertinence financière solide. La sensibilité montre que même avec un taux de capture des synergies plus faible ou un risque d'exécution plus élevé, la NPV reste positive. C'est un signal très encourageant pour l'investissement.", "En conclusion, l'acquisition de TravelSwitch représente une opportunité stratégique majeure pour Sforbt. Le dossier est à considérer, avec une logique stratégique forte mais des risques d'exécution, notamment géographiques et liés aux données financières. L'obtention de la liste complète des clients TMC européens actifs avec leurs métriques, la confirmation de la transférabilité des certifications NDC, et les chiffres de churn et de concentration client sont des conditions suspensives clés. Si ces points sont résolus, cette acquisition pourrait transformer Sforbt en un acteur technologique AI-first incontournable en Europe. Je vous invite à approfondir ces points lors de la due diligence.", "C'est donc un dossier passionnant qui combine innovation technologique et potentiel de marché fort. Nous sommes confiants dans le potentiel de TravelSwitch à révolutionner le secteur du voyage d'affaires avec son approche AI-first et modulaire. Notre prochaine étape consistera à valider les conditions suspensives critiques pour confirmer cet investissement stratégique."]</script>
+
+<deck-stage>
+
+<section class="cover" data-screen-label="01 Couverture">
+  <div class="cover-top">
+    <div class="cover-mark">Mémo d'investissement confidentiel</div>
+    <div class="cover-tag">sforbt &nbsp;·&nbsp; Mémo d&#39;investissement • fast<br>Octobre 2025</div>
+  </div>
+  <div class="cover-mid">
+    <div class="cover-eyebrow">Cible — Mobility &amp; Transportation ➜ Infrastructure TravelTech SaaS AI-first</div>
+    <h1>TravelSwitch</h1>
+    <div class="cover-sub">Infrastructure SaaS modulaire alimentée par l&#39;IA pour l&#39;automatisation et la distribution des voyages d&#39;affaires ciblant les TMC et airlines avec plus de 50 employés et un chiffre d&#39;affaires voyage supérieur à 10 millions $.</div>
+  </div>
+  <dl class="cover-bot">
+    <div><dt>Siège</dt><dd>Dubaï, Émirats Arabes Unis</dd></div>
+    <div><dt>Stade</dt><dd>Seed</dd></div>
+    <div><dt>Score</dt><dd>82&thinsp;/&thinsp;100</dd></div>
+    <div><dt>Verdict</dt><dd>Consider (M&amp;A)</dd></div>
+  </dl>
+</section>
+
+<section data-screen-label="02 Sommaire">
+  <div class="s-head"><div class="brand">TravelSwitch · Mémo d'investissement</div><div class="meta">Sommaire</div></div>
+  <div class="s-title">Sommaire</div>
+  <div class="s-body" style="margin-top:24px">
+    <div class="three-col" style="gap:80px">
+      <div class="col-block">
+        <h4>I — Marché</h4>
+        <ul><li>Sizing top-down &amp; bottom-up</li><li>Chaîne de valeur</li><li>Tendances et acteurs</li><li>Quadrants concurrence et M&amp;A</li><li>Scénarios stratégiques</li></ul>
+        <h4>II — Société</h4>
+        <ul><li>Proposition de valeur</li><li>Produit et modèle</li><li>Équipe et fondateur</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>III — Évaluation stratégique</h4>
+        <ul><li>Résumé et scores</li><li>Analyse SWOT</li><li>Plan d'action</li></ul>
+        <h4>IV — Thèse sforbt</h4>
+        <ul><li>Synergies — Type C Hybride</li><li>Tableau des synergies</li><li>Deal killers</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>V — Conviction GP</h4>
+        <ul><li>Angle, marché, timing</li><li>Verdict et risk register</li></ul>
+        <h4>VI — Modèle financier</h4>
+        <ul><li>Valorisation triangulée</li><li>P&amp;L et flux de trésorerie</li><li>ROI et verdict quantitatif</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>sforbt</span></div><div>02</div></div>
+</section>
+
+<section class="divider" data-screen-label="03 I Marché">
+  <div class="roman">I</div>
+  <div>
+    <div class="div-eyebrow">Première partie</div>
+    <h2>Marché</h2>
+    <div class="div-sub">Le marché est en mutation rapide : l&#39;IA et le NDC créent un appel d&#39;air massif pour les infrastructures modernes.</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="04 Sizing top-down">
+  <div class="s-head"><div class="brand">TravelSwitch · I — Marché</div><div class="meta">04&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Market sizing — top-down</div>
+  <div class="s-title">Un marché dynamique poussé par la reprise du corporate travel et l&#39;IA générative</div>
+  <div class="kpi-row">
+    <div class="kpi"><div class="kpi-label">TAM mondial</div><div class="kpi-value">Plusieurs dizaines de Md$</div><div class="kpi-note">Marché adressable mondial des logiciels de voyage</div></div>
+    <div class="kpi"><div class="kpi-label">SAM Europe</div><div class="kpi-value">1-3 M€</div><div class="kpi-note">ARR sur les trois premières années via les TMC mid-market Europe et MENA</div></div>
+    <div class="kpi"><div class="kpi-label">SOM réaliste</div><div class="kpi-value">jusqu&#39;à 10 M€</div><div class="kpi-note">Extensible avec le cross-sell banques et super-apps</div></div>
+    <div class="kpi"><div class="kpi-label">CAGR</div><div class="kpi-value">N.d.</div><div class="kpi-note">Le marché cible les entreprises avec plus de 10M$ de volume voyage.</div></div>
+  </div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <h4>Approche top-down (en entonnoir)</h4>
+        <p>Le marché adressable mondial des logiciels de voyage est estimé à plusieurs dizaines de milliards, porté par la reprise du corporate travel ainsi que l'adoption massive de l'IA générative pour le support client et la pression réglementaire pour la transparence des prix. Le timing est crucial avec la convergence de la maturité AI et du déploiement généralisé du NDC par les compagnies aériennes. Le risque principal est un ralentissement économique réduisant les budgets voyages globaux.</p>
+        <p style="font-size:17px;color:var(--muted)">Sources : Rapports sectoriels TravelTech</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>04</div></div>
+</section>
+
+<section data-screen-label="05 Sizing bottom-up">
+  <div class="s-head"><div class="brand">TravelSwitch · I — Marché</div><div class="meta">05&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Market sizing — bottom-up &amp; triangulation</div>
+  <div class="s-title">Un marché pénétrable avec un potentiel de 1M-3M€ d&#39;ARR initial, puis jusqu&#39;à 10M€</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Approche bottom-up (calculée)</h4>
+        <p>Le marché adressable réaliste pour TravelSwitch est estimé à 1-3 M€ d'ARR sur les trois premières années via les TMC mid-market Europe et MENA, extensible à 10 M€ avec le cross-sell banques et super-apps. Le modèle Go-To-Market est basé sur la vente B2B directe et des partenariats stratégiques, facilitant l'expansion géographique grâce à l'architecture cloud multi-tenant.</p>
+        <p style="font-size:17px;color:var(--muted)">Sources : TravelSwitch.com</p>
+        <h4>Triangulation</h4>
+        <p>Le marché de l'infrastructure TravelTech B2B est structurellement fragmenté mais en consolidation émergente, transformé par la migration vers le standard NDC qui avantage les acteurs API-first. La fenêtre compétitive est estimée à 24 mois. La tension majeure est la capacité à maintenir des marges nettes élevées avec des coûts d'accès au contenu NDC croissants, et la nécessité de verrouiller rapidement la couche d'IA par des intégrations de workflows propriétaires.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>05</div></div>
+</section>
+
+<section data-screen-label="06 Chaîne de valeur">
+  <div class="s-head"><div class="brand">TravelSwitch · I — Marché</div><div class="meta">06&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Analyse de la chaîne de valeur</div>
+  <div class="s-title">La chaîne de valeur des services de voyage B2B : TravelSwitch en middleware critique.</div>
+  <div class="s-body">
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>06</div></div>
+</section>
+
+<section data-screen-label="07 Top 3 positions">
+  <div class="s-head"><div class="brand">TravelSwitch · I — Marché</div><div class="meta">07&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Top 3 positions stratégiques</div>
+  <div class="s-title">Les 3 positions les plus stratégiques de la chaîne de valeur</div>
+  <div class="s-body">
+    <div class="three-col">
+      <div class="col-block">
+        <h4>#1 — Distribution de Contenu et Agrégation APIs</h4>
+        <div style="font-family:'EB Garamond',serif;font-size:42px;font-weight:500;margin-bottom:12px">8/10</div>
+        <p>TravelSwitch capture la valeur à l&#39;intersection de la distribution de contenu et de la gestion des politiques d&#39;entreprise, bénéficiant de la rupture NDC qui rend les GDS obsolètes.</p>
+      </div>
+      <div class="col-block">
+        <h4>#2 — Réservation, Gestion des Itinéraires et Fulfillment</h4>
+        <div style="font-family:'EB Garamond',serif;font-size:42px;font-weight:500;margin-bottom:12px">8/10</div>
+        <p>Le déploiement rapide (30 jours) et l&#39;automatisation par IA des workflows d&#39;approbation réduisent drastiquement les coûts opérationnels pour les TMC et améliorent l&#39;expérience utilisateur, assurant une fidélité client par les coûts de transition.</p>
+      </div>
+      <div class="col-block">
+        <h4>#3 — Support Voyageurs et Résolution de Problèmes</h4>
+        <div style="font-family:'EB Garamond',serif;font-size:42px;font-weight:500;margin-bottom:12px">8/10</div>
+        <p>L&#39;IA Supervisor et des agents conversationnels permettent une automation du support 24/7, réduisant significativement les effectifs et les coûts pour le client, tout en personnalisant l&#39;expérience voyageur.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>07</div></div>
+</section>
+
+<section data-screen-label="08 Tendances">
+  <div class="s-head"><div class="brand">TravelSwitch · I — Marché</div><div class="meta">08&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Tendances de marché</div>
+  <div class="s-title">Tendances de Marché : Convergences technologiques et réglementaires</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Catalyseur &amp; trajectoire</h4>
+        <p>Migration du standard EDIFACT vers le NDC (New Distribution Capability), transformant la distribution de voyages. Adoption massive de l'IA générative pour la personnalisation et le support client, forçant l'innovation dans la TravelTech.</p>
+        <h4>Chaîne de valeur &amp; points de contrôle</h4>
+        <p>La couche d'infrastructure modulaire et API-first de TravelSwitch est un point de contrôle critique, unifiant les contenus GDS, NDC et LCC, et permettant un 'flick the switch' sans migration douloureuse. Les certifications NDC et les intégrations ERP robustes renforcent ce contrôle.</p>
+      </div>
+      <div class="col-block">
+        <h4>Déplacement concurrentiel</h4>
+        <p>TravelSwitch déplace les systèmes GDS legacy qui ne supportent pas nativement les offres personnalisées et les nouveaux standards NDC. L'obsolescence technique des infrastructures existantes oblige les opérateurs à rechercher des solutions modernes et agnostiques.</p>
+        <h4>Économie unitaire &amp; captation</h4>
+        <p>Le modèle SaaS récurrent à faibles coûts de service (grâce à l'automatisation AI du support) avec un ROI rapide via les économies (ex: 120k$ d'économies annuelles pour une ETI) permet une scalabilité et une rentabilité élevée sur le long terme.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>08</div></div>
+</section>
+
+<section data-screen-label="09 Acteurs">
+  <div class="s-head"><div class="brand">TravelSwitch · I — Marché</div><div class="meta">09&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Acteurs de la chaîne de valeur</div>
+  <div class="s-title">Paysage des acteurs du marché : concurrence intense mais espace pour l&#39;innovation</div>
+  <div class="s-body">
+    <table class="fin">
+      <thead><tr><th>Étape</th><th>Acteurs principaux</th><th>Position de TravelSwitch</th></tr></thead>
+      <tbody>
+        <tr><td><b>Géants GDS (Legacy)</b></td><td>Amadeus, Sabre, Travelport</td><td>Dominants mais avec une dette technique freinant l&#39;innovation, incapables de pivoter rapidement vers les standards NDC sans sacrifier leur modèle.</td></tr>
+        <tr><td><b>Challengers (Full-Stack AI-first)</b></td><td>Spotnana, Navan, TravelPerk</td><td>Acteurs qui lèvent des capitaux importants pour construire des infrastructures concurrentes et des plateformes end-to-end, visant à capturer le segment mid-market à grande vitesse.</td></tr>
+        <tr><td><b>Solutions Complémentaires (loyalty/dépenses)</b></td><td>Expensify, Ramp, Switchfly</td><td>Géants de la gestion des dépenses ou solutions de fidélité. Potentiels acquéreurs stratégiques cherchant à se moderniser ou à intégrer des capacités TravelTech AI-first.</td></tr>
+        <tr><td><b>Intégrateurs (Super Apps / Banques)</b></td><td>Banques régionales du GCC, super-apps locales</td><td>Fort besoin d&#39;une solution agnostique et modulaire facilitant l&#39;intégration pour monétiser le voyage sans la complexité technique – un segment que TravelSwitch peut adresser.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>09</div></div>
+</section>
+
+<section data-screen-label="10 Magic Quadrant">
+  <div class="s-head"><div class="brand">TravelSwitch · I — Marché</div><div class="meta">10&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Magic Quadrant — concurrence</div>
+  <div class="s-title">Le Magic Quadrant des plateformes TravelTech SaaS</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <h4>Leaders</h4><p>Amadeus (Cytric), SAP Concur, TravelPerk</p>
+        <h4>Challengers</h4><p>Navan, Spotnana</p>
+        <h4>Visionnaires</h4><p>TravelSwitch, Locomote</p>
+        <h4>Niche players</h4><p>Deel (pour les intégrations rh/voyage)</p>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="À compléter — non couvert dans le mémo source." alt="Magic Quadrant"></div>
+        <figcaption>Fig. 10 — Magic Quadrant — vision × exécution</figcaption>
+      </figure>
+    </div>
+    <div class="callout" style="margin-top:18px">Le marché est dominé par des géants historiques ralentis par leur dette technique. Les challengers tentent de disrupter avec des modèles full-stack et des financements massifs. TravelSwitch se positionne comme un visionnaire grâce à son architecture API-first et sa suite AI. L'espace libre est dans les solutions agnostiques et modulaires pour les banques et les super-apps. Le fossé défensif de TravelSwitch repose sur les coûts de changement élevés une fois que les politiques de voyage de l'entreprise et les workflows d'approbation sont encodés.</div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>10</div></div>
+</section>
+
+<section data-screen-label="11 M&A Quadrant">
+  <div class="s-head"><div class="brand">TravelSwitch · I — Marché</div><div class="meta">11&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">M&amp;A Quadrant — 4 archétypes</div>
+  <div class="s-title">M&amp;A Strategic : Acteurs et Synergies de consolidation</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <h4>1. Les Prédateurs</h4><p>Amadeus, Sabre, Travelperk, Navan</p>
+        <h4>2. Les Aspirants</h4><p>Expensify, Ramp</p>
+        <h4>3. Les Géants</h4><p>SAP Concur, FCM Travel</p>
+        <h4>4. Les Cibles potentielles</h4><p>TravelSwitch</p>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="À compléter — non couvert dans le mémo source." alt="M&A Quadrant"></div>
+        <figcaption>Fig. 11 — M&amp;A Quadrant — 4 archétypes</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>11</div></div>
+</section>
+
+<section data-screen-label="12 Scénarios stratégiques">
+  <div class="s-head"><div class="brand">TravelSwitch · I — Marché</div><div class="meta">12&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Scénarios stratégiques</div>
+  <div class="s-title">Scénarios M&amp;A : qui pourrait acquérir TravelSwitch ?</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <table class="fin pnl-dense">
+          <thead><tr><th>Scénario</th><th>Acteurs</th><th>Mécanique</th></tr></thead>
+          <tbody>
+            <tr><td><b>Consolidation Technologique</b></td><td>Amadeus ou Sabre</td><td>Acquisition pour moderniser leur offre face à l&#39;obsolescence et capturer des parts de marché sur le NDC. TravelSwitch serait un shortcut pour leur dette technique.</td></tr>
+            <tr><td><b>Expansion Fonctionnelle</b></td><td>TravelPerk ou Navan</td><td>Acquisition pour renforcer leur couche d&#39;infrastructure modulaire et contrer la concurrence sur le segment enterprise avec une suite AI-first.</td></tr>
+            <tr><td><b>Diversification Produit</b></td><td>Expensify ou Ramp</td><td>Acquisition pour intégrer des capacités TravelTech AI-first à leur offre de gestion de dépenses. TravelSwitch serait la brique manquante.</td></tr>
+            <tr><td><b>Accélérateur de marché</b></td><td>Banque ou Super App (régionale)</td><td>Acquisition pour monétiser le voyage sans la complexité technique, via des API white-label et une intégration rapide pour leurs clients existants (loyalty, services financiers).</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>12</div></div>
+</section>
+
+<section data-screen-label="13 Synergies acteurs">
+  <div class="s-head"><div class="brand">TravelSwitch · I — Marché</div><div class="meta">13&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Synergies entre les acteurs — synthèse M&amp;A</div>
+  <div class="s-title">Synergies de M&amp;A potentielles pour TravelSwitch</div>
+  <div class="s-body">
+    <table class="fin" style="margin-bottom:24px">
+      <thead><tr><th style="width:32%">Scénario</th><th>Acteurs</th><th class="num">Revenus soft</th><th class="num">Coûts évités</th><th class="num">Synergie totale</th></tr></thead>
+      <tbody>
+        <tr><td>Raccourci technologique AI-first : élimination de 24 à 36 mois de développement interne</td><td>sforbt (Acquéreur), TravelSwitch (Cible)</td><td class="num">High</td><td class="num">High</td><td class="num"><b>High</b></td></tr>
+        <tr><td>Défense contre l&#39;absorption de TravelSwitch par TravelPerk ou Navan</td><td>sforbt (Acquéreur), TravelPerk/Navan (Concurrents)</td><td class="num">High</td><td class="num">High</td><td class="num"><b>High</b></td></tr>
+        <tr><td>Repositionnement perceptuel de sforbt en acteur technologique AI-first pour les appels d&#39;offres enterprise</td><td>sforbt (Acquéreur), Marché Enterprise Européen</td><td class="num">High</td><td class="num">High</td><td class="num"><b>High</b></td></tr>
+        <tr><td>Intégration des certifications NDC et connectivités GDS dans la plateforme sforbt</td><td>sforbt (Acquéreur), Compagnies Aériennes (NDC), GDS</td><td class="num">High</td><td class="num">High</td><td class="num"><b>High</b></td></tr>
+        <tr><td>Automatisation de la récupération de TVA et de la réconciliation financière cross-border via l&#39;OCR de TravelSwitch</td><td>sforbt (Acquéreur), Clients Enterprise</td><td class="num">Medium</td><td class="num">Medium</td><td class="num"><b>Medium</b></td></tr>
+        <tr><td>Consolidation des coûts d&#39;infrastructure cloud via la technologie d&#39;optimisation de TravelSwitch</td><td>sforbt (Acquéreur), Fournisseurs Cloud</td><td class="num">Medium</td><td class="num">Medium</td><td class="num"><b>Medium</b></td></tr>
+        <tr><td>Accélération de l&#39;expansion paneuropéenne via la distribution croisée des bases clients</td><td>sforbt (Acquéreur), TMC Européennes, Clients GCC</td><td class="num">Medium</td><td class="num">Medium</td><td class="num"><b>Medium</b></td></tr>
+        <tr><td>Création d&#39;une plateforme d&#39;infrastructure white-label pour TMC européennes</td><td>sforbt (Acquéreur), TMC Européennes (Partenaires)</td><td class="num">Medium</td><td class="num">Medium</td><td class="num"><b>Medium</b></td></tr>
+      </tbody>
+    </table>
+    <div class="callout"><b>Lecture.</b> Sforbt exploite 5 milliards d'euros de volume de réservation hôtelière annuelle mais opère avec seulement 350 ressources techniques sur 700 collaborateurs : ce déséquilibre structurel entre capacité transactionnelle et capacité produit est précisément la faiblesse que TravelSwitch comble en apportant une infrastructure API-first modulaire et une suite AI intégrée (JetBot, Inspire AI, Voice Agent) déployables en 30 jours chez un client enterprise — évitant à sforbt 18 à 36 mois de développement interne et plusieurs millions d'euros de coûts d'ingénierie. La fenêtre d'opportunité idéale pour cette acquisition est ouverte maintenant et se fermera avant 2028 : le marché européen de la gestion des voyages d'affaires est en phase de consolidation autour de deux ou trois plateformes full-stack, TravelPerk (2,7 milliards de dollars de valorisation, acquisition de Yokoy en 2025) et Navan (introduction en bourse sur le Nasdaq en octobre 2025) capturent le segment mid-market à grande vitesse. Sforbt doit acquérir une capacité technologique différenciante avant que ces acteurs ne verrouillent les appels d'offres des grandes entreprises européennes avec des offres intégrées allant de la réservation à la réconciliation financière. TravelSwitch détient des certifications NDC (nouvelle norme de distribution aéronautique) obtenues notamment avec Oman Air et une connectivité Navitaire qui représentent plusieurs années de travail réglementaire et technique : ces actifs ne peuvent pas être reproduits par sforbt en moins de 24 mois, et leur intégration dans la plateforme sforbt permettrait d'accéder à des appels d'offres de grandes entreprises exigeant une conformité NDC, un segment actuellement hors de portée de sforbt sans cette infrastructure.</div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>13</div></div>
+</section>
+
+<section class="divider" data-screen-label="14 II Société">
+  <div class="roman">II</div>
+  <div>
+    <div class="div-eyebrow">Deuxième partie</div>
+    <h2>Société</h2>
+    <div class="div-sub">TravelSwitch est une infrastructure SaaS modulaire, alimentée par l&#39;IA et conçue pour la distribution de voyages d&#39;affaires.</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="15 Proposition de valeur">
+  <div class="s-head"><div class="brand">TravelSwitch · II — Société</div><div class="meta">15&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Proposition de valeur</div>
+  <div class="s-title">La proposition de valeur : une infrastructure AI-first qui débloque la performance des acteurs du voyage.</div>
+  <div class="s-body">
+    <p class="lead">Fournir une infrastructure de voyage moderne et fluide de type 'AI-first' qui élimine les frictions, réduit les coûts et accélère la mise sur le marché grâce à des piles modulaires et des API puissantes.</p>
+    <div class="two-col" style="margin-top:16px">
+      <div class="col-block">
+        <h4>Profil client idéal (ICP)</h4>
+        <ul><li>Entreprises ambitieuses dans le secteur du voyage</li><li>Agences de Gestion de Voyages (TMC)</li><li>Transporteurs aériens (ex: Oman Air)</li><li>Agrégateurs d&#39;hôtels</li><li>Entreprises gérant des voyages d&#39;affaires (Super Apps, Banks, Enterprise Travel Sellers, Loyalty Providers)</li><li>Entreprises avec plus de 10M$ de volume voyage</li></ul>
+        <h4>Modèle</h4>
+        <p>B2B, ciblant exclusivement les opérateurs et les entreprises de voyages (SaaS d'infrastructure et gestion de voyages d'entreprise).</p>
+      </div>
+      <div class="col-block">
+        <h4>Industrie</h4>
+        <p>Technologie du voyage (TravelTech), SaaS d'entreprise, Infrastructure TravelTech SaaS AI-first, Mobility & Transportation.</p>
+        <h4>Clients clés</h4>
+        <ul><li>Flyday (Feras Sleipy, VP, 61% Drop In Cloud Costs)</li><li>ITL (Rafeeq Mohammad, CEO)</li><li>Tripmaker (Samar Choube)</li><li>Jetpac</li><li>SITC</li><li>Blueberry Travel</li><li>Fursan</li><li>Oman Air (Certification NDC)</li><li>Hotelbeds</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>15</div></div>
+</section>
+
+<section data-screen-label="16 Produit">
+  <div class="s-head"><div class="brand">TravelSwitch · II — Société</div><div class="meta">16&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Produit</div>
+  <div class="s-title">Le Produit : une plateforme modulaire et une suite AI pour la gestion du voyage d&#39;affaires.</div>
+  <div class="s-body">
+    <p class="lead">Une plateforme unifiée et modulaire alimentée par l'IA pour la distribution, la réservation et la gestion des voyages d'affaires, permettant un déploiement rapide de portails corporate et une optimisation des opérations.</p>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Capacités produit</h4>
+        <ul><li>ContentSwitch (flux de contenu global)</li><li>CoreSwitch (système de contrôle central et gestion des politiques)</li><li>DistributionSwitch (partage de contenu)</li><li>JetBot AI (coordinateur de voyage)</li><li>WhatsApp AI (assistant toujours actif)</li><li>Inspire AI (générateur d'itinéraires instantanés)</li><li>AI Supervisor (support 24/7)</li><li>Voice Agent AI</li><li>Gestion des billets de congé annuel et workflows d'approbation</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>Capacités techniques</h4>
+        <ul><li>API de voyage</li><li>Connectivité GDS/NDC/LCC (Amadeus, Sabre, Expedia, Navitaire)</li><li>Certification NDC Oman Air</li><li>OCR pour les reçus</li><li>Intégrations Slack, MS Teams, WhatsApp</li><li>Support multi-langues (10+ dont Français)</li><li>Tableaux de bord en temps réel</li><li>Intégrations SAP, Oracle, NetSuite, QuickBooks, X</li><li>Architecture API-first, entièrement modulaire, enterprise-grade, multi-tenant.</li></ul>
+        <h4>Cas d'usage</h4>
+        <ul><li>Modernisation des outils de réservation pour TMC</li><li>Réduction des coûts cloud pour les OTA (jusqu'à 61%)</li><li>Automatisation des approbations de voyages en entreprise</li><li>Gestion des dépenses et notes de frais (120k$ d'économies annuelles)</li><li>Lancement instantané de portails de voyages d'entreprise</li><li>Intégration transparente du voyage dans les applications (banques, plateformes de fidélité)</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>16</div></div>
+</section>
+
+<section data-screen-label="17 Modèle économique">
+  <div class="s-head"><div class="brand">TravelSwitch · II — Société</div><div class="meta">17&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Modèle économique</div>
+  <div class="s-title">Le Modèle d&#39;Affaires : SaaS avec ROI rapide et économies prouvées.</div>
+  <div class="s-body">
+    <p class="lead">Le modèle est un Software as a Service (SaaS), modulaire et API-first, offrant des revenus récurrents et des économies significatives pour les clients, avec une monétisation via des plans et des modules additionnels.</p>
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">Économies annuelles moyennes</div><div class="kpi-value">120k$</div><div class="kpi-note">Pour une ETI via l&#39;automatisation AI</div></div>
+      <div class="kpi"><div class="kpi-label">Réduction des coûts cloud</div><div class="kpi-value">Jusqu&#39;à 61%</div><div class="kpi-note">Documentée chez Flyday</div></div>
+      <div class="kpi"><div class="kpi-label">Accélération du temps de cotation</div><div class="kpi-value">42%</div><div class="kpi-note">Documentée chez ITL</div></div>
+      <div class="kpi"><div class="kpi-label">Augmentation des réservations</div><div class="kpi-value">25%</div><div class="kpi-note">Documentée chez certains clients</div></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Flux de revenus</h4>
+        <ul><li>Revenus récurrents SaaS (abonnement)</li><li>Modules transactionnels</li><li>Licences pour marques blanches (white-label)</li><li>Upsell via l'ajout de modules AI et de flux de contenu additionnels</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>Caractéristiques des plans</h4>
+        <ul><li>Tarification basée sur le plan choisi et la configuration des modules.</li><li>Pas de prix publics affichés, contact Sales pour les offres enterprise.</li><li>Chemins d'upsell clairs via l'ajout d'options avancées (AI, fournisseurs).</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>17</div></div>
+</section>
+
+<section data-screen-label="18 Équipe">
+  <div class="s-head"><div class="brand">TravelSwitch · II — Société</div><div class="meta">18&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Équipe</div>
+  <div class="s-title">L&#39;Équipe : une expertise profonde en TravelTech et une forte capacité d&#39;exécution.</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Direction</h4>
+        <dl class="dl-grid">
+          <dt>CEO</dt><dd>Fateh Darvesh; plus de 15 ans d'expérience dans la modernisation des systèmes hérités et l'intégration de l'IA dans la Travel Tech. Bâtit des équipes compétentes pour des produits scalables.</dd>
+          <dt>CTO</dt><dd>Niraj Kumar; plus de 16 ans d'expérience en développement logiciel, expert en IA/ML, pilote l'innovation et les solutions à fort impact.</dd>
+          <dt>Chief Commercial Officer</dt><dd>Mohit Sharma; plus de 16 ans d'expérience en GTM et partenariats Travel Tech, a créé et revendu une entreprise à 23 ans.</dd>
+          <dt>Senior Advisor to the Board</dt><dd>Lim Say Cheong; leader expérimenté en finance islamique avec plus de 25 ans d'expérience, apporte une crédibilité institutionnelle.</dd>
+          <dt>VP Projets Stratégiques</dt><dd>Aamir Saleem; plus de 20 ans d'expérience dans la construction de technologies de voyage.</dd>
+          <dt>Chief Revenue Officer</dt><dd>Shilpi Yadav; plus de 13 ans d'expérience dans la promotion des ventes et partenariats mondiaux en IT/TravelTech.</dd>
+        </dl>
+      </div>
+      <div class="col-block">
+        <h4>Effectifs par département</h4>
+        <table class="fin">
+          <tbody>
+            <tr ><td>Product &amp; Engineering</td><td class="num">Inconnu</td></tr>
+            <tr ><td>Marketing</td><td class="num">Inconnu</td></tr>
+            <tr ><td>Sales</td><td class="num">Inconnu</td></tr>
+            <tr ><td>Support &amp; IT</td><td class="num">Inconnu</td></tr>
+            <tr ><td>General &amp; Admin (G&amp;A)</td><td class="num">Inconnu</td></tr>
+          </tbody>
+        </table>
+<p style="font-size:17px;color:var(--muted);margin-top:14px">La culture d&#39;entreprise est axée sur l&#39;agilité (&#39;Go Live in Days, Not Quarters&#39;), l&#39;innovation technologique et une approche modulaire. L&#39;équipe est composée d&#39;experts ayant vécu les problèmes du secteur.</p>      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>18</div></div>
+</section>
+
+<section data-screen-label="19 Fondateur">
+  <div class="s-head"><div class="brand">TravelSwitch · II — Société</div><div class="meta">19&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Fondateur — Fateh Darvesh</div>
+  <div class="s-title">CEO</div>
+  <div class="s-body">
+    <p class="lead">Fateh Darvesh incarne le profil de fondateur missionnaire : 15 ans passés à moderniser des systèmes legacy TravelTech lui ont donné la connaissance acquise que la modularité API-first est la seule sortie face à la rigidité des GDS.</p>
+    <div class="two-col" style="margin-top:8px">
+      <div class="col-block">
+        <h4>Parcours</h4>
+        <dl class="dl-grid">
+          <dt>15+ ans d&#39;expérience</dt><dd>Expert en transformation des systèmes TravelTech hérités, avec un focus sur la construction d'équipes et l'intégration de l'IA.</dd>
+          <dt>Vision Strategique</dt><dd>A choisi de développer une infrastructure modulaire API-first plutôt qu'un OBT classique pour un scaling rapide et des coûts bas.</dd>
+          <dt>Preuves d&#39;Exécution</dt><dd>Certification NDC obtenue avec Oman Air, clients enterprise signés (Flyday, ITL), onboarding TMC en 30 jours documenté.</dd>
+        </dl>
+      </div>
+      <div class="col-block">
+        <h4>Founder DNA &amp; assessment</h4>
+        <table class="fin">
+          <tbody>
+            <tr ><td>Grit</td><td class="num">9&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Execution</td><td class="num">8&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Discipline</td><td class="num">7&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Vision &amp; Purpose</td><td class="num">9&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Self-Belief</td><td class="num">8&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Leadership</td><td class="num">8&thinsp;/&thinsp;100</td></tr>
+            <tr class="total"><td>Total</td><td class="num">8.17&thinsp;/&thinsp;100</td></tr>
+          </tbody>
+        </table>
+<p style="font-size:17px;color:var(--muted);margin-top:14px"><b>Point aveugle.</b> La concentration opérationnelle sur le marché MEA/GCC (Moyen-Orient/Afrique) soulève une question d'adéquation stratégique pour un acquéreur européen immédiat, et la visibilité de son profil LinkedIn public est limitée.</p>      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>19</div></div>
+</section>
+
+<section class="divider" data-screen-label="20 III Évaluation">
+  <div class="roman">III</div>
+  <div>
+    <div class="div-eyebrow">Troisième partie</div>
+    <h2>Évaluation<br>stratégique</h2>
+    <div class="div-sub">TravelSwitch présente un score de pré-sélection de 82.6/100, signalant une opportunité à considérer.</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="21 Résumé entreprise">
+  <div class="s-head"><div class="brand">TravelSwitch · III — Évaluation</div><div class="meta">21&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Résumé de l'entreprise — scores</div>
+  <div class="s-title">Cœur de l&#39;opportunité d&#39;investissement TravelSwitch.</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <div class="kpi-row" style="grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:18px">
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Excellence équipe</div><div class="kpi-value" style="font-size:32px">82</div></div>
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Opportunité marché</div><div class="kpi-value" style="font-size:32px">85</div></div>
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Innovation produit</div><div class="kpi-value" style="font-size:32px">88</div></div>
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Modèle d&#39;affaires</div><div class="kpi-value" style="font-size:32px">80</div></div>
+        </div>
+        <h4>En bref</h4><p style="font-size:18px">TravelSwitch est une infrastructure TravelTech SaaS AI-first qui permet aux TMC et aux entreprises de moderniser instantanément leurs systèmes de réservation en éliminant les frictions des piles technologiques héritées par une approche modulaire.</p>
+        <h4>Problème &amp; solution</h4><p style="font-size:18px">La plateforme propose une couche d'infrastructure fluide et 'AI-first' qui unifie le contenu GDS, NDC et LCC via des API puissantes, permettant un déploiement de portails d'entreprise en quelques jours seulement.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>III — Évaluation</span></div><div>21</div></div>
+</section>
+
+<section data-screen-label="22 SWOT">
+  <div class="s-head"><div class="brand">TravelSwitch · III — Évaluation</div><div class="meta">22&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Analyse SWOT</div>
+  <div class="s-title">Forces · Faiblesses · Opportunités · Menaces</div>
+  <div class="s-body">
+    <div class="swot">
+      <div class="swot-cell"><h4>Forces</h4><ul><li>La plateforme modulaire AI-first intègre GDS, NDC et LCC comme Amadeus, Sabre et Navitaire.</li><li>Clients notables incluent Oman Air, Hotelbeds et Flyday avec des économies prouvées de 61 % sur les coûts cloud.</li><li>Équipe de direction expérimentée avec 15 à 25 ans en TravelTech, AI et GTM.</li><li>Déploiement rapide en jours au lieu de trimestres via stacks modulaires.</li><li>Support multilingue (10+ langues) et intégrations Slack, Teams, WhatsApp pour une adoption mondiale.</li><li>Réductions annuelles de 120 000 $ pour entreprises moyennes via automatisation des dépenses.</li></ul></div>
+      <div class="swot-cell"><h4>Faiblesses</h4><ul><li>Année de fondation non précisée, indiquant un stade précoce sans historique de traction publique.</li><li>Profil LinkedIn du CEO indisponible, limitant la visibilité sur le réseau et la crédibilité.</li><li>Tarification non publique, compliquant l'évaluation de la scalabilité des revenus.</li><li>Effectif et offres d'emploi non précisés, suggérant une équipe restreinte.</li><li>Absence de stratégie M&A documentée pour accélérer la croissance externe.</li></ul></div>
+      <div class="swot-cell"><h4>Opportunités</h4><ul><li>Demande croissante pour infrastructures AI modulaires chez TMCs et entreprises voyages d'affaires.</li><li>Expansion vers superapps, banques et loyalty providers via APIs white-label.</li><li>Marchés émergents GCC et Afrique via clients comme Oman Air.</li><li>Automatisation AI pour réduire fuites de bookings et approbations lentes.</li><li>Intégrations NDC et contenu global pour concurrencer legacy systems rigides.</li></ul></div>
+      <div class="swot-cell"><h4>Menaces</h4><ul><li>Concurrence des géants comme Amadeus et Sabre dominant les intégrations GDS.</li><li>Plateformes similaires comme Switchfly accélérant les déploiements loyalty en semaines.</li><li>Sensibilité économique du secteur voyages aux récessions.</li><li>Dépendance aux fournisseurs pour contenu et uptime.</li><li>Risque de churn si scalabilité non prouvée à volume élevé.</li></ul></div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>III — Évaluation</span></div><div>22</div></div>
+</section>
+
+<section data-screen-label="23 Plan d'action">
+  <div class="s-head"><div class="brand">TravelSwitch · III — Évaluation</div><div class="meta">23&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Plan d'action</div>
+  <div class="s-title">Défense, offensive, kill shot, remédiation.</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Défense</h4><p>La modularité et la suite AI (JetBot, Inspire AI) créent une barrière via personnalisation introuvable chez les concurrents rigides. Maintenir un uptime enterprise-grade et des certifications comme NDC Oman Air protège la traction des clients. Il est crucial d'investir en R&D AI pour fidéliser les clients via un ROI prouvé (61 % d'économies).</p>
+        <h4>Offensive</h4><p>TravelSwitch dominera en ciblant les TMC et les corporates frustrés par les systèmes legacy, grâce à son déploiement rapide en jours et ses économies immédiates. L'équipe TravelTech chevronnée exécutera rapidement les intégrations NDC/GDS. Il faut prioriser les partenariats au GCC/Afrique pour scaler les revenus récurrents SaaS modulaires.</p>
+      </div>
+      <div class="col-block">
+        <h4>Kill shot</h4><p>Une récession des voyages combinée à un échec d'intégration fournisseur critique (ex: Amadeus outage) éroderait la confiance des clients. Sans preuve de scalabilité (millions de bookings), les géants pourraient racheter ou copier la modularité AI. Un churn de clients majeurs comme Flyday ou Oman Air entraînerait une mort par manque de revenus.</p>
+        <h4>Remédiation</h4><p>Il est impératif de publier la tarification et les métriques de traction (ARR, churn) pour attirer les investisseurs et les clients enterprise. Le recrutement en ventes Go-To-Market est nécessaire pour renforcer une équipe actuellement 'leadership-heavy'. Il faut aussi clarifier l'effectif et la roadmap pour crédibiliser la scalabilité.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>III — Évaluation</span></div><div>23</div></div>
+</section>
+
+<section class="divider" data-screen-label="24 IV Thèse sforbt">
+  <div class="roman">IV</div>
+  <div>
+    <div class="div-eyebrow">Quatrième partie</div>
+    <h2>Thèse sforbt</h2>
+    <div class="div-sub">La thèse d&#39;investissement : acquérir une couche d&#39;infrastructure AI-first pour débloquer la valeur du marché européen.</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="25 Résumé Type C">
+  <div class="s-head"><div class="brand">TravelSwitch · IV — Thèse sforbt</div><div class="meta">25&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Synergies sforbt — résumé Type B — Strategic</div>
+  <div class="s-title">La thèse : une acquisition stratégique pour combler un déficit technologique et créer un avantage compétitif.</div>
+  <div class="s-body">
+    <p class="lead">L'acquisition de TravelSwitch s'inscrit dans l'angle 'Acquisition Quality Signal — M&A and Profitable Businesses' de la thèse S4BT, valorisant les actifs technologiques difficiles à répliquer et les équipes expertes. TravelSwitch représente un raccourci de 18 à 36 mois sur la feuille de route produit de Sforbt et une protection contre la consolidation du marché par des concurrents.</p>
+    <div class="two-col" style="margin-top:8px">
+      <div class="col-block">
+        <h4>Les leviers de synergie</h4>
+        <ul><li>Raccourci technologique AI-first (évitement de 24 à 36 mois de développement interne et 5-10 M€ de masse salariale).</li><li>Intégration des certifications NDC et connectivités GDS (accès à des appels d'offres enterprise actuellement hors de portée de S4BT).</li><li>Défense contre l'absorption de TravelSwitch par TravelPerk ou Navan (neutralisation d'un vecteur d'attaque potentiel).</li><li>Repositionnement perceptuel de Sforbt en acteur technologique AI-first pour les appels d'offres enterprise (accès à des marchés à plus forte valeur).</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>Fragilités principales</h4>
+        <p>La fragilité réside dans la concentration géographique actuelle de TravelSwitch sur la région GCC/Afrique. Le manque de métriques financières précises (ARR, churn, concentration client) complique la valorisation et l'évaluation du risque d'exécution du pivot MEA→Europe pour une consolidation immédiate.</p>
+        <h4>Fenêtre d'acquisition</h4>
+        <div class="callout" style="margin-top:0">La fenêtre d'opportunité est ouverte maintenant et se fermera avant 2028, le marché européen de la gestion des voyages d'affaires se consolidant rapidement autour de plateformes full-stack.</div>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>IV — Thèse sforbt</span></div><div>25</div></div>
+</section>
+
+<section data-screen-label="26 Synergies détaillées">
+  <div class="s-head"><div class="brand">TravelSwitch · IV — Thèse sforbt</div><div class="meta">26&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Synergies sforbt — tableau détaillé</div>
+  <div class="s-title">Tableau détaillé des synergies potentielles avec Sforbt</div>
+  <div class="s-body">
+    <table class="fin">
+      <thead><tr><th style="width:36px">#</th><th>Synergie</th><th>Type</th><th>Impact</th><th>Délai</th><th>Difficulté</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Raccourci technologique AI-first : élimination de 24 à 36 mois de développement interne</td><td>Structural</td><td>High</td><td>Mid-Term (6-18m)</td><td>High</td></tr>
+        <tr><td>2</td><td>Intégration des certifications NDC et connectivités GDS dans la plateforme sforbt</td><td>Structural</td><td>High</td><td>Mid-Term (6-18m)</td><td>Medium</td></tr>
+        <tr><td>3</td><td>Accélération de l&#39;expansion paneuropéenne via la distribution croisée des bases clients</td><td>Revenue</td><td>Medium</td><td>Mid-Term (6-18m)</td><td>Medium</td></tr>
+        <tr><td>4</td><td>Défense contre l&#39;absorption de TravelSwitch par TravelPerk ou Navan</td><td>Defensive</td><td>High</td><td>Immediate (&lt;6m)</td><td>Low</td></tr>
+        <tr><td>5</td><td>Consolidation des coûts d&#39;infrastructure cloud via la technologie d&#39;optimisation de TravelSwitch</td><td>Hard cost</td><td>Medium</td><td>Long-Term (&gt;18m)</td><td>High</td></tr>
+        <tr><td>6</td><td>Automatisation de la récupération de TVA et de la réconciliation financière cross-border via l&#39;OCR de TravelSwitch</td><td>Structural</td><td>Medium</td><td>Mid-Term (6-18m)</td><td>Medium</td></tr>
+        <tr><td>7</td><td>Création d&#39;une plateforme d&#39;infrastructure white-label pour TMC européennes</td><td>Revenue</td><td>Medium</td><td>Long-Term (&gt;18m)</td><td>High</td></tr>
+        <tr><td>8</td><td>Repositionnement perceptuel de sforbt en acteur technologique AI-first pour les appels d&#39;offres enterprise</td><td>Defensive</td><td>High</td><td>Mid-Term (6-18m)</td><td>Medium</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>IV — Thèse sforbt</span></div><div>26</div></div>
+</section>
+
+<section data-screen-label="27 Deal killers">
+  <div class="s-head"><div class="brand">TravelSwitch · IV — Thèse sforbt</div><div class="meta">27&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Deal killers identifiés</div>
+  <div class="s-title">Deal Killers : les risques critiques à surveiller.</div>
+  <div class="s-body">
+    <table class="fin">
+      <thead><tr><th>Risque</th><th>Description</th><th>Mitigation</th></tr></thead>
+      <tbody>
+        <tr><td><b>Empty Shell (Key-Person Risk)</b></td><td>La proposition de valeur repose sur une équipe dirigeante de six personnes clés. Le départ de 2-3 profils clés post-acquisition réduirait TravelSwitch à une codebase sans architecture propriétaire défendable, compromettant les synergies technologiques et de certification NDC.</td><td>Mettre en place des plans de rétention formels (vesting, earn-out équipe) pour le CTO Niraj Kumar et les ingénieurs core. Vérifier la taille réelle de l'équipe de R&D pour évaluer la profondeur des compétences.</td></tr>
+        <tr><td><b>House of Cards (Concentration Client)</b></td><td>Forte concentration sur la région GCC et sur quelques clients majeurs (Oman Air, Hotelbeds). Si ces clients représentent >40% de l'ARR, le risque de churn post-acquisition est élevé et compromet les synergies de distribution croisée.</td><td>Obtenir la ventilation client précise et l'ARR par client. Inclure des clauses d'earnout conditionnées à la rétention des clients majeurs et à la validation de la traction européenne.</td></tr>
+        <tr><td><b>Tech-Stack / Integration Debt</b></td><td>Sforbt est déjà en cours de consolidation de plusieurs acquisitions, et TravelSwitch ajoute une troisième couche architecturale différente. Le coût (18-24 mois d'effort d'ingénierie) et la complexité d'intégration sont élevés, annulant le bénéfice de raccourci technologique.</td><td>Effectuer une due diligence technique approfondie sur la modularité des API de TravelSwitch et leur compatibilité avec les systèmes de Sforbt. Budgétiser un coût d'intégration réaliste et un calendrier d'exécution détaillé.</td></tr>
+        <tr><td><b>ICP Mismatch</b></td><td>Le profil client idéal de Sforbt (grande entreprise européenne) diverge de celui de TravelSwitch (TMC au GCC). Cette divergence implique que les synergies de distribution croisée ne seront pas immédiates et exigeront un effort commercial spécifique pour réaligner le Go-To-Market sur 6 à 12 mois.</td><td>Développer une stratégie Go-To-Market intégrée post-acquisition avec des équipes commerciales dédiées. Mettre en place des KPIs de performance commerciale pour les deux ICP et s'assurer d'un budget marketing adapté à la conquête européenne.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>IV — Thèse sforbt</span></div><div>27</div></div>
+</section>
+
+<section class="divider" data-screen-label="28 V Conviction">
+  <div class="roman">V</div>
+  <div>
+    <div class="div-eyebrow">Cinquième partie</div>
+    <h2>Conviction GP</h2>
+    <div class="div-sub">Verdict quantitatif : les chiffres valident la thèse, mais les conditions suspensives sont critiques.</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="29 Angle, marché, timing">
+  <div class="s-head"><div class="brand">TravelSwitch · V — Conviction</div><div class="meta">29&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Angle dominant · marché · timing</div>
+  <div class="s-title">Angle d&#39;investissement de Sforbt et alignement avec TravelSwitch</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Angle dominant</h4><p>Cette cible s'inscrit dans l'angle de la Plateforme SaaS de réservation hôtelière corporate en Europe — l'analyse multi-sources confirme que TravelSwitch agrège le contenu GDS, NDC et direct en une couche d'infrastructure modulaire avec enforcement des politiques par centre de coût, ce qui correspond exactement au signal de correspondance de cet angle. La cible présente également des signaux pertinents pour les angles Logiciel de workflow pour agences de voyages d'affaires (STRONG_FIT confirmé par JetBot AI réduisant le temps de cotation de 42 % et l'onboarding TMC en 30 jours) et Connecteurs ERP et middleware d'intégration (MODERATE_FIT via synchronisation automatique SAP/Oracle/NetSuite des codes GL et centres de coût). L'angle Paiement, réconciliation et récupération TVA présente un alignement plus faible (SPECULATIVE), car la capture OCR de reçus est présente mais sans module de récupération TVA intracommunautaire explicitement documenté. Voir la section 'Sélection holistique de l'angle' dans l'annexe pour le détail de la décision prise par la matrice.</p>
+        <h4>Marché</h4><p>Le marché de l'infrastructure TravelTech B2B est structurellement fragmenté : les barrières à l'entrée restent faibles au niveau des relations TMC locales, mais la migration vers le standard NDC crée un point de rupture qui avantage les acteurs API-first capables d'unifier GDS, NDC et LCC sur une seule couche. Le catalyseur principal est la désintermédiation progressive des GDS traditionnels (Amadeus, Sabre) au profit de connexions directes NDC, forçant les TMC à moderniser leur infrastructure au moment précis où leurs budgets technologiques post-pandémie se libèrent. Le marché adressable réaliste pour TravelSwitch est estimé à 1-3 M€ d'ARR sur les trois premières années via les TMC mid-market Europe et MENA, extensible à 10 M€ avec le cross-sell banques et super-apps. Deux risques de timing sont à noter : la réponse des incumbents GDS qui modernisent leurs propres API, et l'émergence de fast-followers comme Spotnana capables de répliquer l'architecture API-first — la fenêtre compétitive se referme dans 24 mois si TravelSwitch n'atteint pas une masse critique de distribution européenne.</p>
+      </div>
+      <div class="col-block">
+        <h4>Timing</h4><p>Le verdict de timing est celui d'une fenêtre d'opportunité idéale, mais géographiquement mal exploitée. La migration NDC en cours oblige les TMC à choisir leur infrastructure de nouvelle génération maintenant, et TravelSwitch dispose d'un avantage de déploiement décisif (30 jours contre 6 mois chez les concurrents legacy). Cependant, la traction prouvée est concentrée sur la région GCC/Afrique, et non sur les marchés européens prioritaires de S4BT (France, Allemagne, Royaume-Uni) — ce décalage géographique transforme une fenêtre idéale en niveau de risque d'exécution élevé pour un acquéreur cherchant une consolidation européenne immédiate.</p>
+        <h4>Founder &amp; thesis-fit</h4><p>Fateh Darvesh incarne le profil de fondateur missionnaire : 15 ans passés à moderniser des systèmes legacy TravelTech lui ont donné la connaissance acquise que la modularité API-first est la seule sortie face à la rigidité des GDS. L'équipe de direction est complète et complémentaire — Niraj Kumar (16 ans en AI/ML), Mohit Sharma (CCO, a créé et cédé une entreprise à 23 ans), Aamir Saleem (20 ans en OTA/distribution B2B), Shilpi Yadav (CRO, 13 ans en SaaS et TravelTech) — ce qui réduit la dépendance à un seul individu. Les preuves d'exécution sont concrètes : certification NDC obtenue avec Oman Air, clients enterprise signés (Hotelbeds, Flyday), onboarding TMC en 30 jours documenté. Le risque fondateur principal n'est pas le profil ou la compétence, mais la concentration opérationnelle sur le marché MEA/GCC, qui soulève une question d'adéquation stratégique pour S4BT : cette équipe est-elle prête à pivoter son effort commercial vers l'Europe sans délai significatif ?</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>V — Conviction</span></div><div>29</div></div>
+</section>
+
+<section data-screen-label="30 Verdict">
+  <div class="s-head"><div class="brand">TravelSwitch · V — Conviction</div><div class="meta">30&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Verdict de conviction</div>
+  <div class="s-title">Notre conviction : Un &#34;CONSIDER (M&amp;A)&#34; sur une thèse stratégiquement valide mais avec des risques d&#39;exécution.</div>
+  <div class="s-body">
+    <div style="margin-bottom:36px">
+      <div class="verdict"><span class="v-tag">Verdict GP</span><span class="v-text">Consider (M&amp;A) · 82/100</span></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Synthèse</h4><p>TravelSwitch dispose d'une infrastructure AI-first modulaire qui couvre exactement les quatre dimensions de la thèse S4BT (réservation hôtelière, workflow TMC, intégrations ERP, paiements partiels), avec des preuves client chiffrées convaincantes — mais cette traction est ancrée dans la région GCC/Afrique et non dans les marchés européens que S4BT cherche à consolider immédiatement. Le risque bloquant est le suivant : si TravelSwitch ne dispose pas de clients TMC européens actifs avec des métriques ROI comparables à celles documentées en MEA (42 % d'accélération, 61 % de réduction cloud), le pivot commercial MEA→Europe représente un délai de 12 à 24 mois incompatible avec le calendrier de consolidation de S4BT — et ce délai annule la valeur du raccourci technologique qui justifie l'acquisition. Il faut résoudre ce point : obtenir la liste des clients TMC européens actifs, leurs ARR respectifs, et leurs métriques ROI documentées avant d'engager une valorisation. Sans cette réponse, le dossier passe en rejet.</p>
+      </div>
+      <div class="col-block">
+        <h4>Risk register</h4>
+        <ul><li>Concentration géographique MEA : la totalité de la traction prouvée (Flyday, ITL, Oman Air, Hotelbeds) est ancrée dans la région GCC/Afrique. S4BT cherche une consolidation immédiate en France, Allemagne et Royaume-Uni ; l'absence de clients TMC européens actifs transforme ce dossier d'accélérateur en projet de pivot commercialement risqué.</li><li>Risque personnel clé (Empty Shell) : la proposition de valeur technologique de TravelSwitch repose sur six personnes identifiées publiquement. Si Niraj Kumar (CTO) ou Fateh Darvesh (CEO) quittent dans les 12 mois post-acquisition, la codebase perd son architecte principal et les certifications NDC deviennent difficiles à maintenir — ce risque est confirmé par l'analyse des synergies.</li><li>Risque de concentration client (House of Cards) : avec cinq clients majeurs visibles et une région géographique dominante, la probabilité qu'Oman Air ou Hotelbeds représente plus de 40 % de l'ARR est structurellement élevée pour une startup B2B early-stage. Un churn de ce client lors de la transition post-acquisition détruirait une fraction significative de la valeur acquise.</li><li>Risque d'intégration de stack (Tech-Stack / Integration Debt) : S4BT est lui-même en cours de consolidation de quatre acquisitions régionales (HotelHub, CRC, SIAP) aux architectures hétérogènes. Ajouter une troisième couche API-first modulaire sur un socle déjà fragmenté pourrait absorber 18 à 24 mois d'effort d'ingénierie, annulant le bénéfice du raccourci technologique.</li><li>Risque d'inadéquation ICP (ICP Mismatch) : le profil client idéal de TravelSwitch est le directeur technique d'une TMC dans la région GCC ; celui de S4BT est le directeur des achats d'une grande entreprise européenne. Cette divergence crée une friction commerciale initiale estimée à 6-12 mois de réalignement go-to-market avant que les synergies de distribution croisée ne se matérialisent.</li><li>Données financières manquantes (MISSING_DATA) : ARR précis, taux de churn, structure du capital, certification S/4HANA SAP, profondeur inventaire hôtelier direct France/Allemagne/UK — ces lacunes empêchent toute valorisation fondée sur des faits confirmés.</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>V — Conviction</span></div><div>30</div></div>
+</section>
+
+<section class="divider" data-screen-label="31 VI Modèle financier">
+  <div class="roman">VI</div>
+  <div>
+    <div class="div-eyebrow">Sixième partie</div>
+    <h2>Modèle<br>financier</h2>
+    <div class="div-sub">Le ROI sur synergies de 76% valide l&#39;acquisition, mais l&#39;efficacité des coûts clients reste à prouver en Europe.</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="32 Valorisation">
+  <div class="s-head"><div class="brand">TravelSwitch · VI — Modèle financier</div><div class="meta">32&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Valorisation triangulée</div>
+  <div class="s-title">Valorisation &amp; Comparables : Une décote de 75% offre une marge de sécurité significative.</div>
+  <div class="s-body">
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">ARR d&#39;entrée estimé</div><div class="kpi-value">1,00 M€</div><div class="kpi-note">Point de départ explicite du Business Plan.</div></div>
+      <div class="kpi"><div class="kpi-label">ACV Moyen</div><div class="kpi-value">8 125 €</div><div class="kpi-note">Calculé sur cette base, interpolé à partir du benchmark.</div></div>
+      <div class="kpi"><div class="kpi-label">Entry EV — Prix d&#39;acquisition</div><div class="kpi-value">8,00 M€</div><div class="kpi-note">Sert de dénominateur au calcul du ROI.</div></div>
+      <div class="kpi"><div class="kpi-label">Multiple d&#39;entrée (x ARR)</div><div class="kpi-value">8,0x</div><div class="kpi-note">Issu des benchmarks sectoriels (fallback).</div></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Comparables (multiples de transaction)</h4>
+        <table class="fin">
+          <thead><tr><th>Transaction</th><th class="num">Multiple</th></tr></thead>
+          <tbody>
+            <tr><td>Pas de comparables</td><td class="num">N.d.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="col-block">
+        <h4>DCF — hypothèses</h4>
+        <p>La valorisation d'entrée de 8,00 M€ est considérée comme "below" par rapport à la valeur médiane triangulée de 33,13 M€, présentant une décote de 75,9%. Cet écart suggère une marge de sécurité importante ou un potentiel de revalorisation significatif lors de l'intégration stratégique.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>VI — Modèle financier</span></div><div>32</div></div>
+</section>
+
+<section data-screen-label="33 P&L et trésorerie">
+  <div class="s-head"><div class="brand">TravelSwitch · VI — Modèle financier</div><div class="meta">33&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">P&amp;L sur 5 ans &amp; flux de trésorerie</div>
+  <div class="s-title">Compte de Résultat Prévisionnel — Impacts significatifs des synergies sur 5 ans.</div>
+  <div class="s-body">
+    <table class="fin pnl-dense">
+      <thead>
+        <tr><th>Indicateur</th><th class="num">Y1</th><th class="num">Y2</th><th class="num">Y3</th><th class="num">Y4</th><th class="num">Y5</th></tr>
+      </thead>
+      <tbody>
+        <tr ><td>Total Revenue</td><td class="num">2.19 M€</td><td class="num">3.14 M€</td><td class="num">4.68 M€</td><td class="num">5.48 M€</td><td class="num">6.46 M€</td></tr>
+        <tr ><td>Gross Profit</td><td class="num">1.75 M€</td><td class="num">2.51 M€</td><td class="num">3.74 M€</td><td class="num">4.38 M€</td><td class="num">5.16 M€</td></tr>
+        <tr ><td>Total OPEX</td><td class="num">1.26 M€</td><td class="num">0.98 M€</td><td class="num">0.30 M€</td><td class="num">0.75 M€</td><td class="num">1.28 M€</td></tr>
+        <tr class="total"><td>EBITDA</td><td class="num">-0.10 M€</td><td class="num">1.29 M€</td><td class="num">3.44 M€</td><td class="num">3.64 M€</td><td class="num">3.88 M€</td></tr>
+        <tr ><td>Free Cash Flow Opérationnel</td><td class="num">-0.33 M€</td><td class="num">0.66 M€</td><td class="num">2.12 M€</td><td class="num">2.19 M€</td><td class="num">2.28 M€</td></tr>
+      </tbody>
+    </table>
+<p style="font-size:16px;color:var(--muted);margin-top:14px">Les synergies de revenus et de réduction des dépenses transforment le profil de rentabilité : TravelSwitch passe d'un EBITDA négatif en Y1 à un EBITDA de 3,88 M€ en Y5, avec une remontée progressive de la marge brute et une maîtrise des OPEX grâce aux synergies AI et à l'optimisation cloud. Le Free Cash Flow devient positif dès Y2.</p>  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>VI — Modèle financier</span></div><div>33</div></div>
+</section>
+
+<section data-screen-label="34 ROI et verdict">
+  <div class="s-head"><div class="brand">TravelSwitch · VI — Modèle financier</div><div class="meta">34&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">ROI et verdict quantitatif</div>
+  <div class="s-title">Analyse du ROI sur Acquisition Stratégique</div>
+  <div class="s-body">
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">NPV Synergies Brutes</div><div class="kpi-value">7,49 M€</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">NPV Nette</div><div class="kpi-value">6,08 M€</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">ROI Synergétique</div><div class="kpi-value">76,0%</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">Délai de Recouvrement</div><div class="kpi-value">2,0 ans</div><div class="kpi-note"></div></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Lecture du retour</h4><p>La NPV Synergies Brutes s'élève à 7,49 M€, avec un coût d'intégration de 1,41 M€. La NPV Nette est donc de 6,08 M€. Le ROI Synergétique atteint 76,0%, ce qui est considéré comme très bon (seuil du fonds à 25%). Le délai de recouvrement est de 2,0 ans, bien en deçà du maximum de 4 ans toléré, validant ainsi la pertinence financière de l'acquisition stratégique.</p>
+      </div>
+      <div class="col-block">
+        <h4>Verdict quantitatif</h4>
+        <div class="verdict" style="margin-bottom:18px"><span class="v-tag">Post-model</span><span class="v-text">ROI thesis-validated</span></div>
+        <p>Le base case franchit les seuils quantitatifs (ROI 76.0% >= hurdle 25.0% ; payback 2.0y <= max 4.0y). Le quantitatif soutient l'acquisition ; cependant, la décision qualitative fournie n’est pas "CALL" mais "CONSIDER". Cela suggère que, malgré la validation financière, des réserves qualitatives subsistent. La traction prouvée est entièrement concentrée sur la région GCC/Afrique. Aucune métrique ARR, churn ou concentration client n'est publiquement disponible. Le pivot commercial MEA vers Europe pour un acquéreur cherchant une consolidation immédiate est un risque d'exécution structurel non résolu. La certification S/4HANA SAP et la conformité RGPD/résidence EU ne sont pas confirmées, fragilisant la thèse ERP pour le segment enterprise européen.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>VI — Modèle financier</span></div><div>34</div></div>
+</section>
+
+<section class="closing" data-screen-label="35 Fin">
+  <div>
+    <div class="closing-mark">§</div>
+    <h2>TravelSwitch représente une opportunité stratégique à fort potentiel pour S4BT,<br>conditionnée à une due diligence critique et résolue.</h2>
+  </div>
+  <div class="closing-sig">
+    <div class="cover-tag" style="text-align:left">sforbt · Mémo d&#39;investissement • fast<br>Octobre 2025</div>
+    <div class="cover-tag">Mémo confidentiel — TravelSwitch<br>Diffusion restreinte</div>
+  </div>
+</section>
+
+</deck-stage>
+</body>
+</html>
