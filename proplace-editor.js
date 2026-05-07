@@ -369,7 +369,29 @@
     document.body.appendChild(fab);
     initAutoLightbox();
     initLightboxHandlers();
+    initDetailsToggleFallback();
     hideEmptySynergies();
+  }
+
+  /* Some browsers + the inner <a target="_blank"> inside actor-card summaries
+     swallow the native <details> toggle. Force it deterministically. */
+  function initDetailsToggleFallback() {
+    document.addEventListener('click', function(e) {
+      if (!e.target || !e.target.closest) return;
+      // Don't toggle when clicking the inner site link inside the summary —
+      // user wants to follow the link, not collapse/expand.
+      if (e.target.closest('a[href]')) return;
+      var summary = e.target.closest('summary');
+      if (!summary) return;
+      var details = summary.parentNode;
+      if (!details || details.tagName !== 'DETAILS') return;
+      if (!details.matches('.actor-card, .scenario-card')) return;
+      // Prevent the native toggle from also firing — we control it explicitly
+      // so the open state is deterministic regardless of nested elements.
+      e.preventDefault();
+      if (details.hasAttribute('open')) details.removeAttribute('open');
+      else details.setAttribute('open', '');
+    }, false);
   }
 
   /* LIGHTBOX */
