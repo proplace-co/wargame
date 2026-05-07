@@ -370,7 +370,60 @@
     initAutoLightbox();
     initLightboxHandlers();
     initDetailsToggleFallback();
+    linkifyValueChainURLs();
     hideEmptySynergies();
+  }
+
+  /* The /build-memo backend renders value chain stage descriptions verbatim,
+     leaving "Source : Title (https://...)" URLs as plain text. Walk the
+     value-chain section after render and wrap bare http(s) URLs in <a> tags
+     so the user can click through. Skip URLs that are already inside an <a>. */
+  function linkifyValueChainURLs() {
+    var section = document.getElementById('value-chain');
+    if (!section) return;
+    var URL_RE = /(https?:\/\/[^\s<>()"']+)/g;
+    var walker = document.createTreeWalker(section, NodeFilter.SHOW_TEXT, {
+      acceptNode: function(node) {
+        if (!node.nodeValue || node.nodeValue.indexOf('http') === -1) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        // Skip text already inside an <a> — don't double-wrap.
+        var p = node.parentNode;
+        while (p && p !== section) {
+          if (p.tagName === 'A') return NodeFilter.FILTER_REJECT;
+          p = p.parentNode;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    var nodes = [];
+    var n;
+    while ((n = walker.nextNode())) nodes.push(n);
+    nodes.forEach(function(textNode) {
+      var text = textNode.nodeValue;
+      URL_RE.lastIndex = 0;
+      if (!URL_RE.test(text)) return;
+      URL_RE.lastIndex = 0;
+      var frag = document.createDocumentFragment();
+      var lastEnd = 0;
+      var m;
+      while ((m = URL_RE.exec(text)) !== null) {
+        if (m.index > lastEnd) {
+          frag.appendChild(document.createTextNode(text.slice(lastEnd, m.index)));
+        }
+        var a = document.createElement('a');
+        a.href = m[1];
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = m[1];
+        frag.appendChild(a);
+        lastEnd = m.index + m[1].length;
+      }
+      if (lastEnd < text.length) {
+        frag.appendChild(document.createTextNode(text.slice(lastEnd)));
+      }
+      textNode.parentNode.replaceChild(frag, textNode);
+    });
   }
 
   /* Some browsers + the inner <a target="_blank"> inside actor-card summaries
