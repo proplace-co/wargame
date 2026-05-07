@@ -1,0 +1,1433 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Mémo Agentivity — sforbt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+/**
+ * <deck-stage noscale> — reusable web component for HTML decks.
+ *
+ * Handles:
+ *  (a) speaker notes — reads <script type="application/json" id="speaker-notes">
+ *      and posts {slideIndexChanged: N} to the parent window on nav.
+ *  (b) keyboard navigation — ←/→, PgUp/PgDn, Space, Home/End, number keys.
+ *  (c) press R to reset to slide 0 (with a tasteful keyboard hint).
+ *  (d) bottom-center overlay showing slide count + hints, fades out on idle.
+ *  (e) auto-scaling — inner canvas is a fixed design size (default 1920×1080)
+ *      scaled with `transform: scale()` to fit the viewport, letterboxed.
+ *      Set the `noscale` attribute to render at authored size (1:1) — the
+ *      PPTX exporter sets this so its DOM capture sees unscaled geometry.
+ *  (f) print — `@media print` lays every slide out as its own page at the
+ *      design size, so the browser's Print → Save as PDF produces a clean
+ *      one-page-per-slide PDF with no extra setup.
+ *
+ * Slides are HIDDEN, not unmounted. Non-active slides stay in the DOM with
+ * `visibility: hidden` + `opacity: 0`, so their state (videos, iframes,
+ * form inputs, React trees) is preserved across navigation.
+ *
+ * Lifecycle event — the component dispatches a `slidechange` CustomEvent on
+ * itself whenever the active slide changes (including the initial mount).
+ * The event bubbles and composes out of shadow DOM, so you can listen on
+ * the <deck-stage> element or on document:
+ *
+ *   document.querySelector('deck-stage').addEventListener('slidechange', (e) => {
+ *     e.detail.index         // new 0-based index
+ *     e.detail.previousIndex // previous index, or -1 on init
+ *     e.detail.total         // total slide count
+ *     e.detail.slide         // the new active slide element
+ *     e.detail.previousSlide // the prior slide element, or null on init
+ *     e.detail.reason        // 'init' | 'keyboard' | 'click' | 'tap' | 'api'
+ *   });
+ *
+ * Persistence: none at the deck level. The host app keeps the current slide
+ * in its own URL (?slide=) and re-delivers it via location.hash on load, so a
+ * bare load with no hash always starts at slide 1.
+ *
+ * Usage:
+ *   <deck-stage width="1920" height="1080">
+ *     <section data-label="Title">...</section>
+ *     <section data-label="Agenda">...</section>
+ *   </deck-stage>
+ *
+ * Slides are the direct element children of <deck-stage>. Each slide is
+ * automatically tagged with:
+ *   - data-screen-label="NN Label"   (1-indexed, for comment flow)
+ *   - data-om-validate="no_overflowing_text,no_overlapping_text,slide_sized_text"
+ */
+
+(() => {
+  const DESIGN_W_DEFAULT = 1920;
+  const DESIGN_H_DEFAULT = 1080;
+  const OVERLAY_HIDE_MS = 1800;
+  const VALIDATE_ATTR = 'no_overflowing_text,no_overlapping_text,slide_sized_text';
+
+  const pad2 = (n) => String(n).padStart(2, '0');
+
+  const stylesheet = `
+    :host {
+      position: fixed;
+      inset: 0;
+      display: block;
+      background: #000;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+      overflow: hidden;
+    }
+
+    .stage {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .canvas {
+      position: relative;
+      transform-origin: center center;
+      flex-shrink: 0;
+      background: #fff;
+      will-change: transform;
+    }
+
+    /* Slides live in light DOM (via <slot>) so authored CSS still applies.
+       We absolutely position each slotted child to stack them. */
+    ::slotted(*) {
+      position: absolute !important;
+      inset: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      box-sizing: border-box !important;
+      overflow: hidden;
+      opacity: 0;
+      pointer-events: none;
+      visibility: hidden;
+    }
+    ::slotted([data-deck-active]) {
+      opacity: 1;
+      pointer-events: auto;
+      visibility: visible;
+    }
+
+    /* Tap zones for mobile — back/forward thirds like Stories.
+       Transparent, no visible UI, don't block the overlay. */
+    .tapzones {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      z-index: 2147482000;
+      pointer-events: none;
+    }
+    .tapzone {
+      flex: 1;
+      pointer-events: auto;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* Only activate tap zones on coarse pointers (touch devices). */
+    @media (hover: hover) and (pointer: fine) {
+      .tapzones { display: none; }
+    }
+
+    .overlay {
+      position: fixed;
+      left: 50%;
+      bottom: 22px;
+      transform: translate(-50%, 6px) scale(0.92);
+      filter: blur(6px);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      background: #000;
+      color: #fff;
+      border-radius: 999px;
+      font-size: 12px;
+      font-feature-settings: "tnum" 1;
+      letter-spacing: 0.01em;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 260ms ease, transform 260ms cubic-bezier(.2,.8,.2,1), filter 260ms ease;
+      transform-origin: center bottom;
+      z-index: 2147483000;
+      user-select: none;
+    }
+    .overlay[data-visible] {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translate(-50%, 0) scale(1);
+      filter: blur(0);
+    }
+
+    .btn {
+      appearance: none;
+      -webkit-appearance: none;
+      background: transparent;
+      border: 0;
+      margin: 0;
+      padding: 0;
+      color: inherit;
+      font: inherit;
+      cursor: default;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 28px;
+      min-width: 28px;
+      border-radius: 999px;
+      color: rgba(255,255,255,0.72);
+      transition: background 140ms ease, color 140ms ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+    .btn:active { background: rgba(255,255,255,0.18); }
+    .btn:focus { outline: none; }
+    .btn:focus-visible { outline: none; }
+    .btn::-moz-focus-inner { border: 0; }
+    .btn svg { width: 14px; height: 14px; display: block; }
+    .btn.reset {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      padding: 0 10px 0 12px;
+      gap: 6px;
+      color: rgba(255,255,255,0.72);
+    }
+    .btn.reset .kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 10px;
+      line-height: 1;
+      color: rgba(255,255,255,0.88);
+      background: rgba(255,255,255,0.12);
+      border-radius: 4px;
+    }
+
+    .count {
+      font-variant-numeric: tabular-nums;
+      color: #fff;
+      font-weight: 500;
+      padding: 0 8px;
+      min-width: 42px;
+      text-align: center;
+      font-size: 12px;
+    }
+    .count .sep { color: rgba(255,255,255,0.45); margin: 0 3px; font-weight: 400; }
+    .count .total { color: rgba(255,255,255,0.55); }
+
+    .divider {
+      width: 1px;
+      height: 14px;
+      background: rgba(255,255,255,0.18);
+      margin: 0 2px;
+    }
+
+    /* ── Print: one page per slide, no chrome ────────────────────────────
+       The screen layout stacks every slide at inset:0 inside a scaled
+       canvas; for print we want them in document flow at the authored
+       design size so the browser paginates one slide per sheet. The
+       @page size is set from the width/height attributes via the inline
+       <style id="deck-stage-print-page"> that connectedCallback injects
+       into <head> (the @page at-rule has no effect inside shadow DOM). */
+    @media print {
+      :host {
+        position: static;
+        inset: auto;
+        background: none;
+        overflow: visible;
+        color: inherit;
+      }
+      .stage { position: static; display: block; }
+      .canvas {
+        transform: none !important;
+        width: auto !important;
+        height: auto !important;
+        background: none;
+        will-change: auto;
+      }
+      ::slotted(*) {
+        position: relative !important;
+        inset: auto !important;
+        width: var(--deck-design-w) !important;
+        height: var(--deck-design-h) !important;
+        box-sizing: border-box !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        pointer-events: auto;
+        break-after: page;
+        page-break-after: always;
+        break-inside: avoid;
+        overflow: hidden;
+      }
+      ::slotted(*:last-child) {
+        break-after: auto;
+        page-break-after: auto;
+      }
+      .overlay, .tapzones { display: none !important; }
+    }
+  `;
+
+  class DeckStage extends HTMLElement {
+    static get observedAttributes() { return ['width', 'height', 'noscale']; }
+
+    constructor() {
+      super();
+      this._root = this.attachShadow({ mode: 'open' });
+      this._index = 0;
+      this._slides = [];
+      this._notes = [];
+      this._hideTimer = null;
+      this._mouseIdleTimer = null;
+
+      this._onKey = this._onKey.bind(this);
+      this._onResize = this._onResize.bind(this);
+      this._onSlotChange = this._onSlotChange.bind(this);
+      this._onMouseMove = this._onMouseMove.bind(this);
+      this._onTapBack = this._onTapBack.bind(this);
+      this._onTapForward = this._onTapForward.bind(this);
+    }
+
+    get designWidth() {
+      return parseInt(this.getAttribute('width'), 10) || DESIGN_W_DEFAULT;
+    }
+    get designHeight() {
+      return parseInt(this.getAttribute('height'), 10) || DESIGN_H_DEFAULT;
+    }
+
+    connectedCallback() {
+      this._render();
+      this._loadNotes();
+      this._syncPrintPageRule();
+      window.addEventListener('keydown', this._onKey);
+      window.addEventListener('resize', this._onResize);
+      window.addEventListener('mousemove', this._onMouseMove, { passive: true });
+      // Initial collection + layout happens via slotchange, which fires on mount.
+    }
+
+    disconnectedCallback() {
+      window.removeEventListener('keydown', this._onKey);
+      window.removeEventListener('resize', this._onResize);
+      window.removeEventListener('mousemove', this._onMouseMove);
+      if (this._hideTimer) clearTimeout(this._hideTimer);
+      if (this._mouseIdleTimer) clearTimeout(this._mouseIdleTimer);
+    }
+
+    attributeChangedCallback() {
+      if (this._canvas) {
+        this._canvas.style.width = this.designWidth + 'px';
+        this._canvas.style.height = this.designHeight + 'px';
+        this._canvas.style.setProperty('--deck-design-w', this.designWidth + 'px');
+        this._canvas.style.setProperty('--deck-design-h', this.designHeight + 'px');
+        this._fit();
+        this._syncPrintPageRule();
+      }
+    }
+
+    _render() {
+      const style = document.createElement('style');
+      style.textContent = stylesheet;
+
+      const stage = document.createElement('div');
+      stage.className = 'stage';
+
+      const canvas = document.createElement('div');
+      canvas.className = 'canvas';
+      canvas.style.width = this.designWidth + 'px';
+      canvas.style.height = this.designHeight + 'px';
+      canvas.style.setProperty('--deck-design-w', this.designWidth + 'px');
+      canvas.style.setProperty('--deck-design-h', this.designHeight + 'px');
+
+      const slot = document.createElement('slot');
+      slot.addEventListener('slotchange', this._onSlotChange);
+      canvas.appendChild(slot);
+      stage.appendChild(canvas);
+
+      // Tap zones (mobile): left third = back, right third = forward.
+      const tapzones = document.createElement('div');
+      tapzones.className = 'tapzones export-hidden';
+      tapzones.setAttribute('aria-hidden', 'true');
+      tapzones.setAttribute('data-noncommentable', '');
+      const tzBack = document.createElement('div');
+      tzBack.className = 'tapzone tapzone--back';
+      const tzMid = document.createElement('div');
+      tzMid.className = 'tapzone tapzone--mid';
+      tzMid.style.pointerEvents = 'none';
+      const tzFwd = document.createElement('div');
+      tzFwd.className = 'tapzone tapzone--fwd';
+      tzBack.addEventListener('click', this._onTapBack);
+      tzFwd.addEventListener('click', this._onTapForward);
+      tapzones.append(tzBack, tzMid, tzFwd);
+
+      // Overlay: compact, solid black, with clickable controls.
+      const overlay = document.createElement('div');
+      overlay.className = 'overlay export-hidden';
+      overlay.setAttribute('role', 'toolbar');
+      overlay.setAttribute('aria-label', 'Deck controls');
+      overlay.setAttribute('data-noncommentable', '');
+      overlay.innerHTML = `
+        <button class="btn prev" type="button" aria-label="Previous slide" title="Previous (←)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>
+        </button>
+        <span class="count" aria-live="polite"><span class="current">1</span><span class="sep">/</span><span class="total">1</span></span>
+        <button class="btn next" type="button" aria-label="Next slide" title="Next (→)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg>
+        </button>
+        <span class="divider"></span>
+        <button class="btn reset" type="button" aria-label="Reset to first slide" title="Reset (R)">Reset<span class="kbd">R</span></button>
+      `;
+
+      overlay.querySelector('.prev').addEventListener('click', () => this._go(this._index - 1, 'click'));
+      overlay.querySelector('.next').addEventListener('click', () => this._go(this._index + 1, 'click'));
+      overlay.querySelector('.reset').addEventListener('click', () => this._go(0, 'click'));
+
+      this._root.append(style, stage, tapzones, overlay);
+      this._canvas = canvas;
+      this._slot = slot;
+      this._overlay = overlay;
+      this._countEl = overlay.querySelector('.current');
+      this._totalEl = overlay.querySelector('.total');
+    }
+
+    /** @page must live in the document stylesheet — it's a no-op inside
+     *  shadow DOM. Inject/update a single <head> style tag so the print
+     *  sheet matches the design size and Save-as-PDF yields one slide per
+     *  page with no margins. */
+    _syncPrintPageRule() {
+      const id = 'deck-stage-print-page';
+      let tag = document.getElementById(id);
+      if (!tag) {
+        tag = document.createElement('style');
+        tag.id = id;
+        document.head.appendChild(tag);
+      }
+      tag.textContent =
+        '@page { size: ' + this.designWidth + 'px ' + this.designHeight + 'px; margin: 0; } ' +
+        '@media print { html, body { margin: 0 !important; padding: 0 !important; background: none !important; overflow: visible !important; height: auto !important; } ' +
+        '* { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }';
+    }
+
+    _onSlotChange() {
+      this._collectSlides();
+      this._restoreIndex();
+      this._applyIndex({ showOverlay: false, broadcast: true, reason: 'init' });
+      this._fit();
+    }
+
+    _collectSlides() {
+      const assigned = this._slot.assignedElements({ flatten: true });
+      this._slides = assigned.filter((el) => {
+        // Skip template/style/script nodes even if someone slots them.
+        const tag = el.tagName;
+        return tag !== 'TEMPLATE' && tag !== 'SCRIPT' && tag !== 'STYLE';
+      });
+
+      this._slides.forEach((slide, i) => {
+        const n = i + 1;
+        // Determine a label for comment flow: prefer explicit data-label,
+        // then an existing data-screen-label, then first heading, else "Slide".
+        let label = slide.getAttribute('data-label');
+        if (!label) {
+          const existing = slide.getAttribute('data-screen-label');
+          if (existing) {
+            // Strip any leading number the author may have included.
+            label = existing.replace(/^\s*\d+\s*/, '').trim() || existing;
+          }
+        }
+        if (!label) {
+          const h = slide.querySelector('h1, h2, h3, [data-title]');
+          if (h) label = (h.textContent || '').trim().slice(0, 40);
+        }
+        if (!label) label = 'Slide';
+        slide.setAttribute('data-screen-label', `${pad2(n)} ${label}`);
+
+        // Validation attribute for comment flow / auto-checks.
+        if (!slide.hasAttribute('data-om-validate')) {
+          slide.setAttribute('data-om-validate', VALIDATE_ATTR);
+        }
+
+        slide.setAttribute('data-deck-slide', String(i));
+      });
+
+      if (this._totalEl) this._totalEl.textContent = String(this._slides.length || 1);
+      if (this._index >= this._slides.length) this._index = Math.max(0, this._slides.length - 1);
+    }
+
+    _loadNotes() {
+      const tag = document.getElementById('speaker-notes');
+      if (!tag) { this._notes = []; return; }
+      try {
+        const parsed = JSON.parse(tag.textContent || '[]');
+        if (Array.isArray(parsed)) this._notes = parsed;
+      } catch (e) {
+        console.warn('[deck-stage] Failed to parse #speaker-notes JSON:', e);
+        this._notes = [];
+      }
+    }
+
+    _restoreIndex() {
+      // The host's ?slide= param is delivered as a #<int> hash (1-indexed) on
+      // the iframe src. No hash → slide 1; the deck itself keeps no position
+      // state across loads.
+      const h = (location.hash || '').match(/^#(\d+)$/);
+      if (h) {
+        const n = parseInt(h[1], 10) - 1;
+        if (n >= 0 && n < this._slides.length) this._index = n;
+      }
+    }
+
+    _applyIndex({ showOverlay = true, broadcast = true, reason = 'init' } = {}) {
+      if (!this._slides.length) return;
+      const prev = this._prevIndex == null ? -1 : this._prevIndex;
+      const curr = this._index;
+      // Keep the iframe's own hash in sync so an in-iframe location.reload()
+      // (reload banner path in viewer-handle.ts) lands on the current slide,
+      // not the stale deep-link hash from initial load.
+      try { history.replaceState(null, '', '#' + (curr + 1)); } catch (e) {}
+      this._slides.forEach((s, i) => {
+        if (i === curr) s.setAttribute('data-deck-active', '');
+        else s.removeAttribute('data-deck-active');
+      });
+      if (this._countEl) this._countEl.textContent = String(curr + 1);
+
+      if (broadcast) {
+        // (1) Legacy: host-window postMessage for speaker-notes renderers.
+        try { window.postMessage({ slideIndexChanged: curr }, '*'); } catch (e) {}
+
+        // (2) In-page CustomEvent on the <deck-stage> element itself.
+        //     Bubbles and composes out of shadow DOM so slide code can listen:
+        //       document.querySelector('deck-stage').addEventListener('slidechange', e => {
+        //         e.detail.index, e.detail.previousIndex, e.detail.total, e.detail.slide, e.detail.reason
+        //       });
+        const detail = {
+          index: curr,
+          previousIndex: prev,
+          total: this._slides.length,
+          slide: this._slides[curr] || null,
+          previousSlide: prev >= 0 ? (this._slides[prev] || null) : null,
+          reason: reason, // 'init' | 'keyboard' | 'click' | 'tap' | 'api'
+        };
+        this.dispatchEvent(new CustomEvent('slidechange', {
+          detail,
+          bubbles: true,
+          composed: true,
+        }));
+      }
+
+      this._prevIndex = curr;
+      if (showOverlay) this._flashOverlay();
+    }
+
+    _flashOverlay() {
+      if (!this._overlay) return;
+      this._overlay.setAttribute('data-visible', '');
+      if (this._hideTimer) clearTimeout(this._hideTimer);
+      this._hideTimer = setTimeout(() => {
+        this._overlay.removeAttribute('data-visible');
+      }, OVERLAY_HIDE_MS);
+    }
+
+    _fit() {
+      if (!this._canvas) return;
+      // PPTX export sets noscale so the DOM capture sees authored-size
+      // geometry — the scaled canvas is in shadow DOM, so the exporter's
+      // resetTransformSelector can't reach .canvas.style.transform directly.
+      if (this.hasAttribute('noscale')) {
+        this._canvas.style.transform = 'none';
+        return;
+      }
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const s = Math.min(vw / this.designWidth, vh / this.designHeight);
+      this._canvas.style.transform = `scale(${s})`;
+    }
+
+    _onResize() { this._fit(); }
+
+    _onMouseMove() {
+      // Keep overlay visible while mouse moves; hide after idle.
+      this._flashOverlay();
+    }
+
+    _onTapBack(e) {
+      e.preventDefault();
+      this._go(this._index - 1, 'tap');
+    }
+
+    _onTapForward(e) {
+      e.preventDefault();
+      this._go(this._index + 1, 'tap');
+    }
+
+    _onKey(e) {
+      // Ignore when the user is typing.
+      const t = e.target;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const key = e.key;
+      let handled = true;
+
+      if (key === 'ArrowRight' || key === 'PageDown' || key === ' ' || key === 'Spacebar') {
+        this._go(this._index + 1, 'keyboard');
+      } else if (key === 'ArrowLeft' || key === 'PageUp') {
+        this._go(this._index - 1, 'keyboard');
+      } else if (key === 'Home') {
+        this._go(0, 'keyboard');
+      } else if (key === 'End') {
+        this._go(this._slides.length - 1, 'keyboard');
+      } else if (key === 'r' || key === 'R') {
+        this._go(0, 'keyboard');
+      } else if (/^[0-9]$/.test(key)) {
+        // 1..9 jump to that slide; 0 jumps to 10.
+        const n = key === '0' ? 9 : parseInt(key, 10) - 1;
+        if (n < this._slides.length) this._go(n, 'keyboard');
+      } else {
+        handled = false;
+      }
+
+      if (handled) {
+        e.preventDefault();
+        this._flashOverlay();
+      }
+    }
+
+    _go(i, reason = 'api') {
+      if (!this._slides.length) return;
+      const clamped = Math.max(0, Math.min(this._slides.length - 1, i));
+      if (clamped === this._index) {
+        this._flashOverlay();
+        return;
+      }
+      this._index = clamped;
+      this._applyIndex({ showOverlay: true, broadcast: true, reason });
+    }
+
+    // Public API ------------------------------------------------------------
+
+    /** Current slide index (0-based). */
+    get index() { return this._index; }
+    /** Total slide count. */
+    get length() { return this._slides.length; }
+    /** Programmatically navigate. */
+    goTo(i) { this._go(i, 'api'); }
+    next() { this._go(this._index + 1, 'api'); }
+    prev() { this._go(this._index - 1, 'api'); }
+    reset() { this._go(0, 'api'); }
+  }
+
+  if (!customElements.get('deck-stage')) {
+    customElements.define('deck-stage', DeckStage);
+  }
+})();
+
+</script>
+<style>
+:root{
+  --paper:#F5F1E8;
+  --paper-2:#EFEAE0;
+  --ink:#0E1116;
+  --ink-2:#2A3038;
+  --muted:#5C6470;
+  --rule:#1A1F26;
+  --rule-soft:#C9C0AE;
+  --accent:#7A1F1F;
+  --pos:#1F4D2E;
+  --neg:#7A1F1F;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#0a0a0a;font-family:'Inter',sans-serif;color:var(--ink)}
+deck-stage{display:block}
+deck-stage > section{
+  width:1920px;height:1080px;background:var(--paper);color:var(--ink);
+  font-family:'Inter',sans-serif;font-size:22px;line-height:1.5;
+  position:relative;overflow:hidden;padding:90px 120px;
+  display:flex;flex-direction:column;
+}
+.s-head{display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:18px;border-bottom:1px solid var(--rule);margin-bottom:48px;flex-shrink:0}
+.s-head .brand{font-family:'EB Garamond',serif;font-size:24px;font-style:italic;color:var(--ink-2);letter-spacing:0.01em}
+.s-head .meta{font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted)}
+.s-title{font-family:'EB Garamond',serif;font-weight:500;font-size:60px;line-height:1.05;letter-spacing:-0.01em;color:var(--ink);margin-bottom:14px}
+.s-kicker{font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);margin-bottom:24px}
+.s-sub{font-size:24px;color:var(--ink-2);line-height:1.45;max-width:1500px;margin-bottom:40px}
+.s-body{flex:1;min-height:0;display:flex;flex-direction:column}
+.s-body p{font-size:21px;line-height:1.55;color:var(--ink-2);margin-bottom:16px;text-wrap:pretty}
+.s-body p strong, .s-body b{color:var(--ink);font-weight:600}
+.s-body ul{list-style:none;padding:0}
+.s-body ul li{position:relative;padding-left:28px;margin-bottom:12px;font-size:21px;line-height:1.5;color:var(--ink-2)}
+.s-body ul li::before{content:"";position:absolute;left:0;top:14px;width:14px;height:1px;background:var(--ink)}
+.s-body h3{font-family:'EB Garamond',serif;font-weight:500;font-size:30px;color:var(--ink);margin-bottom:16px}
+.s-body h4{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;margin-top:20px;padding-bottom:8px;border-bottom:1px solid var(--rule-soft)}
+.s-foot{position:absolute;left:120px;right:120px;bottom:42px;display:flex;justify-content:space-between;align-items:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);padding-top:18px;border-top:1px solid var(--rule-soft)}
+.s-foot .lhs{display:flex;gap:32px}
+
+/* COVER */
+.cover{padding:140px 160px;justify-content:space-between}
+.cover-top{display:flex;justify-content:space-between;align-items:flex-start}
+.cover-mark{font-family:'EB Garamond',serif;font-style:italic;font-size:28px;color:var(--ink-2)}
+.cover-mark::before{content:"§";font-style:normal;margin-right:10px;color:var(--accent);font-weight:700}
+.cover-tag{font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);text-align:right;line-height:2}
+.cover-mid{margin-top:80px}
+.cover-eyebrow{font-family:'JetBrains Mono',monospace;font-size:15px;letter-spacing:0.3em;text-transform:uppercase;color:var(--muted);margin-bottom:32px}
+.cover h1{font-family:'EB Garamond',serif;font-weight:500;font-size:240px;line-height:0.92;letter-spacing:-0.025em;color:var(--ink)}
+.cover-sub{font-family:'EB Garamond',serif;font-style:italic;font-weight:400;font-size:36px;color:var(--ink-2);line-height:1.3;margin-top:36px;max-width:1400px}
+.cover-bot{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:48px;padding-top:36px;border-top:1px solid var(--rule)}
+.cover-bot dt{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.cover-bot dd{font-family:'EB Garamond',serif;font-size:30px;color:var(--ink);font-weight:500}
+
+/* DIVIDER */
+.divider{padding:140px 160px;justify-content:flex-end}
+.divider .roman{position:absolute;top:120px;right:160px;font-family:'EB Garamond',serif;font-style:italic;font-size:96px;color:var(--rule-soft);font-weight:400;letter-spacing:0.05em}
+.divider .div-eyebrow{font-family:'JetBrains Mono',monospace;font-size:15px;letter-spacing:0.3em;text-transform:uppercase;color:var(--muted);margin-bottom:32px}
+.divider h2{font-family:'EB Garamond',serif;font-weight:500;font-size:140px;line-height:0.95;letter-spacing:-0.02em;color:var(--ink);max-width:1400px}
+.divider .div-sub{font-family:'EB Garamond',serif;font-style:italic;font-size:30px;color:var(--ink-2);margin-top:36px;max-width:1100px;line-height:1.4}
+.divider .div-rule{width:120px;height:2px;background:var(--ink);margin-top:48px}
+
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:80px;flex:1;min-height:0}
+.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:60px;flex:1;min-height:0}
+.col-block h4:first-child{margin-top:0}
+
+/* Image block — tasteful figure with caption, contained height so slides stay composed */
+.s-figure{margin-top:18px;display:flex;flex-direction:column;gap:10px;flex:0 0 auto}
+.s-figure .frame{border:1px solid var(--rule);background:var(--paper-2);border-radius:2px;overflow:hidden;display:flex;align-items:center;justify-content:center;max-height:380px}
+.s-figure .frame img{width:100%;height:auto;max-height:380px;object-fit:contain;display:block}
+.s-figure figcaption{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted)}
+.s-figure.compact .frame{max-height:280px}
+.s-figure.compact .frame img{max-height:280px}
+/* Side-by-side text + image layout */
+.text-image{display:grid;grid-template-columns:1fr 1.1fr;gap:48px;flex:1;min-height:0;align-items:start}
+.text-image > .col-block{min-width:0}
+.text-image .s-figure{margin-top:0;align-self:stretch;height:100%}
+.text-image .s-figure .frame{max-height:480px;height:100%}
+.text-image .s-figure .frame img{max-height:480px}
+
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin:24px 0 36px}
+.kpi{padding:24px 24px 24px 0;border-right:1px solid var(--rule-soft)}
+.kpi:last-child{border-right:none}
+.kpi:not(:first-child){padding-left:24px}
+.kpi-label{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+.kpi-value{font-family:'EB Garamond',serif;font-weight:500;font-size:48px;line-height:1;color:var(--ink);letter-spacing:-0.01em}
+.kpi-note{font-size:14px;color:var(--muted);margin-top:8px;line-height:1.4}
+
+table.fin{width:100%;border-collapse:collapse;font-size:17px;font-variant-numeric:tabular-nums}
+table.fin thead th{background:transparent;color:var(--ink);font-weight:600;text-align:left;padding:11px 14px;border-bottom:2px solid var(--ink);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.18em;text-transform:uppercase}
+table.fin tbody td{padding:12px 14px;border-bottom:1px solid var(--rule-soft);color:var(--ink-2);vertical-align:top}
+table.fin tbody tr:last-child td{border-bottom:none}
+table.fin tbody td.num{text-align:right;font-family:'JetBrains Mono',monospace;color:var(--ink);white-space:nowrap}
+table.fin tbody tr.total td{font-weight:600;color:var(--ink);border-top:1px solid var(--ink);border-bottom:1px solid var(--ink);background:rgba(0,0,0,0.03)}
+table.fin tbody tr.total td.num{font-weight:700}
+table.fin.pnl-dense{font-size:15px}
+table.fin.pnl-dense thead th{padding:8px 12px;font-size:11px}
+table.fin.pnl-dense tbody td{padding:7px 12px}
+
+.swot{display:grid;grid-template-columns:1fr 1fr;gap:36px;flex:1;min-height:0}
+.swot-cell{padding:28px 32px;background:rgba(255,255,255,0.4);border:1px solid var(--rule-soft);border-top:3px solid var(--ink)}
+.swot-cell h4{margin:0 0 14px 0;border:none;padding:0}
+.swot-cell ul li{font-size:18px;margin-bottom:10px;padding-left:22px}
+.swot-cell ul li::before{top:11px;width:10px}
+
+.verdict{display:inline-flex;align-items:baseline;gap:18px;padding:18px 28px;border:2px solid var(--ink);background:var(--paper-2);font-family:'EB Garamond',serif}
+.verdict .v-tag{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted)}
+.verdict .v-text{font-size:36px;font-weight:600;color:var(--ink);letter-spacing:-0.01em}
+
+.closing{padding:140px 160px;justify-content:space-between}
+.closing-mark{font-family:'EB Garamond',serif;font-style:italic;font-size:200px;color:var(--ink);line-height:1}
+.closing h2{font-family:'EB Garamond',serif;font-weight:500;font-size:96px;line-height:1.05;letter-spacing:-0.02em;color:var(--ink);max-width:1400px;margin-top:48px}
+.closing-sig{display:flex;justify-content:space-between;align-items:flex-end;padding-top:36px;border-top:1px solid var(--rule)}
+
+.lead{font-size:25px;color:var(--ink);line-height:1.45;margin-bottom:28px;max-width:1500px;font-weight:400}
+.callout{padding:22px 26px;background:var(--paper-2);border-left:3px solid var(--ink);font-size:20px;line-height:1.55;color:var(--ink-2);margin:20px 0}
+.dl-grid{display:grid;grid-template-columns:220px 1fr;gap:16px 28px;align-items:baseline}
+.dl-grid dt{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);padding-top:4px}
+.dl-grid dd{font-size:20px;color:var(--ink-2);line-height:1.5}
+.tag{display:inline-block;padding:4px 10px;border:1px solid var(--rule);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.15em;text-transform:uppercase;margin-right:6px;color:var(--ink-2)}
+</style>
+</head>
+<body>
+
+<script type="application/json" id="speaker-notes">["Bonjour à tous. Aujourd'hui, nous allons nous pencher sur Agentivity, une société SaaS basée au Royaume-Uni qui opère dans le secteur de la Travel Tech. Agentivity fournit une solution d'automatisation des données pour les Travel Management Companies, ou TMC, en particulier celles qui gèrent un volume important de réservations internationales. Notre objectif est d'évaluer l'opportunité d'investissement et la pertinence stratégique d'Agentivity dans notre portefeuille. Ce memorandum détaille notre analyse approfondie du marché, du modèle d'affaires, de l'équipe, et des prévisions financières pour cette cible.", "Commençons par le marché. Agentivity évolue sur un marché de niche mais en pleine transformation : le middleware de données pour les TMC. Ce marché est caractérisé par une forte attractivité, symbolisée par un score de 85/100, impulsé par l'urgence technologique liée à l'adoption du standard NDC. La compétition, bien qu'intense, est jugulée par la neutralité et la profondeur technique d'Agentivity, lui conférant un score de gagnabilité de 78/100. Sa stratégie de mise sur le marché et son modèle de prix transactionnel lui octroient un score de pénétrabilité de 82/100. Enfin, avec des multiples de sortie solides et des acquéreurs stratégiques identifiés, la rémunérativité du marché est à 80/100, suggérant un potentiel de sortie favorable. Le score global du marché que nous attribuons est de 81/100.", "Le marché du middleware de données pour les TMC se définit comme un ensemble de solutions SaaS permettant l'agrégation, la normalisation et l'automatisation des réservations de voyages d'affaires. Historiquement dominé par les Global Distribution Systems (GDS), le secteur est en pleine mutation. L'adoption du New Distribution Capability (NDC) par les compagnies aériennes rompt le monopole des GDS et fragmente considérablement les données. Ce chaos crée une opportunité unique pour des acteurs neutres comme Agentivity, capables d'agréger ces flux disparates. La fenêtre est étroite, environ 24 à 36 mois, pour que les TMC européennes s'adaptent, ce qui rend l'automatisation des données non plus une option, mais une nécessité pour leur survie et leur rentabilité. Notre thèse est que Agentivity peut devenir un pivot central dans cette transformation.", "La taille du marché, évaluée pour l'automatisation du mid-office, représente plusieurs centaines de millions d'euros en Europe, avec des milliers de TMC traitant des milliards d'euros de volume. Les moteurs de croissance sont puissants : l'inflation technologique liée au NDC et la pression sur les marges des agences forcent une automatisation massive. Le timing est idéal, car le basculement vers des modèles de distribution directe par les compagnies aériennes génère un besoin criant de solutions d'agrégation. Le principal risque est une consolidation trop rapide des TMC, ce qui réduirirait le nombre de clients potentiels d'Agentivity, mais l'urgence technologique actuelle tempère cette menace. Le total market attractivity score est très fort. [IMG src=\"https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-6c1ada8d1b105d94e0ba6d7a9c144c60-ji35fcwx.jpg\"]", "Le marché est gagnable, malgré la domination d'acteurs historiques comme Amadeus et Sabre. Ces derniers sont perçus comme des « jardins fermés », ce qui ouvre une opportunité pour des solutions agnostiques. Des challengers existent, comme Atriis ou Travelogix, mais Agentivity a une avance sur l'automatisation du mid-office pur. Un espace vierge subsiste dans l'intégration profonde entre données de voyage et flux financiers ERP. La défendabilité à long terme de la solution repose sur l'effet de réseau avec les TMC et l'accumulation de règles métier propriétaires, bien que la dépendance aux API GDS constitue une couche de vulnérabilité. Le leadership technique et commercial d'Agentivity renforce sa position.", "Le marché est pénétrable grâce à un modèle de vente directe et de partenariats technologiques, notamment avec les GDS marketplaces. Le modèle de prix transactionnel à la réservation est un standard du secteur, assurant une scalabilité intrinsèque. Les unit economics sont sains, avec une rétention client élevée. Cependant, la croissance internationale rapide exige le développement de connecteurs locaux pour le ferroviaire, ce qui peut ralentir temporairement l'expansion. Le marché est également rémunérateur : les investissements dans la Travel Tech B2B restent solides, les multiples de sortie se maintiennent, les acquéreurs stratégiques sont nombreux et le profil de retour est en ligne avec nos objectifs. En somme, une opportunité rare à saisir.", "En synthèse, la combinaison d'un marché très attrayant et d'une pénétrabilité facilitée offre une opportunité de capture rapide de parts de marché. Cependant, cela nécessite une exécution commerciale sans faille pour suivre la vélocité technologique. Nos données proviennent d'une analyse robuste de plus de 15 sources, nous donnant une confiance élevée dans ce diagnostic. La tension principale réside tout de même dans la pérennité de l'accès aux données sources, mais le besoin d'indépendance des TMC envers les GDS renforce notre pari sur les acteurs middleware neutres comme Agentivity. Nous anticipons que le contenu NDC représentera plus de 50% du volume des TMC d'ici 2026, rendant les solutions d'automatisation des données d'Agentivity obligatoires pour l'audit financier. Le critère 'go/no-go' de premier appel est la capacité à prouver une réduction du temps de traitement administratif de plus de 40% pour une transaction complexe. [IMG src=\"https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-ef2703b75592db3b6197375b918366f6-ltzwzrsi.jpg\"]", "La chaîne de valeur, dans l'écosystème Travel Management Company (TMC), est fragmentée, allant de la planification des voyages à la réconciliation financière post-voyage. Agentivity se positionne comme un « connecteur vital » entre les outils de réservation (front-office) et les systèmes comptables/reporting (back-office). La clé est sa capacité à transformer des données éparses en une source unique et intelligente, ce qui est crucial pour la rentabilité des TMC. Les étapes ayant le score stratégique le plus élevées pour Agentivity sont l'agrégation de données multi-sources, l'automatisation des contrôles qualité, et le reporting analytique, car elles touchent directement la douleur opérationnelle des TMC.", "Les trois positions les plus stratégiques démontrent la capacité d'Agentivity à résoudre les problèmes critiques des TMC. Premièrement, l'« Agrégation de données multi-sources » est essentielle car elle unifie les informations issues des GDS, du NDC et d'autres flux. Deuxièmement, l'« Automatisation des contrôles qualité » permet de réduire drastiquement les erreurs et les pénalités onéreuses, comme les ADM. Enfin, le « Reporting et analytique » offre aux TMC une visibilité indispensable sur leurs opérations et la conformité, des fonctionnalités vitales pour leurs clients entreprises. Ces fonctions représentent des barrières à l'entrée significatives, protégeant les marges des agences et celles d'Agentivity.", "Concernant les grandes tendances, la migration forcée vers le NDC est un catalyseur majeur pour Agentivity. Cette transition brise les monopoles de données historiques, exigeant de nouvelles architectures capables de gérer l'hétérogénéité des flux. Agentivity détient des points de contrôle grâce à ses connecteurs propriétaires GDS et NDC et son moteur de règles. La « commoditisation des GDS traditionnels » est une forme de déplacement qui rend l'approche neutre d'Agentivity plus attrayante. Enfin, les « unit economics transactionnels » représentent un modèle d'affaires aligné sur la scalabilité, renforçant la thèse d'investissement par une croissance organique saine et prédictible.", "Le paysage des acteurs du marché est complexe. Au niveau de la « Capture de données », les GDS traditionnels comme Amadeus et Sabre sont les acteurs historiques, mais leur modèle centralisé est mis à mal par le NDC. Agentivity se positionne ici comme un agrégateur neutre et agile, ce qui est un avantage clé. Sur l'« Automatisation du mid-office », des challengers comme Atriis et Travelogix sont en compétition, mais Agentivity a un positionnement plus profond sur l'intégration technique. Enfin, dans le « Reporting et analytique », les systèmes ERP comme SAP ou Oracle sont les géants établis. Agentivity cherche à intégrer ses données pour alimenter leurs modules, créant une valeur ajoutée stratégique.", "La position d'Agentivity dans le Magic Quadrant reflète sa capacité à transformer la fragmentation du marché en avantage. Les leaders sont GDS (Amadeus, Sabre) qui tentent d'intégrer verticalement le mid-office, mais leur modèle historique freine leur agilité. Les Challengers (Atriis, Travelogix) sont des solutions de mid/back-office, mais Agentivity se distingue par une profondeur d'intégration supérieure. Les Visionnaires (start-ups NDC direct connect) testent de nouveaux modèles de distribution, tandis que les acteurs de niche (solutions de réconciliation spécifiques) se concentrent sur un seul aspect. Agentivity, en tant que middleware neutre, unifie ces différents segments et offre une solution complète, anticipant les besoins futurs du marché. En conclusion, le marché offre une opportunité substantielle pour un acteur agile et techniquement équipé comme Agentivity.", "Dans le cadrant M&A stratégique, Agentivity s'inscrit dans une zone d'intérêt pour plusieurs raisons. Les prédateurs naturels seraient de grandes TMC ou des plateformes de réservation intégrées (TravelPerk, Navan) cherchant à consolider leur chaîne de valeur. Les Aspirants pourraient être des fonds d'investissement cherchant à capitaliser sur la consolidation du secteur. Les Géants, comme Amadeus ou Sabre, pourraient vouloir intégrer cette solution pour combler leurs lacunes face au NDC. Agentivity, en tant que cible, est attrayante en raison de sa technologie mature, de sa base client fidèle, et de son modèle économique robuste lié au volume transactionnel. La cartographie indique une opportunité d'acquisition stratégique à forte valeur ajoutée, notamment pour un acteur comme sforbt cherchant à renforcer son infrastructure.", "L'analyse des scénarios met en évidence la situation stratégique d'Agentivity dans un marché en évolution. Le premier scénario, « Automatisation du Mid-Office TMC », est le cœur de métier d'Agentivity. La société automatise les processus de mid-office pour les TMC européennes, réduisant les erreurs manuelles et les frais ADM. Les acteurs clés ici sont les TMC elles-mêmes qui cherchent à améliorer leur rentabilité. Le second scénario, « Agrégation NDC et Multi-Source », illustre la capacité d'Agentivity à gérer la fragmentation du contenu aérien. Cela résout le problème de la multiplicité des sources d'inventaire, profitant aux agents de voyages et aux plateformes cherchant une vue unifiée. Ce type de brique technologique est très recherché par des SaaS B2B ou des middlewares d'intégration. En somme, Agentivity est au carrefour de plusieurs dynamiques de marché très porteuses, offrant un excellent positionnement.", "Cette table des synergies entre Agentivity et sforbt est purement spéculative. Elle est générée par l'IA en croisant les données publiques et les positionnements stratégiques. L'unification du middleware de données GDS/NDC est une synergie structurelle de forte intensité, permettant de consolider les flux hôteliers de sforbt via le moteur d'Agentivity. Vient ensuite la vente croisée de la marketplace d'hôtels de sforbt aux clients TMC d'Agentivity, une synergie de chiffre d'affaires à impact moyen. Enfin, l'automatisation de la récupération de TVA et de la facturation par IA représente une solide synergie de coûts, avec un impact moyen. L'ordre des lignes est fonction de l'importance totale des synergies par année cumulées. Nous verrons comment ces synergies contribuent à la valeur globale de l'acquisition. Cette analyse est un point de départ pour une discussion stratégique plus approfondie.", "Le résumé de la proposition de valeur d'Agentivity est clair : transformer les données de voyage fragmentées en une source unique et intelligente. Agentivity permet aux agences de gestion de voyages, ou TMC, d'optimiser leurs opérations en centralisant toutes leurs réservations. Le profil du client idéal est celui d'une TMC internationale gérant plus de 50 000 transactions annuelles, qui doit fournir des rapports consolidés tout en gérant des sources d'inventaire fragmentées. Agentivity opère exclusivement en B2B dans l'industrie de la Travel Tech, avec des exemples de clients tel que dnata Travel et Gray Dawes. L’analyse confirme une dépendance critique au produit pour le reporting et la conformité, ce qui est un signal très positif pour nous. C'est donc une solution vitale pour ses clients.", "La solution principale d'Agentivity est une plateforme de données centralisée qui agrège les réservations GDS et hors-GDS pour l'automatisation et l'analyse. Elle agit comme une couche d'abstraction, ingérant les flux de réservations en temps réel, appliquant des contrôles qualité automatisés et distribuant des données propres aux systèmes de reporting et de facturation. Les capacités techniques incluent l'intégration directe des principaux GDS, des agrégateurs NDC, et des flux de données ferroviaires. La plateforme est conçue pour gérer des volumes massifs de transactions mondiales. Les cas d'utilisation sont nombreux et critiques, comme la réduction des pénalités aériennes (ADM), la prévention des erreurs de réservation, et l'automatisation des tâches administratives, permettant une réduction de 40% du temps de traitement.", "Le modèle d'affaires d'Agentivity est un SaaS transactionnel, basé sur le volume de réservations. La tarification est d'environ 0,12 $ par réservation, ce qui assure un alignement parfait avec l'activité des clients et une expansion naturelle des revenus. Ce mix entre SaaS récurrent et facturation au volume offre une visibilité financière robuste, caractéristique des infrastructures middleware. Les paliers de volume sont clairs, et le retour sur investissement des clients est immédiatement mesurable grâce à la réduction des erreurs manuelles et des pénalités. Le modèle ne présente pas de coûts cachés, privilégiant la transparence et un ROI prouvé dès le premier jour. C'est un modèle solide, axé sur la valeur pour le client.", "L'équipe d'Agentivity est composée d'experts du secteur du voyage, avec une culture d'entreprise centrée sur l'amélioration de la rentabilité client. Le duo de leadership, Riaan van Schoor (CEO) et David Keene (CRO), allie une expertise métier profonde et une culture de 'Revenue Engineering' acquise chez des géants comme Oracle. La structure est stable, avec une présence internationale via des distributeurs. Bien que l'effectif exact soit qualifié de TPE/PME, la société semble opérer avec une grande discipline financière. Les organigrammes spécifiques par département (Produit, Ingénierie, Ventes, Marketing, etc.) ne sont pas détaillés dans le mémo fourni. Cependant, la robustesse de leur solution et leur clientèle internationale suggèrent une équipe efficace, même si resserrée.", "David Keene, co-fondateur et CRO, est une figure clé. Il apporte une expérience significative en 'Revenue Engineering', ayant travaillé chez Oracle, Salesforce et Google. La chronologie de sa carrière montre une progression constante dans des rôles de leadership axés sur la croissance et la monétisation. Son expertise est essentielle pour comprendre et développer le modèle de revenus transactionnel d'Agentivity. Les scores de DNA du fondateur ne sont pas présents dans le mémo. Son 'blind spot' n'est pas spécifié, mais il serait intéressant de creuser sa vision pour l'intégration ERP, un axe de croissance crucial mentionné dans nos synergies. La profondeur de son expérience GTM (go-to-market) et sa capacité à naviguer dans le complexe écosystème du voyage sont des atouts majeurs.", "Nous abordons maintenant l'évaluation approfondie d'Agentivity. Notre score de pré-sélection est de 84.6/100, ce qui correspond à un signal positif. Ce score est basé sur la thèse que cette entreprise est un SaaS d'automatisation de données pour les Travel Management Companies. Un point important : il s'agit d'un score pré-sélection brut, les poids de notre thèse seront appliqués de manière plus précise dans le pipeline de qualification synthétique. Les scores sont excellents pour les quatre catégories principales : Excellence de l'équipe à 88/100, Opportunité de marché à 84/100, Innovation produit à 86/100 et Modèle d'affaires à 85/100. La traction et la croissance sont également solides à 80/100. Cette moyenne indique un alignement fort avec nos critères d'investissement.", "En quelques mots, Agentivity est une plateforme middleware de données transformant les flux GDS et hors-GDS fragmentés en une source de vérité unique pour les TMC, automatisant ainsi leurs processus de mid-office et de reporting. Le problème que Agentivity résout est le temps et l'argent perdus par les agents de voyage à cause de la réconciliation manuelle des réservations issues de sources disparates. La solution d'Agentivity est une couche d'abstraction de données qui ingère en temps réel tous les flux de réservations, applique des contrôles qualité automatisés et distribue une donnée propre vers les systèmes de reporting, de facturation et de 'Duty of Care' de ses clients. Leur stratégie de mise sur le marché est la vente directe aux opérations et au 'RevOps' des TMC internationales, se positionnant comme le connecteur indispensable pour réduire le coût par transaction sans changer de système de réservation principal. Cette analyse globale démontre un positionnement robuste.", "L'excellence de l'équipe est un point fort pour Agentivity. Le 'Founder-Market Fit' est excellent avec un score de 92/100, porté par le duo Riaan van Schoor et David Keene. Ils combinent une expertise métier du voyage et une culture 'Revenue Engineering' acquise chez des géants comme Oracle. Leurs antécédents sont solides, David Keene ayant prouvé sa capacité à faire évoluer des fonctions 'Go-to-Market' dans des environnements de croissance rapide. Le leadership est expérimenté, avec une équipe composée d'experts du secteur, une structure stable et une présence internationale. Enfin, la complétude de l'équipe atteint 87/100, montrant un équilibre entre l'ingénierie commerciale et l'expertise technique spécifique aux systèmes GDS.", "L'opportunité de marché est jugée très favorable avec un score de 84/100. La taille et la croissance du marché du mid-office des TMC sont importantes, estimées à plusieurs centaines de millions d'euros en Europe, et sont alimentées par la complexité croissante du contenu NDC. Le timing est idéal, car la fragmentation du contenu aérien rend l'agrégation de données indispensable pour la survie des agences. Face à la concurrence de Cornerstone ou de Travelogix, Agentivity se distingue par sa profondeur technique et son modèle transactionnel. Enfin, le potentiel d'expansion est significatif, notamment vers l'intégration ERP et les services financiers, offrant des vecteurs de croissance clairs. L'ensemble de ces facteurs consolide notre conviction dans l'opportunité de marché.", "L'innovation produit d'Agentivity, évaluée à 86/100, est un différenciateur majeur. Sa capacité à agréger les données GDS et hors-GDS avec un moteur de règles de qualité en temps réel crée une solide barrière technique. Le 'Product-Market Fit' est confirmé, avec des témoignages de clients majeurs comme dnata Travel et Gray Dawes, qui attestent d'une dépendance critique envers le produit pour le reporting et la conformité, ce qui est un signal fort de robustesse industrielle. La scalabilité de l'architecture SaaS est conçue pour gérer des volumes massifs, optimisant les transactions mondiales avec des intégrations API directes. Enfin, la propriété intellectuelle, notamment le moteur de nettoyage de données et les connecteurs GDS, représente un actif intangible significatif, renforçant la position concurrentielle d’Agentivity.", "Le modèle d'affaires, avec un score de 85/100, est excellent. L'économie d'unité est très saine, avec un modèle transactionnel à 0,12$ par réservation qui garantit un alignement parfait avec le volume d'activité client. Le modèle de revenus, un mix de SaaS récurrent et de facturation au volume, offre une visibilité financière robuste, typique des infrastructures middleware. La monétisation est claire, avec des paliers de volume qui assurent un ROI immédiat mesurable pour les clients via la réduction des erreurs et des pénalités. Enfin, l'efficacité du capital est remarquable, la société privilégiant une croissance rentable sans brûlage excessif de liquidités. Tous ces éléments montrent un modèle économique très bien pensé et exécuté, à haute valeur ajoutée. [IMG src=\"https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-ef2703b75592db3b6197375b918366f6-ltzwzrsi.jpg\"]", "Ce tableau SWOT met en évidence les forces, faiblesses, opportunités et menaces pour Agentivity. Les forces incluent une plateforme d'agrégation de données très performante et des clients établis, validant un ROI positif. Le modèle SaaS transactionnel est également un atout majeur. Parmi les faiblesses, nous notons l'absence de financement récent, une équipe PME qui limite l'expansion et une dépendance aux intégrations GDS. Les opportunités sont nombreuses : la croissance de l'intégration NDC, le suivi en temps réel des voyageurs et les partenariats qui facilitent l'expansion géographique. Enfin, les menaces incluent la concurrence intense, les ralentissements économiques et les changements réglementaires. Cette analyse nous aide à mieux cerner les défis et les atouts de la société, et nous permet de mieux positionner notre plan d'action.", "Le plan d'action est structuré autour de quatre axes. En défense, Agentivity doit capitaliser sur sa base de clients loyaux et ses intégrations profondes pour minimiser le 'churn'. L'offensive consiste à unifier les données fragmentées via ses intégrations, capitalisant sur son expertise de 15 ans pour garantir un ROI immédiat aux TMC et accélérer l'adoption. Le 'kill shot' ou scénario fatal serait une récession prolongée couplée à l'intégration gratuite d'une solution concurrente par un GDS, entraînant une pénurie de cash et une obsolescence accélérée du produit. Les actions de remédiation incluent la levée de fonds pour doubler l'effectif d'ingénieurs en voyage, clarifier le leadership et investir en R&D pour différencier encore plus la qualité des données. Ces stratégies sont cruciales pour Agentivity.", "Nous entrons dans la partie III de notre analyse, qui concerne la thèse d'investissement. Le titre de cette section est un élément clé de notre approche : « Un signal positif pour un coup stratégique : une vision à long terme ». Cela souligne notre conviction que cette opportunité représente non seulement un bon investissement financier, mais aussi un mouvement stratégique fort pour notre portefeuille. Nous allons détailler pourquoi Agentivity s'inscrit dans notre stratégie d'acquisition, les synergies potentielles, et les risques à appréhender pour s'assurer que cette thèse se concrétise. Ce sera une acquisition de type 'Infrastructure-Moat' renforçant notre compétitivité.", "La thèse d'investissement est de type « B — Stratégique ». Agentivity est un middleware de données qui automatise le mid-office des TMC, gère les files d'attente GDS et réduit le coût par transaction. Le lead est clair : Agentivity permet aux TMC d'opérer de manière aussi efficace que possible en transformant les données de réservation fragmentées en une source unique et intelligente. Les leviers incluent l'intégration des connecteurs GDS/NDC, la capture du flux de données NDC et l'extension du réseau de distribution aux clients TMC d'Agentivity. Les fragilités résident dans la dépendance aux API de tiers, qui pourraient à terme éroder la valeur du middleware si elles deviennent gratuites ou restreintes. La fenêtre d'opportunité est de 24 à 36 mois, le temps que les TMC européennes achèvent leur transformation numérique avant une consolidation massive. Ceci est un point crucial de notre thèse.", "Les synergies sont un pilier fondamental de notre thèse. La première synergie est l'« Unification du Middleware de Données GDS/NDC », une synergie structurelle qui consoliderait les flux de réservation hôteliers de sforbt via le moteur d'Agentivity. Ensuite, la « Vente Croisée Marketplace d'Hôtels aux TMC Agentivity » est une synergie de revenus, où sforbt déploiera son inventaire hôtelier auprès de la base installée d'Agentivity. Enfin, l'« Automatisation de la Récupération de TVA et Facturation AI » est une synergie de coûts, combinant l'IA de sforbt avec le middleware d'Agentivity pour éliminer les erreurs de rapprochement manuel. Ces synergies ont des impacts financiers élevés à moyen terme et une difficulté d'intégration moyenne ou faible pour les revenus additionnels, signalant un fort potentiel de création de valeur post-acquisition.", "Les « Deal Killers » sont des éléments cruciaux à surveiller. Le risque principal est lié à la « Tech-Stack / Intégration Debt ». La différence de taille et d'infrastructure entre sforbt (700 employés) et Agentivity (PME) pourrait créer des frictions importantes pendant l'intégration technique. Un tel décalage pourrait menacer la synergie d'unification du middleware. De plus, le pilotage par 350 ingénieurs chez sforbt pourrait étouffer l'agilité des connecteurs propriétaires d'Agentivity. Cela pourrait ralentir la valeur et réduire l'impact des synergies. Pour mitiger ce risque, une diligence technique approfondie est nécessaire afin de s'assurer de la compatibilité des API et des standards d'environnement ISO 27001. Nous devons évaluer la capacité des équipes à travailler ensemble de manière fluide.", "Nous arrivons à la section sur notre conviction, le cœur de notre recommandation. Notre angle d'investissement principal est le « Logiciel de workflow pour agences de voyages d'affaires (TMC) », qui s'aligne parfaitement avec Agentivity en tant que middleware de données. Le marché du mid-office des TMC entre dans une phase de consolidation critique, le timing est idéal avec la transition forcée vers le NDC qui fragmente les données. Agentivity est une PME profitable et disciplinée ayant construit un véritable fossé opérationnel. Le duo fondateur Riaan van Schoor et David Keene apporte une expertise profonde du secteur. L'alignement avec notre thèse est total, car Agentivity répond directement au besoin de sforbt de capturer le cerveau de la donnée TMC pour neutraliser la fragmentation NDC. Ce sont tous des signaux très forts pour investir. Enfin, mon verdict global est un 'CALL' pour une acquisition stratégique.", "Mon verdict est clair : une acquisition est recommandée pour Agentivity. Le dossier passe tous les points de contrôle de réalité et apporte une valeur stratégique indéniable. L'acquisition permet à sforbt de sécuriser une infrastructure middleware critique, automatisant le mid-office des TMC et réduisant les coûts de transaction de 40% face à l'érosion des marges post-NDC. Le duo fondateur apporte une expertise stratégique indispensable pour piloter cette transition. Les risques identifiés incluent une dépendance critique aux API GDS, le risque d'intégration technique et une concentration des revenus à auditer. L'étape suivante est d'engager immédiatement la due diligence financière et technique, en se concentrant sur la validation des métriques de réduction des coûts chez les clients clés. Les risques sont gérables, et la valeur stratégique des synergies est très forte.", "Passons maintenant aux prévisions financières. La sous-catégorie de la division financière est « Un signal positif pour des multiples attractifs : une discipline financière avérée ». Cette société présente une discipline financière remarquable. L'estimation de l'ARR d'entrée est de 3,1 M€, avec une valorisation à l'entrée de 24,96 M€ basée sur un multiple de 8x l'ARR, ce qui est cohérent avec le marché. Le verdict actuel est « MONITOR » car nous devons d'abord valider les synergies et la structure de l'opération. L'objectif est de s'assurer que les projections financières soutiennent notre thèse d'investissement, et que les synergies identifiées se concrétiseront pour notre portefeuille, créant une valeur additionnelle significative.", "L'estimation de l'ARR d'Agentivity à l'entrée est de 3,1 M€, basée sur une triangulation de plusieurs sources, notamment des extractions de nos modèles LLM et des benchmarks. Le profil d'ACV moyen de 10 417 € par an est aligné sur les standards. Le multiple d'entrée de 8 fois l'ARR est justifié par les comparables sectoriels, bien que le tableau des transactions comparables ne soit pas renseigné directement. Le modèle table sur une croissance annuelle de 25% la première année, avec un déclin progressif les années suivantes. Les marges brutes sont robustes (85%), et l'entreprise opère avec une discipline financière, privilégiant une croissance rentable. Les frais de R&D, Sales & Marketing, ainsi que G&A, sont bien maîtrisés par rapport au chiffre d'affaires, ce qui indique un modèle économique efficace. Ces hypothèses sont cruciales pour nos calculs de ROI.", "Nous avons projeté le compte de résultat sur 5 ans. Les revenus passent de 3,57 M€ en Y1 à 8,75 M€ en Y5, intégrant les synergies potentielles, comme la vente croisée de la marketplace d'hôtels. La marge brute reste solide à 85% sur toute la période. Les OPEX, qui regroupent les dépenses de R&D, Sales, Marketing, Customer Success et G&A, sont maîtrisées. L'EBITDA montre une croissance remarquable, passant de 1,03 M€ en Y1 à 5,43 M€ en Y5, avec une marge qui se renforce de 28,9% à 62%. L'intégration des synergies de réduction de coûts (unification du middleware et automatisation TVA) contribue significativement à l'amélioration de la rentabilité. Enfin, le NOPAT, qui est la base de notre calcul de cash-flow, évolue aussi très favorablement, confirmant la bonne santé financière de la cible.", "Le tableau de Free Cash Flow (FCF) illustre la capacité d'Agentivity à générer de la trésorerie. Partant d'un NOPAT positif, nous ajoutons les amortissements (D&A), qui sont des charges non-cash, et soustrayons les Capex (investissements en R&D et infrastructure) ainsi que le besoin en fonds de roulement (BFR). Le FCF opérationnel passe de 0,42 M€ en Y1 à 3,21 M€ en Y5, avec une marge FCF qui augmente de 11,8% à 36,6%. Le cumul FCF sur 5 ans atteint 8,32 M€. Cette trajectoire positive du FCF est très encourageante, démontrant la capacité de l'entreprise à générer du cash pour de futurs investissements ou remboursements. Cela valide une gestion financière saine et une bonne génération de valeur intrinsèque.", "L'analyse des Unit Economics révèle des métriques SaaS clés. L'ACV moyen est de 10 417 €, avec une marge brute de 82%. Le 'churn' annuel est faible, à 5%, et le 'Net Revenue Retention' (NRR) est excellent à 115%, indiquant une forte expansion interne de la base clients. La 'Lifetime Value' (LTV) nette d'un client est estimée à 196 458 €. Cependant, le ratio LTV/CAC est de 1,75x et le 'Magic Number' est de 0,11. Ces deux métriques sont des points de vigilance, car elles indiquent que l'efficacité du marketing et de l'acquisition client est actuellement sous-optimale pour un modèle SaaS. Bien que la rétention soit forte, l'acquisition de nouveaux clients coûte proportionnellement trop cher. Ceci doit être corrigé pour garantir une croissance rentable à long terme. C'est une priorité pour la due diligence.", "Nous arrivons à l'analyse du ROI. Les synergies sont un élément essentiel de la valeur créée par l'acquisition. La NPV (Valeur Actuelle Nette) des synergies brutes est de 4,82 M€ sur 5 ans après capture et décote de risque. Après déduction des coûts d'intégration de 0,71 M€, la NPV nette des synergies est de 4,11 M€. Cependant, le ROI Synergétique, qui est le rapport entre la NPV nette et le prix d'acquisition (24,96 M€), est de seulement 0,16x, soit 16%. Le délai de recouvrement est de 9,9 ans, ce qui est supérieur à notre objectif habituel de 5 ans. Ces chiffres sont faibles pour un ROI d'acquisition. Le MOIC implicite est de 1,16x et l'IRR implicite est de 3,1%. Ces résultats quantitatifs indiquent que, malgré les synergies, le prix d'acquisition doit être revu à la baisse pour atteindre nos critères de rentabilité. Le verdict est donc que le ROI est insuffisant tel quel.", "La sensibilité de la NPV nette aux taux de capture des synergies et aux risques d'exécution est présentée ici. Notre scénario actuel (capture 70%, risque 15%) donne une NPV nette de 4,11 M€. Cependant, une capture plus agressive (90%) avec le même risque porterait la NPV à 5,49 M€. Inversement, un risque plus élevé (25%) avec une capture à 70% réduirait la NPV à 3,54 M€. Il est clair que l'optimisation de la capture des synergies et la mitigation des risques d'exécution sont cruciales pour améliorer la création de valeur de l'acquisition. Face aux faibles ratios de ROI et de Payback, il nous faut bien analyser ces différentes sensibilités. Cela montre l'importance d'une exécution post-acquisition rigoureuse.", "La structure de l'opération est une acquisition à 100% du capital. Le prix d'acquisition (Entry EV) est de 24,96 M€, auquel s'ajoutent des coûts d'intégration de 0,71 M€, portant l'investissement total à 25,67 M€. Notre modèle projette que l'acquéreur détiendrait 100% du capital. Les autres actionnaires, s'il y en avait, seraient donc sortis du capital. Ce cadre est conforme à une acquisition stratégique. Le modèle Excel interactif est disponible pour tester différentes hypothèses de multiples, de taux de croissance et de scénarios de coûts afin d'affiner encore plus cette valorisation. Cependant, l'analyse pré-modèle montre un ROI synergétique insuffisant au prix actuel, ce qui est un signal d'alerte important.", "Le verdict post-modèle est clair : l'investissement est INCERTAIN. Bien qu'aucun défaut fatal majeur n'ait été détecté dans l'analyse qualitative, la dépendance aux API de tiers représente le risque structurel principal. Surtout, les données financières montrent que le ROI sur acquisition est de 0,16x, ce qui est très insuffisant par rapport à notre hurdle de 0,25x. Le délai de recouvrement de 9,9 ans dépasse également notre maximum de 4 ans. Les scénarios 'Crash Case' (intégration gratuite par les GDS), 'Base Case' (validation des économies de coûts et expansion) et 'Best Case' (expansion vers les connecteurs ERP) sont présentés. Nous devons absolument valider les conditions suspensives, notamment la compatibilité S/4HANA et l'acceptation de l'inventaire hôtelier par les TMC, ainsi que la réduction d'effectifs réelle. Il est impératif de retravailler la structure de prix avant d'aller plus loin. La balle est dans notre camp pour une offre révisée.", "Cette section détaille les sources utilisées pour notre analyse. Les preuves URL sont classées par catégorie de marché (Attractivité, Compétition, Pénétrabilité, Rémunérativité) et par catégorie d'entreprise (Excellence de l'équipe, Opportunité de marché, Innovation produit, Modèle d'affaires, Traction et croissance). Nous avons identifié 9 URL pour les données de marché et 12 pour les données d'entreprise, assurant une complétude de 82/100 et 85/100 respectivement. Bien que robustes pour un premier regard, des données critiques comme l'ARR exact, le churn ou la Cap Table exacte manquent et feront l'objet de la Due Diligence. Cela confirme la nécessité d'approfondir notre analyse sur certains points financiers clés pour valider notre thèse. Tous les détails sont vérifiables dans le mémo complet. Ce travail de sourcing est la base de notre confiance dans les chiffres.", "Pour aller plus loin, veuillez vous référer aux sections de Due Diligence et Portfolio Management dans le document complet. Ces sections détaillent les étapes à suivre pour confirmer nos hypothèses et pour gérer Agentivity si l'acquisition est finalisée. Cela inclut des audits approfondis, des validations de métriques clés et un plan d'intégration détaillé. Cela met en lumière la feuille de route du projet. Merci de votre attention. Nous pouvons maintenant ouvrir la session de questions-réponses. J'espère que cette présentation vous a donné une vision claire de l'opportunité Agentivity, de ses défis et de notre recommandation. Cela démontre notre approche systématique pour chaque investissement.", "Pour conclure cette présentation, je suis convaincu que l'acquisition d'Agentivity, bien que présentant un ROI initialement insuffisant au prix actuel, représente une pièce maîtresse stratégique pour renforcer notre positionnement sur le marché du voyage. Les synergies structurelles, notamment l'unification du middleware et l'intégration de la facturation IA, offrent un potentiel de création de valeur à long terme qui dépasse les chiffres isolés. Nous devons maintenant affiner nos négociations pour atteindre une valorisation plus favorable. Merci pour votre temps et vos questions. La prochaine étape est de réévaluer le prix d'acquisition à la lumière de ces analyses pour aligner le ROI sur nos critères. Notre thèse stratégique est validée, le financier doit s’aligner."]</script>
+
+<deck-stage>
+
+<section class="cover" data-screen-label="01 Couverture">
+  <div class="cover-top">
+    <div class="cover-mark">Mémo d'investissement confidentiel</div>
+    <div class="cover-tag">sforbt · M&amp;A Strategic &nbsp;·&nbsp; investment<br>Janvier 2025</div>
+  </div>
+  <div class="cover-mid">
+    <div class="cover-eyebrow">Cible — Technologie du voyage (Travel Tech) / Gestion des données touristiques</div>
+    <h1>Agentivity</h1>
+    <div class="cover-sub">SaaS d&#39;agrégation et d&#39;automatisation des données de réservations pour TMC internationales gérant plus de 50 000 transactions annuelles.</div>
+  </div>
+  <dl class="cover-bot">
+    <div><dt>Siège</dt><dd>Royaume-Uni</dd></div>
+    <div><dt>Stade</dt><dd>PME</dd></div>
+    <div><dt>Score</dt><dd>84&thinsp;/&thinsp;100</dd></div>
+    <div><dt>Verdict</dt><dd>Conviction</dd></div>
+  </dl>
+</section>
+
+<section data-screen-label="02 Sommaire">
+  <div class="s-head"><div class="brand">Agentivity · Mémo d'investissement</div><div class="meta">Sommaire</div></div>
+  <div class="s-title">Sommaire</div>
+  <div class="s-body" style="margin-top:24px">
+    <div class="three-col" style="gap:80px">
+      <div class="col-block">
+        <h4>I — Marché</h4>
+        <ul><li>Sizing top-down &amp; bottom-up</li><li>Chaîne de valeur</li><li>Tendances et acteurs</li><li>Quadrants concurrence et M&amp;A</li><li>Scénarios stratégiques</li></ul>
+        <h4>II — Société</h4>
+        <ul><li>Proposition de valeur</li><li>Produit et modèle</li><li>Équipe et fondateur</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>III — Évaluation stratégique</h4>
+        <ul><li>Résumé et scores</li><li>Analyse SWOT</li><li>Plan d'action</li></ul>
+        <h4>IV — Thèse sforbt</h4>
+        <ul><li>Synergies — Type C Hybride</li><li>Tableau des synergies</li><li>Deal killers</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>V — Conviction GP</h4>
+        <ul><li>Angle, marché, timing</li><li>Verdict et risk register</li></ul>
+        <h4>VI — Modèle financier</h4>
+        <ul><li>Valorisation triangulée</li><li>P&amp;L et flux de trésorerie</li><li>ROI et verdict quantitatif</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>sforbt · M&amp;A Strategic</span></div><div>02</div></div>
+</section>
+
+<section class="divider" data-screen-label="03 I Marché">
+  <div class="roman">I</div>
+  <div>
+    <div class="div-eyebrow">Première partie</div>
+    <h2>Marché</h2>
+    <div class="div-sub">Un signal positif pour un coup stratégique : une vision à long terme</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="04 Sizing top-down">
+  <div class="s-head"><div class="brand">Agentivity · I — Marché</div><div class="meta">04&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Market sizing — top-down</div>
+  <div class="s-title">Le Marché de l&#39;Automatisation des Données pour TMC</div>
+  <div class="kpi-row">
+    <div class="kpi"><div class="kpi-label">TAM mondial</div><div class="kpi-value">1,5 Md€</div><div class="kpi-note">pour l&#39;automatisation</div></div>
+    <div class="kpi"><div class="kpi-label">SAM Europe</div><div class="kpi-value">n.d.</div><div class="kpi-note">à compléter en DD</div></div>
+    <div class="kpi"><div class="kpi-label">SOM réaliste</div><div class="kpi-value">150 M€</div><div class="kpi-note">à court terme en Europe</div></div>
+    <div class="kpi"><div class="kpi-label">CAGR</div><div class="kpi-value">n.d.</div><div class="kpi-note">à compléter en DD</div></div>
+  </div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <h4>Approche top-down (en entonnoir)</h4>
+        <p>Le marché du middleware de données pour les TMC englobe les solutions SaaS qui permettent l'agrégation, la normalisation et l'automatisation des données de réservations de voyages d'affaires pour les agences gérant des volumes industriels. La rupture structurelle majeure est l'adoption forcée du standard NDC par les compagnies aériennes, ce qui brise le monopole historique des GDS sur la donnée propre. Les acteurs en place ne peuvent pas répondre efficacement car leur modèle économique repose sur la centralisation, alors que le marché exige désormais une agnostidité totale pour agréger des flux disparates. Le vecteur d'attaque est le mid-office : là où l'humain ne peut plus suivre la cadence de réconciliation manuelle sans détruire les marges des agences. La fenêtre est ouverte pour les 24-36 prochains mois, le temps que les TMC européennes achèvent leur transformation numérique avant une vague de consolidation massive. Notre wager : le contenu NDC représentera plus de 50% du volume des TMC d'ici 2026, rendant les solutions d'automatisation des données comme Agentivity non plus optionnelles, mais obligatoires pour l'audit financier.</p>
+        <p style="font-size:17px;color:var(--muted)">Sources : Phocuswright, IATA</p>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-6c1ada8d1b105d94e0ba6d7a9c144c60-ji35fcwx.jpg" alt="Sizing top-down"></div>
+        <figcaption>Fig. 04 — Entonnoir top-down TAM → SAM → SOM</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>04</div></div>
+</section>
+
+<section data-screen-label="05 Sizing bottom-up">
+  <div class="s-head"><div class="brand">Agentivity · I — Marché</div><div class="meta">05&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Market sizing — bottom-up &amp; triangulation</div>
+  <div class="s-title">Marché et positionnement compétitif d’Agentivity</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Approche bottom-up (calculée)</h4>
+        <p>Le marché ciblé est celui de l'automatisation du mid-office des TMC, un créneau critique estimé à plusieurs centaines de millions d'euros en Europe, porté par la complexité croissante du contenu NDC. Le timing est idéal car l'accélération de la fragmentation du contenu aérien (NDC vs GDS) rend l'agrégation de données indispensable. Agentivity se distingue par sa profondeur d'intégration technique et son modèle transactionnel transparent, face à des acteurs comme Cornerstone ou Travelogix. La plateforme possède des vecteurs de croissance clairs vers l'intégration ERP et les services financiers (réconciliation automatique des paiements). Les témoignages de clients majeurs comme dnata Travel et Gray Dawes confirment qu’Agentivity est une solution critique pour le reporting et la conformité. Le moteur de nettoyage de données et les connecteurs propriétaires vers les GDS multiples représentent un actif intangible significatif.</p>
+        <p style="font-size:17px;color:var(--muted)">Sources : Amadeus, Sabre, Travelogix</p>
+        <h4>Triangulation</h4>
+        <p>La tension principale réside dans la pérennité de l'accès aux données sources, mais le besoin des TMC de rester indépendantes des GDS renforce notre pari sur les acteurs middleware neutres. Notre wager : le contenu NDC représentera plus de 50% du volume des TMC d'ici 2026, rendant les solutions d'automatisation des données comme Agentivity non plus optionnelles, mais obligatoires pour l'audit financier. Le signal déterminant lors du premier appel sera la capacité du fondateur à prouver que leur plateforme réduit le temps de traitement administratif de plus de 40% pour une transaction complexe.</p>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-ef2703b75592db3b6197375b918366f6-ltzwzrsi.jpg" alt="Sizing bottom-up"></div>
+        <figcaption>Fig. 05 — Calcul bottom-up &amp; triangulation</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>05</div></div>
+</section>
+
+<section data-screen-label="06 Chaîne de valeur">
+  <div class="s-head"><div class="brand">Agentivity · I — Marché</div><div class="meta">06&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Analyse de la chaîne de valeur</div>
+  <div class="s-title">Focus sur les étapes clés de la chaîne de valeur</div>
+  <div class="s-body">
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>06</div></div>
+</section>
+
+<section data-screen-label="07 Top 3 positions">
+  <div class="s-head"><div class="brand">Agentivity · I — Marché</div><div class="meta">07&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Top 3 positions stratégiques</div>
+  <div class="s-title">Les 3 positions du marché avec le plus grand avantage</div>
+  <div class="s-body">
+    <div class="three-col">
+      <div class="col-block">
+        <h4>#1 — Agrégation de données multi-sources</h4>
+        <div style="font-family:'EB Garamond',serif;font-size:42px;font-weight:500;margin-bottom:12px">9/10</div>
+        <p>Position stratégique cruciale car elle permet d&#39;unifier les informations fragmentées des GDS et des flux NDC, offrant une source de vérité unique et consolidant la capacité à défendre les marges face à la complexité croissante.</p>
+      </div>
+      <div class="col-block">
+        <h4>#2 — Automatisation des contrôles qualité</h4>
+        <div style="font-family:'EB Garamond',serif;font-size:42px;font-weight:500;margin-bottom:12px">8/10</div>
+        <p>Essentiel pour réduire les erreurs coûteuses et les pénalités onéreuses (ADM) pour les TMC, garantissant ainsi la rentabilité et la fiabilité des opérations, ce qui soutient une forte défendabilité pour les deux parties.</p>
+      </div>
+      <div class="col-block">
+        <h4>#3 — Reporting et analytique</h4>
+        <div style="font-family:'EB Garamond',serif;font-size:42px;font-weight:500;margin-bottom:12px">8/10</div>
+        <p>Fournit aux TMC une visibilité indispensable sur leurs opérations et la conformité contractuelle avec leurs clients entreprises, constituant un avantage concurrentiel fort et pérennisant les relations client à long terme.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>07</div></div>
+</section>
+
+<section data-screen-label="08 Tendances">
+  <div class="s-head"><div class="brand">Agentivity · I — Marché</div><div class="meta">08&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Tendances de marché</div>
+  <div class="s-title">Tendances Clés du Secteur</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Catalyseur &amp; trajectoire</h4>
+        <p>Adoption massive du NDC (New Distribution Capability) par les compagnies aériennes, désintégrant les flux de données GDS traditionnels et obligeant les TMC à une agrégation de données multi-sources. L'inflation technologique liée au NDC et la pression sur les marges des agences forcent une automatisation massive des tâches à faible valeur ajoutée.</p>
+        <h4>Chaîne de valeur &amp; points de contrôle</h4>
+        <p>Les connecteurs propriétaires GDS/NDC et le moteur de règles métier d'Agentivity qui unifient les données fragmentées et réduisent les erreurs sont des points de contrôle qui offrent un 'moat' défensif. L'intégration profonde entre données de voyage et flux financiers ERP reste largement sous-exploitée en Europe.</p>
+      </div>
+      <div class="col-block">
+        <h4>Déplacement concurrentiel</h4>
+        <p>La « commoditisation des GDS traditionnels » qui, par leur modèle centralisé, peinent à s'adapter à la fragmentation NDC, est un moteur de déplacement. Cette situation favorise les acteurs middleware neutres comme Agentivity, offrant une flexibilité et une agnostidité que les GDS ne peuvent aujourd'hui fournir. Le passage massif des compagnies aériennes à des modèles de distribution directe crée un chaos de données que seul un middleware peut résoudre.</p>
+        <h4>Économie unitaire &amp; captation</h4>
+        <p>Le modèle transactionnel à 0,12$ par réservation d'Agentivity aligne parfaitement son revenu avec le volume d'activité client. Ce modèle assure une scalabilité intrinsèque et des ratios LTV/CAC sains grâce à une rétention client naturellement élevée dans les systèmes middleware. C'est le standard d'or pour la scalabilité dans ce secteur, avec des multiples qui se maintiennent entre 4x et 7x l'ARR pour les SaaS d'infrastructure de voyage.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>08</div></div>
+</section>
+
+<section data-screen-label="09 Acteurs">
+  <div class="s-head"><div class="brand">Agentivity · I — Marché</div><div class="meta">09&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Acteurs de la chaîne de valeur</div>
+  <div class="s-title">Paysage Concurrentiel et Positionnement</div>
+  <div class="s-body">
+    <table class="fin">
+      <thead><tr><th>Étape</th><th>Acteurs principaux</th><th>Position de Agentivity</th></tr></thead>
+      <tbody>
+        <tr><td><b>Capture de données et GDS</b></td><td>Amadeus, Sabre, Travelport</td><td>Acteurs historiques dominants, mais leur modèle centralisé est en difficulté face au contenu NDC fragmenté. Agentivity se positionne comme un agrégateur neutre et agile, palliant leurs lacunes.</td></tr>
+        <tr><td><b>Automatisation du mid-office</b></td><td>Atriis, Travelogix, Cornerstone</td><td>Challengers offrant des solutions de mid/back-office. Agentivity se distingue par une profondeur d&#39;intégration technique et son modèle transactionnel transparent, ainsi que sa neutralité.</td></tr>
+        <tr><td><b>Reporting et Intégration ERP</b></td><td>SAP, Oracle, International SOS, Crisis24</td><td>Géants des systèmes d&#39;entreprise et solutions spécifiques Duty of Care. Agentivity vise à alimenter leurs modules avec des données propres et consolidées, créant une valeur ajoutée stratégique en transformant des flux GDS et hors-GDS fragmentés en une source de vérité unique.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>09</div></div>
+</section>
+
+<section data-screen-label="10 Magic Quadrant">
+  <div class="s-head"><div class="brand">Agentivity · I — Marché</div><div class="meta">10&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Magic Quadrant — concurrence</div>
+  <div class="s-title">Agentivity dans le Magic Quadrant</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <h4>Leaders</h4><p>GDS (Amadeus, Sabre) : Tentent d&#39;intégrer verticalement le mid-office, mais leur modèle historique et centralisé freine leur agilité face au NDC. Leur position est menacée par la fragmentation des sources de données.</p>
+        <h4>Challengers</h4><p>Atriis, Travelogix : Solutions de mid/back-office bien positionnées, mais Agentivity conserve une avance sur l&#39;automatisation du mid-office pur et une profondeur technique supérieure.</p>
+        <h4>Visionnaires</h4><p>Start-ups NDC Direct Connect : Cherchent à disintermediater et tester de nouveaux modèles de distribution directe, souvent sans la capacité d&#39;agrégation multi-sources d&#39;Agentivity.</p>
+        <h4>Niche players</h4><p>Solutions de réconciliation spécifiques, outils d&#39;intégration légère : Se concentrent sur un seul aspect de l&#39;automatisation, manquant la vue d&#39;ensemble et l&#39;intégration profonde qu&#39;offre Agentivity.</p>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:18px">Agentivity se positionne de manière unique en tant que middleware neutre, capable d'agréger et d'automatiser des flux de données disparates (GDS, NDC, ferroviaire). Cette position lui permet d'unifier des segments de marché variés et d'offrir une solution complète, anticipant les besoins futurs des TMC. Sa capacité à transformer un marché fragmenté en un avantage stratégique en fait un acteur clé.</div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>10</div></div>
+</section>
+
+<section data-screen-label="11 M&A Quadrant">
+  <div class="s-head"><div class="brand">Agentivity · I — Marché</div><div class="meta">11&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">M&amp;A Quadrant — 4 archétypes</div>
+  <div class="s-title">Acteurs M&amp;A Stratégiques : Agentivity</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <h4>1. Les Prédateurs</h4><p>Grandes TMC consolidées (Amex GBT), plateformes de réservation intégrées (TravelPerk, Navan) : Cherchent à verticaliser leur chaîne de valeur pour mieux contrôler l'expérience client et consolider les données. L'automatisation des données Agentivity est un atout pour eux.</p>
+        <h4>2. Les Aspirants</h4><p>Fonds d'investissement spécialisés Travel Tech, plateformes d'intégration API généralistes : Recherchent des solutions d'infrastructure data critiques et des modèles SaaS robustes pour accélérer leur croissance ou pour des opérations 'buy-and-build'.</p>
+        <h4>3. Les Géants</h4><p>GDS (Amadeus, Sabre), Editeurs ERP (SAP, Oracle) : Pourraient chercher à intégrer Agentivity pour combler leurs lacunes face à la fragmentation NDC et renforcer leurs capacités d'intégration financière. Cela leur permettrait de contrer la menace de la désintermédiation.</p>
+        <h4>4. Les Cibles potentielles</h4><p>Agentivity : Une solution SaaS de mid-office de Travel Tech qui agrège et automatise les données de réservations, offrant une technologie mature, une base client fidèle et un modèle économique robuste lié au volume transactionnel. Cible attrayante pour une acquisition stratégique dans le segment de l'infrastructure de données voyages.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>11</div></div>
+</section>
+
+<section data-screen-label="12 Scénarios stratégiques">
+  <div class="s-head"><div class="brand">Agentivity · I — Marché</div><div class="meta">12&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Scénarios stratégiques</div>
+  <div class="s-title">Scénarios stratégiques pour Agentivity</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <table class="fin pnl-dense">
+          <thead><tr><th>Scénario</th><th>Acteurs</th><th>Mécanique</th></tr></thead>
+          <tbody>
+            <tr><td><b>Automatisation du Mid-Office TMC</b></td><td>TMC européennes, Opérateurs de RevOps</td><td>L&#39;entreprise automatise les processus de mid-office pour les Travel Management Companies en Europe, remplaçant la réconciliation manuelle des réservations par un moteur de règles de qualité en temps réel. Cette acquisition comblerait le besoin crucial de réduire les erreurs manuelles et les frais ADM chez les clients d&#39;Agentivity.</td></tr>
+            <tr><td><b>Agrégation NDC et Multi-Source</b></td><td>Agents de voyages, Plateformes de distribution, GDS</td><td>L&#39;entreprise agrège les contenus NDC fragmentés et les sources directes hors-GDS pour les agents de voyages en Europe, résolvant le problème de la multiplicité des sources d&#39;inventaires aériens. Cela permettrait à Agentivity de transformer la menace technologique du NDC en un avantage opérationnel fluide pour ses partenaires.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>12</div></div>
+</section>
+
+<section data-screen-label="13 Synergies acteurs">
+  <div class="s-head"><div class="brand">Agentivity · I — Marché</div><div class="meta">13&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Synergies entre les acteurs — synthèse M&amp;A</div>
+  <div class="s-title">Synergies potentielles entre Agentivity et sforbt</div>
+  <div class="s-body">
+    <table class="fin" style="margin-bottom:24px">
+      <thead><tr><th style="width:32%">Scénario</th><th>Acteurs</th><th class="num">Revenus soft</th><th class="num">Coûts évités</th><th class="num">Synergie totale</th></tr></thead>
+      <tbody>
+        <tr><td>Unification du Middleware de Données GDS/NDC</td><td>sforbt (5Md€ volume hôtelier) &amp; Agentivity</td><td class="num">Faible</td><td class="num">Élevé</td><td class="num"><b>4.11 M€ (NPV Nette)</b></td></tr>
+        <tr><td>Vente Croisée Marketplace d&#39;Hôtels aux TMC Agentivity</td><td>sforbt (inventaire hôtelier) &amp; Clients TMC Agentivity</td><td class="num">Moyen</td><td class="num">Faible</td><td class="num"><b>2.5M€ (revenus incrémentaux Y3)</b></td></tr>
+        <tr><td>Automatisation de la Récupération de TVA et Facturation AI</td><td>sforbt (IA capture facture) &amp; Agentivity</td><td class="num">Faible</td><td class="num">Moyen</td><td class="num"><b>2M€ (économies Y3)</b></td></tr>
+      </tbody>
+    </table>
+    <div class="callout"><b>Lecture.</b> L'acquisition d'Agentivity par sforbt représente un coup stratégique de type 'Infrastructure-Moat'. En intégrant le middleware de données d'Agentivity, sforbt capture le 'cerveau de la donnée' des TMC, neutralisant ainsi la fragmentation du contenu NDC qui est le principal point de douleur du marché. Cette opération transforme sforbt d'un agrégateur d'hôtels en une plateforme d'intelligence transactionnelle indispensable. Le volume de 5Md€ de sforbt rencontre l'automatisation granulaire d'Agentivity pour créer une barrière à l'entrée insurmontable.</div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>13</div></div>
+</section>
+
+<section class="divider" data-screen-label="14 II Société">
+  <div class="roman">II</div>
+  <div>
+    <div class="div-eyebrow">Deuxième partie</div>
+    <h2>Société</h2>
+    <div class="div-sub">Un signal positif pour un coup stratégique : une vision à long terme</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="15 Proposition de valeur">
+  <div class="s-head"><div class="brand">Agentivity · II — Société</div><div class="meta">15&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Proposition de valeur</div>
+  <div class="s-title">Proposition de Valeur d&#39;Agentivity</div>
+  <div class="s-body">
+    <p class="lead">Agentivity permet aux agences de gestion de voyages (TMC) d'opérer de manière aussi efficace que possible en transformant les données de réservation fragmentées en une source unique et intelligente.</p>
+    <div class="two-col" style="margin-top:16px">
+      <div class="col-block">
+        <h4>Profil client idéal (ICP)</h4>
+        <ul><li>TMC internationales gérant plus de 50 000 transactions annuelles.</li><li>Centres d&#39;opérations et RevOps des TMC internationales de taille intermédiaire.</li></ul>
+        <h4>Modèle</h4>
+        <p>B2B SaaS</p>
+      </div>
+      <div class="col-block">
+        <h4>Industrie</h4>
+        <p>Technologie du voyage (Travel Tech) / Gestion des données touristiques</p>
+        <h4>Clients clés</h4>
+        <ul><li>Global Travel Management</li><li>Clique Travel Management</li><li>Sportscorp Travel (Shawn Ashton)</li><li>Beyond Business Travel (Edel Doherty)</li><li>Gray Dawes Travel</li><li>dnata Travel</li><li>XL</li><li>Satguru Travel</li><li>TWF Corporation</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>15</div></div>
+</section>
+
+<section data-screen-label="16 Produit">
+  <div class="s-head"><div class="brand">Agentivity · II — Société</div><div class="meta">16&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Produit</div>
+  <div class="s-title">Le Produit : Middleware de données pour TMC</div>
+  <div class="s-body">
+    <p class="lead">Une plateforme de données centralisée qui agrège les réservations GDS et hors-GDS pour l'automatisation et l'analyse.</p>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Capacités produit</h4>
+        <ul><li>Agrégation automatique de données</li><li>Contrôles de qualité et de règles</li><li>Rapports et analyses</li><li>Suivi des voyageurs en temps réel</li><li>Automatisation des files d'attente GDS</li><li>Gestion des réservations NDC</li><li>Partage de données Duty of Care</li><li>Moteur de nettoyage de données</li><li>Connecteurs propriétaires vers les GDS multiples</li><li>Automatisation des contrôles de qualité avant l'émission des billets</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>Capacités techniques</h4>
+        <ul><li>Intégration directe GDS (Amadeus, Sabre, Travelport)</li><li>Agrégateurs NDC</li><li>Flux de données ferroviaires</li><li>Intégration Duty of Care (International SOS, Crisis24)</li><li>Partenariat Lokulus pour l'engagement client</li><li>Intégrations API directes</li><li>Architecture SaaS conçue pour gérer des volumes massifs de transactions mondiales</li><li>Partenariats avec Magnatech, AirGateway, Amgine, Itvar, Traxo</li><li>Partenariats avec Trees4Travel, Lokulus</li></ul>
+        <h4>Cas d'usage</h4>
+        <ul><li>Réduction des ADM aériens</li><li>Prévention des erreurs de réservation</li><li>Automatisation des tâches administratives pour le personnel TMC</li><li>Reporting client précis</li><li>Automatisation des processus de mid-office et de reporting</li><li>Réduction du temps de traitement administratif de plus de 40% pour une transaction complexe</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>16</div></div>
+</section>
+
+<section data-screen-label="17 Modèle économique">
+  <div class="s-head"><div class="brand">Agentivity · II — Société</div><div class="meta">17&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Modèle économique</div>
+  <div class="s-title">Modèle d&#39;Affaires : SaaS Transactionnel</div>
+  <div class="s-body">
+    <p class="lead">SaaS basé sur le volume de transactions, avec tarification à la réservation et un ROI immédiat pour les clients.</p>
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">Prix par réservation</div><div class="kpi-value">0,12 $ / 0,09 £</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">ROI client</div><div class="kpi-value">Immédiat</div><div class="kpi-note">via réduction erreurs manuelles et pénalités ADM</div></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Flux de revenus</h4>
+        <ul><li>SaaS récurrent</li><li>Facturation au volume</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>Caractéristiques des plans</h4>
+        <ul><li>Accès à la plateforme</li><li>Rapports et intégrations</li><li>Paliers de volume clairs</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>17</div></div>
+</section>
+
+<section data-screen-label="18 Équipe">
+  <div class="s-head"><div class="brand">Agentivity · II — Société</div><div class="meta">18&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Équipe</div>
+  <div class="s-title">Leadership et Organisation</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Direction</h4>
+        <dl class="dl-grid">
+          <dt>CEO / Discovery Lead / Co-founder</dt><dd>Riaan van Schoor</dd>
+          <dt>Chief Revenue Officer et Co-founder / CRO</dt><dd>David Keene (Revenue Engineer avec passé chez Oracle, Salesforce, Google)</dd>
+        </dl>
+      </div>
+      <div class="col-block">
+        <h4>Effectifs estimant (LinkedIn)</h4>
+        <table class="fin">
+          <tbody>
+            <tr class="total"><td>Total</td><td class="num">5001-10000</td></tr>
+          </tbody>
+        </table>
+<p style="font-size:17px;color:var(--muted);margin-top:14px">L&#39;équipe est composée d&#39;experts issus du secteur du voyage, présentant une structure stable et une présence internationale via des distributeurs stratégiques.</p>      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>18</div></div>
+</section>
+
+<section data-screen-label="19 Fondateur">
+  <div class="s-head"><div class="brand">Agentivity · II — Société</div><div class="meta">19&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Fondateur — David Keene</div>
+  <div class="s-title">Co-fondateur et CRO</div>
+  <div class="s-body">
+    <p class="lead">David Keene est un 'Revenue Engineer' chevronné, avec une expérience notable chez Oracle, Salesforce et Google, spécialisé dans le développement et le scaling des fonctions GTM.</p>
+    <div class="two-col" style="margin-top:8px">
+      <div class="col-block">
+        <h4>Parcours</h4>
+        <dl class="dl-grid">
+          <dt>n.d.</dt><dd>Passé chez Oracle, Salesforce, Google</dd>
+          <dt>n.d.</dt><dd>A prouvé sa capacité à scaler des fonctions GTM dans des environnements hyper-croissance (Google Cloud, Speechmatics)</dd>
+          <dt>n.d.</dt><dd>A mené des levées de fonds significatives</dd>
+        </dl>
+      </div>
+      <div class="col-block">
+        <h4>Founder DNA &amp; assessment</h4>
+        <table class="fin">
+          <tbody>
+            <tr ><td>Grit</td><td class="num">0&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Execution</td><td class="num">0&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Discipline</td><td class="num">0&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Vision &amp; Purpose</td><td class="num">0&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Self-Belief</td><td class="num">0&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Leadership</td><td class="num">0&thinsp;/&thinsp;100</td></tr>
+            <tr class="total"><td>total</td><td class="num">0&thinsp;/&thinsp;100</td></tr>
+          </tbody>
+        </table>
+<p style="font-size:17px;color:var(--muted);margin-top:14px"><b>Point aveugle.</b> N.d. (à compléter en DD)</p>      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>19</div></div>
+</section>
+
+<section class="divider" data-screen-label="20 III Évaluation">
+  <div class="roman">III</div>
+  <div>
+    <div class="div-eyebrow">Troisième partie</div>
+    <h2>Évaluation<br>stratégique</h2>
+    <div class="div-sub">Un signal positif pour un coup stratégique : une vision à long terme</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="21 Résumé entreprise">
+  <div class="s-head"><div class="brand">Agentivity · III — Évaluation</div><div class="meta">21&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Résumé de l'entreprise — scores</div>
+  <div class="s-title">Résumé de l&#39;évaluation Agentivity</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <div class="kpi-row" style="grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:18px">
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Excellence équipe</div><div class="kpi-value" style="font-size:32px">88</div></div>
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Opportunité marché</div><div class="kpi-value" style="font-size:32px">84</div></div>
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Innovation produit</div><div class="kpi-value" style="font-size:32px">86</div></div>
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Modèle économique</div><div class="kpi-value" style="font-size:32px">85</div></div>
+        </div>
+        <h4>En bref</h4><p style="font-size:18px">Agentivity est une plateforme de middleware de données qui permet aux Travel Management Companies (TMC) d'automatiser leurs processus de mid-office et de reporting en transformant des flux GDS et hors-GDS fragmentés en une source de vérité unique.</p>
+        <h4>Problème &amp; solution</h4><p style="font-size:18px">La plateforme agit comme une couche d'abstraction de données qui ingère en temps réel tous les flux de réservations, applique des contrôles de qualité automatisés et distribue une donnée propre vers les systèmes de reporting, de facturation et de Duty of Care.</p>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-ef2703b75592db3b6197375b918366f6-ltzwzrsi.jpg" alt="Résumé de l'entreprise"></div>
+        <figcaption>Fig. 21 — Synthèse visuelle de l'entreprise</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>III — Évaluation</span></div><div>21</div></div>
+</section>
+
+<section data-screen-label="22 SWOT">
+  <div class="s-head"><div class="brand">Agentivity · III — Évaluation</div><div class="meta">22&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Analyse SWOT</div>
+  <div class="s-title">Forces · Faiblesses · Opportunités · Menaces</div>
+  <div class="s-body">
+    <div class="swot">
+      <div class="swot-cell"><h4>Forces</h4><ul><li>La plateforme agrège automatiquement les données de réservations GDS et hors-GDS pour les TMC, créant une source unique intelligente.</li><li>Des clients établis comme Global Travel Management, Gray Dawes Travel et dnata Travel valident l'efficacité opérationnelle.</li><li>Le modèle SaaS par volume de transactions à 0,09 £ par réservation aligne les revenus sur l'usage client.</li><li>Les partenariats avec Lokulus et Trees4Travel étendent les capacités en engagement client et gestion carbone.</li><li>L'automatisation réduit les frais ADM aériens et prévient les erreurs de réservation, générant un ROI immédiat.</li></ul></div>
+      <div class="swot-cell"><h4>Faiblesses</h4><ul><li>Fondée en 2009 sans tours de financement publics récents, limitant le capital de croissance.</li><li>Équipe de taille PME dirigée par Riaan van Schoor, manquant d'échelle pour une expansion rapide.</li><li>Prix par transaction potentiellement élevé pour les TMC à très haut volume face à des concurrents.</li><li>Dépendance aux intégrations GDS expose aux évolutions technologiques des fournisseurs.</li><li>Incohérence dans les profils : David Keene lié à Agentive AI, non à cette plateforme voyage.</li></ul></div>
+      <div class="swot-cell"><h4>Opportunités</h4><ul><li>Intégration NDC en croissance alors que les compagnies aériennes migrent des GDS traditionnels.</li><li>Suivi en temps réel des voyageurs et Duty of Care répondent aux préoccupations croissantes de sécurité.</li><li>Distributeurs au Moyen-Orient et en Afrique de l'Est facilitent l'expansion géographique.</li><li>Tendances durabilité boostent la gestion carbone via partenariats comme Trees4Travel.</li><li>Automatisation libère le personnel TMC pour des services à plus haute valeur.</li></ul></div>
+      <div class="swot-cell"><h4>Menaces</h4><ul><li>Concurrence intense en Travel Tech de géants mieux capitalisés.</li><li>Ralentissements économiques réduisent les volumes de voyages et revenus transactionnels.</li><li>Changements réglementaires sur la privacy des données perturbent les intégrations.</li><li>Absence de financement récent freine l'innovation AI pour la qualité des données.</li><li>Commoditisation de l'agrégation de données par de nouveaux entrants low-cost.</li></ul></div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>III — Évaluation</span></div><div>22</div></div>
+</section>
+
+<section data-screen-label="23 Plan d'action">
+  <div class="s-head"><div class="brand">Agentivity · III — Évaluation</div><div class="meta">23&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Plan d'action</div>
+  <div class="s-title">Défense, offensive, kill shot, remédiation.</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Défense</h4><p>La base clients loyaux comme dnata et Gray Dawes crée une sticky position via des rapports personnalisés et automatisations critiques. Les intégrations profondes avec Amadeus et Sabre rendent le churn coûteux. Renforcer les partenariats globaux protège contre les disruptions sectorielles.</p>
+        <h4>Offensive</h4><p>Agentivity domine en unifiant les données fragmentées des TMC via ses intégrations GDS natives et partenariats comme Lokulus, exploitant son expertise voyage de 15 ans pour automatiser les tâches administratives et booster la rentabilité client. Cette approche génère un ROI jour 1, favorisant l'adoption rapide chez les TMC internationales. L'expansion NDC et Duty of Care positionne pour capter la migration aérienne et les besoins sécurité.</p>
+      </div>
+      <div class="col-block">
+        <h4>Kill shot</h4><p>Une récession voyage prolongée coupe les volumes transactionnels de 30-50%, vidant les revenus SaaS sans cash runway. Simultanément, un concurrent comme une GDS native lance une agrégation gratuite, érodant la valeur unique. Sans financement, l'équipe PME ne peut pivoter, menant à l'insolvabilité en 12-18 mois.</p>
+        <h4>Remédiation</h4><p>L'absence de financement récent et l'équipe PME limitent l'échelle ; lever des fonds pour doubler l'effectif en ingénieurs voyage. Clarifier le leadership en alignant profils publics comme Riaan van Schoor sur une vision produit agressive. Investir en R&D AI pour différencier la qualité des données.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>III — Évaluation</span></div><div>23</div></div>
+</section>
+
+<section class="divider" data-screen-label="24 IV Thèse sforbt">
+  <div class="roman">IV</div>
+  <div>
+    <div class="div-eyebrow">Quatrième partie</div>
+    <h2>Thèse sforbt</h2>
+    <div class="div-sub">Un signal positif pour un coup stratégique : une vision à long terme</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="25 Résumé Type C">
+  <div class="s-head"><div class="brand">Agentivity · IV — Thèse sforbt</div><div class="meta">25&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Synergies sforbt — résumé Type B — Strategic</div>
+  <div class="s-title">Thèse d'investissement : Agentivity, le cerveau du mid-office TMC</div>
+  <div class="s-body">
+    <p class="lead">Agentivity permet aux agences de gestion de voyages (TMC) d'opérer de manière aussi efficace que possible en transformant les données de réservation fragmentées en une source unique et intelligente.</p>
+    <div class="two-col" style="margin-top:8px">
+      <div class="col-block">
+        <h4>Les leviers de synergie</h4>
+        <ul><li>Accélération de la roadmap produit : sforbt évite 36 mois de R&D en intégrant les connecteurs GDS natifs (Amadeus/Sabre) d'Agentivity pour le 'mid-office', remplissant ainsi sa faiblesse de 50% de headcount opérationnel.</li><li>Capture du flux de données NDC : Agentivity neutralise le risque de fragmentation du contenu aérien, permettant à sforbt d'offrir une solution de conformité totale aux entreprises de plus de 100M€ de spend.</li><li>Extension du réseau de distribution : L'accès aux clients TMC d'Agentivity (dnata, Global Travel) fournit un canal d'entrée immédiat pour le moteur de réservation d'hôtels de sforbt, compressant le cycle de vente de 18 à 6 mois.</li><li>Optimisation de la marge transactionnelle : L'automatisation des ADM réduit les coûts de support de sforbt tout en justifiant des frais de licence premium grâce au ROI immédiat pour le client.</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>Fragilités principales</h4>
+        <p>La dépendance vis-à-vis des API des GDS constitue une couche de vulnérabilité structurelle si ces derniers modifient leurs conditions d'accès ou tentent d'intégrer verticalement ces fonctions d'automatisation. Une concentration des revenus clients est aussi un risque à auditer.</p>
+        <h4>Fenêtre d'acquisition</h4>
+        <div class="callout" style="margin-top:0">La fenêtre est ouverte pour les 24-36 prochains mois, le temps que les TMC européennes achèvent leur transformation numérique avant une vague de consolidation massive. Le contenu NDC représentera plus de 50% du volume des TMC d'ici 2026.</div>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>IV — Thèse sforbt</span></div><div>25</div></div>
+</section>
+
+<section data-screen-label="26 Synergies détaillées">
+  <div class="s-head"><div class="brand">Agentivity · IV — Thèse sforbt</div><div class="meta">26&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Synergies sforbt — tableau détaillé</div>
+  <div class="s-title">Synergies détaillées entre Agentivity et sforbt</div>
+  <div class="s-body">
+    <table class="fin">
+      <thead><tr><th style="width:36px">#</th><th>Synergie</th><th>Type</th><th>Impact</th><th>Délai</th><th>Difficulté</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Unification du Middleware de Données GDS/NDC</td><td>Structural</td><td>High</td><td>Mid-Term (6-18m)</td><td>Medium</td></tr>
+        <tr><td>2</td><td>Vente Croisée Marketplace d&#39;Hôtels aux TMC Agentivity</td><td>Soft Revenue</td><td>Medium</td><td>Immediate (&lt;6m)</td><td>Low</td></tr>
+        <tr><td>3</td><td>Automatisation de la Récupération de TVA et Facturation AI</td><td>Hard Cost</td><td>Medium</td><td>Mid-Term (6-18m)</td><td>High</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>IV — Thèse sforbt</span></div><div>26</div></div>
+</section>
+
+<section data-screen-label="27 Deal killers">
+  <div class="s-head"><div class="brand">Agentivity · IV — Thèse sforbt</div><div class="meta">27&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Deal killers identifiés</div>
+  <div class="s-title">Deal Killers Identifiés</div>
+  <div class="s-body">
+    <table class="fin">
+      <thead><tr><th>Risque</th><th>Description</th><th>Mitigation</th></tr></thead>
+      <tbody>
+        <tr><td><b>Tech-Stack / Integration Debt</b></td><td>L'écart entre l'infrastructure massive de sforbt (700 employés) et la structure PME d'Agentivity risque de créer une friction d'intégration technique et d'étouffer l'agilité des connecteurs propriétaires d'Agentivity.</td><td>Diligence technique approfondie pour évaluer la complexité des API et des compatibilités ISO 27001. Allouer un budget d’intégration spécifique et prévoir un plan de gestion du changement solide pour les équipes pour que l'agilité ne soit pas impactée.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>IV — Thèse sforbt</span></div><div>27</div></div>
+</section>
+
+<section class="divider" data-screen-label="28 V Conviction">
+  <div class="roman">V</div>
+  <div>
+    <div class="div-eyebrow">Cinquième partie</div>
+    <h2>Conviction GP</h2>
+    <div class="div-sub">Un signal positif pour un coup stratégique : une vision à long terme</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="29 Angle, marché, timing">
+  <div class="s-head"><div class="brand">Agentivity · V — Conviction</div><div class="meta">29&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Angle dominant · marché · timing</div>
+  <div class="s-title">Angle dominant : Logiciel de workflow pour agences de voyages d&#39;affaires (TMC)</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Angle dominant</h4><p>Agentivity est un middleware de données qui automatise le mid-office des TMC, gère les files d'attente GDS et réduit le coût par transaction (0,12$/réservation).</p>
+        <h4>Marché</h4><p>Le marché du mid-office pour les agences de voyages d'affaires entre dans une phase de consolidation critique. La fragmentation des données causée par l'adoption massive du NDC force les TMC à adopter des solutions de normalisation pour maintenir leur survie opérationnelle. Agentivity capte cette opportunité avec une tarification transactionnelle de 0,12$.</p>
+      </div>
+      <div class="col-block">
+        <h4>Timing</h4><p>Nous nous trouvons dans une fenêtre d'opportunité idéale de 24 à 36 mois. Le passage au NDC brise les flux GDS historiques, rendant les outils de gestion de files d'attente PNR traditionnels obsolètes. Si sforbt n'acquiert pas cette capacité maintenant, le risque est de voir les GDS intégrer verticalement ces fonctions gratuitement.</p>
+        <h4>Founder &amp; thesis-fit</h4><p>Le duo fondateur, Riaan van Schoor et David Keene, affiche un profil missionnaire avec une expertise profonde du secteur Travel Tech (ex-Oracle, Salesforce). Leur capacité à transformer une expertise GDS historique en un moteur de règles NDC moderne démontre un fort alignement stratégique et une discipline financière.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>V — Conviction</span></div><div>29</div></div>
+</section>
+
+<section data-screen-label="30 Verdict">
+  <div class="s-head"><div class="brand">Agentivity · V — Conviction</div><div class="meta">30&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Verdict de conviction</div>
+  <div class="s-title">Verdict : Acquisition recommandée (M&amp;A)</div>
+  <div class="s-body">
+    <div style="margin-bottom:36px">
+      <div class="verdict"><span class="v-tag">Verdict GP</span><span class="v-text">Conviction · 84/100</span></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Synthèse</h4><p>L'acquisition d'Agentivity permet à sforbt de sécuriser une infrastructure middleware critique qui automatise le mid-office des TMC, réduisant les coûts de transaction de 40% face à l'érosion des marges post-NDC. Le duo fondateur apporte une expertise stratégique indispensable pour piloter la transition NDC et ERP au sein du groupe. L'étape suivante est d'engager immédiatement la due diligence financière et technique en se concentrant sur la validation des métriques de réduction de coûts chez les clients clés. Les synergies sont réelles, mais le prix doit être ajusté pour un ROI satisfaisant.</p>
+      </div>
+      <div class="col-block">
+        <h4>Risk register</h4>
+        <ul><li>Dépendance critique aux API GDS : Une modification des conditions d'accès par Amadeus ou Sabre pourrait éroder la valeur du middleware en moins de 24 mois.</li><li>Risque d'intégration technique : L'écart de taille entre sforbt (700 employés) et la structure PME d'Agentivity peut créer des frictions et freiner l'agilité des connecteurs propriétaires.</li><li>Concentration des revenus : Bien que non confirmée >30%, la dépendance à quelques grands comptes TMC nécessite un audit détaillé de l'ARR par client.</li><li>Profil de taille de l'acquéreur : L'intégration d'une PME profitable par un acteur comme sforbt (€25M ARR, 700 employés) nécessite une structure de marque neutre pour ne pas effrayer les TMC clientes d'Agentivity.</li><li>ROI insuffisant au prix actuel : Les métriques de ROI et de Payback sont en dessous de nos seuils et nécessitent un ajustement de la valorisation.</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>V — Conviction</span></div><div>30</div></div>
+</section>
+
+<section class="divider" data-screen-label="31 VI Modèle financier">
+  <div class="roman">VI</div>
+  <div>
+    <div class="div-eyebrow">Sixième partie</div>
+    <h2>Modèle<br>financier</h2>
+    <div class="div-sub">Un signal positif pour un coup stratégique : une vision à long terme</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="32 Valorisation">
+  <div class="s-head"><div class="brand">Agentivity · VI — Modèle financier</div><div class="meta">32&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Valorisation triangulée</div>
+  <div class="s-title">Valorisation et Métriques Clés</div>
+  <div class="s-body">
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">ARR d&#39;entrée estimé</div><div class="kpi-value">3,1 M€</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">Entry EV — Prix d&#39;acquisition</div><div class="kpi-value">24,96 M€</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">Multiple d&#39;entrée (x ARR)</div><div class="kpi-value">8,0x</div><div class="kpi-note"></div></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Comparables (multiples de transaction)</h4>
+        <table class="fin">
+          <thead><tr><th>Transaction</th><th class="num">Multiple</th></tr></thead>
+          <tbody>
+            <tr><td>Aucune transaction comparable extraite par Exa</td><td class="num">N.d.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="col-block">
+        <h4>DCF — hypothèses</h4>
+        <p>La valeur d'entrée de 24.96 M€ se situe en dessous de la médiane triangulée de 30.5 M€, avec un écart favorable de 18.2%. Cela suggère que le prix payé offre une marge de sécurité financière intéressante au regard des méthodes de valorisation intrinsèques et de marché à l'horizon Y3, mais les metrics de ROI doivent être réévaluées.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>VI — Modèle financier</span></div><div>32</div></div>
+</section>
+
+<section data-screen-label="33 P&L et trésorerie">
+  <div class="s-head"><div class="brand">Agentivity · VI — Modèle financier</div><div class="meta">33&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">P&amp;L sur 5 ans &amp; flux de trésorerie</div>
+  <div class="s-title">Compte de Résultat Prévisionnel</div>
+  <div class="s-body">
+    <table class="fin pnl-dense">
+      <thead>
+        <tr><th>Indicateur</th><th class="num">Y1</th><th class="num">Y2</th><th class="num">Y3</th><th class="num">Y4</th><th class="num">Y5</th></tr>
+      </thead>
+      <tbody>
+        <tr ><td>Revenue Total Post-Synergies (€M)</td><td class="num">3.57</td><td class="num">4.74</td><td class="num">6.17</td><td class="num">7.40</td><td class="num">8.75</td></tr>
+        <tr ><td>Gross Profit (€M)</td><td class="num">3.03</td><td class="num">4.03</td><td class="num">5.24</td><td class="num">6.29</td><td class="num">7.44</td></tr>
+        <tr ><td>Croissance YoY (Post-Synergies)</td><td class="num">25.0%</td><td class="num">32.8%</td><td class="num">30.2%</td><td class="num">20.0%</td><td class="num">18.2%</td></tr>
+        <tr ><td>Marge brute (%)</td><td class="num">85.0%</td><td class="num">85.0%</td><td class="num">85.0%</td><td class="num">85.0%</td><td class="num">85.0%</td></tr>
+        <tr ><td>Total OPEX Post-Synergies (€M)</td><td class="num">2.00</td><td class="num">2.38</td><td class="num">2.36</td><td class="num">2.17</td><td class="num">2.01</td></tr>
+        <tr class="total"><td>EBITDA (€M)</td><td class="num">1.03</td><td class="num">1.65</td><td class="num">2.88</td><td class="num">4.13</td><td class="num">5.43</td></tr>
+        <tr ><td>Free Cash Flow Opérationnel (€M)</td><td class="num">0.42</td><td class="num">0.77</td><td class="num">1.55</td><td class="num">2.37</td><td class="num">3.21</td></tr>
+      </tbody>
+    </table>
+<p style="font-size:16px;color:var(--muted);margin-top:14px">Le modèle prévoit une croissance robuste du chiffre d'affaires, couplée à une expansion des marges opérationnelles. Le point d'inflexion de l'EBITDA montre une amélioration de l'efficacité opérationnelle, soutenue par une maîtrise des coûts de R&D et S&M par rapport à la croissance du revenu. L'intégration des synergies est cruciale pour ces résultats.</p>  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>VI — Modèle financier</span></div><div>33</div></div>
+</section>
+
+<section data-screen-label="34 ROI et verdict">
+  <div class="s-head"><div class="brand">Agentivity · VI — Modèle financier</div><div class="meta">34&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">ROI et verdict quantitatif</div>
+  <div class="s-title">Analyse ROI : Rendement et Délai de Recouvrement</div>
+  <div class="s-body">
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">Investissement Total (€M)</div><div class="kpi-value">25.67 M€</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">NPV Nette des Synergies (€M)</div><div class="kpi-value">4.11 M€</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">ROI Synergétique</div><div class="kpi-value">0.16x</div><div class="kpi-note">vs objectif 0.25x</div></div>
+      <div class="kpi"><div class="kpi-label">Délai de Recouvrement (ans)</div><div class="kpi-value">9.9 ans</div><div class="kpi-note">vs objectif 4.0 ans</div></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Lecture du retour</h4><p>La NPV nette des synergies est d'environ 4,11 M€. Cependant, le ROI Synergétique (0,16x) et le délai de recouvrement (9,9 ans) sont en deçà de nos seuils cibles de 0,25x et 4,0 ans respectivement. La transaction n'est pas recommandée en l'état car le retour est insuffisant au prix actuel, et le délai dépasse la durée maximale tolérée par le fonds.</p>
+      </div>
+      <div class="col-block">
+        <h4>Verdict quantitatif</h4>
+        <div class="verdict" style="margin-bottom:18px"><span class="v-tag">Post-model</span><span class="v-text">ROI insuffisant</span></div>
+        <p>✗ INVALIDATED - Le dossier présente un défaut rédhibitoire où le ROI synergétique est trop faible et le délai de recouvrement est trop long. L'acquisition n'est pas recommandée en l'état sans une forte révision du prix.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>VI — Modèle financier</span></div><div>34</div></div>
+</section>
+
+<section class="closing" data-screen-label="35 Fin">
+  <div>
+    <div class="closing-mark">§</div>
+    <h2>Agentivity : un signal positif pour un coup stratégique, à condition de revoir la valorisation. <br>Le cerveau de la donnée pour le futur du voyage.</h2>
+  </div>
+  <div class="closing-sig">
+    <div class="cover-tag" style="text-align:left">sforbt · M&amp;A Strategic · investment<br>Janvier 2025</div>
+    <div class="cover-tag">Mémo confidentiel — Agentivity<br>Diffusion restreinte</div>
+  </div>
+</section>
+
+</deck-stage>
+</body>
+</html>
