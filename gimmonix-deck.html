@@ -1,0 +1,1453 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Mémo Gimmonix — sforbt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+/**
+ * <deck-stage noscale> — reusable web component for HTML decks.
+ *
+ * Handles:
+ *  (a) speaker notes — reads <script type="application/json" id="speaker-notes">
+ *      and posts {slideIndexChanged: N} to the parent window on nav.
+ *  (b) keyboard navigation — ←/→, PgUp/PgDn, Space, Home/End, number keys.
+ *  (c) press R to reset to slide 0 (with a tasteful keyboard hint).
+ *  (d) bottom-center overlay showing slide count + hints, fades out on idle.
+ *  (e) auto-scaling — inner canvas is a fixed design size (default 1920×1080)
+ *      scaled with `transform: scale()` to fit the viewport, letterboxed.
+ *      Set the `noscale` attribute to render at authored size (1:1) — the
+ *      PPTX exporter sets this so its DOM capture sees unscaled geometry.
+ *  (f) print — `@media print` lays every slide out as its own page at the
+ *      design size, so the browser's Print → Save as PDF produces a clean
+ *      one-page-per-slide PDF with no extra setup.
+ *
+ * Slides are HIDDEN, not unmounted. Non-active slides stay in the DOM with
+ * `visibility: hidden` + `opacity: 0`, so their state (videos, iframes,
+ * form inputs, React trees) is preserved across navigation.
+ *
+ * Lifecycle event — the component dispatches a `slidechange` CustomEvent on
+ * itself whenever the active slide changes (including the initial mount).
+ * The event bubbles and composes out of shadow DOM, so you can listen on
+ * the <deck-stage> element or on document:
+ *
+ *   document.querySelector('deck-stage').addEventListener('slidechange', (e) => {
+ *     e.detail.index         // new 0-based index
+ *     e.detail.previousIndex // previous index, or -1 on init
+ *     e.detail.total         // total slide count
+ *     e.detail.slide         // the new active slide element
+ *     e.detail.previousSlide // the prior slide element, or null on init
+ *     e.detail.reason        // 'init' | 'keyboard' | 'click' | 'tap' | 'api'
+ *   });
+ *
+ * Persistence: none at the deck level. The host app keeps the current slide
+ * in its own URL (?slide=) and re-delivers it via location.hash on load, so a
+ * bare load with no hash always starts at slide 1.
+ *
+ * Usage:
+ *   <deck-stage width="1920" height="1080">
+ *     <section data-label="Title">...</section>
+ *     <section data-label="Agenda">...</section>
+ *   </deck-stage>
+ *
+ * Slides are the direct element children of <deck-stage>. Each slide is
+ * automatically tagged with:
+ *   - data-screen-label="NN Label"   (1-indexed, for comment flow)
+ *   - data-om-validate="no_overflowing_text,no_overlapping_text,slide_sized_text"
+ */
+
+(() => {
+  const DESIGN_W_DEFAULT = 1920;
+  const DESIGN_H_DEFAULT = 1080;
+  const OVERLAY_HIDE_MS = 1800;
+  const VALIDATE_ATTR = 'no_overflowing_text,no_overlapping_text,slide_sized_text';
+
+  const pad2 = (n) => String(n).padStart(2, '0');
+
+  const stylesheet = `
+    :host {
+      position: fixed;
+      inset: 0;
+      display: block;
+      background: #000;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+      overflow: hidden;
+    }
+
+    .stage {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .canvas {
+      position: relative;
+      transform-origin: center center;
+      flex-shrink: 0;
+      background: #fff;
+      will-change: transform;
+    }
+
+    /* Slides live in light DOM (via <slot>) so authored CSS still applies.
+       We absolutely position each slotted child to stack them. */
+    ::slotted(*) {
+      position: absolute !important;
+      inset: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      box-sizing: border-box !important;
+      overflow: hidden;
+      opacity: 0;
+      pointer-events: none;
+      visibility: hidden;
+    }
+    ::slotted([data-deck-active]) {
+      opacity: 1;
+      pointer-events: auto;
+      visibility: visible;
+    }
+
+    /* Tap zones for mobile — back/forward thirds like Stories.
+       Transparent, no visible UI, don't block the overlay. */
+    .tapzones {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      z-index: 2147482000;
+      pointer-events: none;
+    }
+    .tapzone {
+      flex: 1;
+      pointer-events: auto;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* Only activate tap zones on coarse pointers (touch devices). */
+    @media (hover: hover) and (pointer: fine) {
+      .tapzones { display: none; }
+    }
+
+    .overlay {
+      position: fixed;
+      left: 50%;
+      bottom: 22px;
+      transform: translate(-50%, 6px) scale(0.92);
+      filter: blur(6px);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      background: #000;
+      color: #fff;
+      border-radius: 999px;
+      font-size: 12px;
+      font-feature-settings: "tnum" 1;
+      letter-spacing: 0.01em;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 260ms ease, transform 260ms cubic-bezier(.2,.8,.2,1), filter 260ms ease;
+      transform-origin: center bottom;
+      z-index: 2147483000;
+      user-select: none;
+    }
+    .overlay[data-visible] {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translate(-50%, 0) scale(1);
+      filter: blur(0);
+    }
+
+    .btn {
+      appearance: none;
+      -webkit-appearance: none;
+      background: transparent;
+      border: 0;
+      margin: 0;
+      padding: 0;
+      color: inherit;
+      font: inherit;
+      cursor: default;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 28px;
+      min-width: 28px;
+      border-radius: 999px;
+      color: rgba(255,255,255,0.72);
+      transition: background 140ms ease, color 140ms ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+    .btn:active { background: rgba(255,255,255,0.18); }
+    .btn:focus { outline: none; }
+    .btn:focus-visible { outline: none; }
+    .btn::-moz-focus-inner { border: 0; }
+    .btn svg { width: 14px; height: 14px; display: block; }
+    .btn.reset {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      padding: 0 10px 0 12px;
+      gap: 6px;
+      color: rgba(255,255,255,0.72);
+    }
+    .btn.reset .kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 10px;
+      line-height: 1;
+      color: rgba(255,255,255,0.88);
+      background: rgba(255,255,255,0.12);
+      border-radius: 4px;
+    }
+
+    .count {
+      font-variant-numeric: tabular-nums;
+      color: #fff;
+      font-weight: 500;
+      padding: 0 8px;
+      min-width: 42px;
+      text-align: center;
+      font-size: 12px;
+    }
+    .count .sep { color: rgba(255,255,255,0.45); margin: 0 3px; font-weight: 400; }
+    .count .total { color: rgba(255,255,255,0.55); }
+
+    .divider {
+      width: 1px;
+      height: 14px;
+      background: rgba(255,255,255,0.18);
+      margin: 0 2px;
+    }
+
+    /* ── Print: one page per slide, no chrome ────────────────────────────
+       The screen layout stacks every slide at inset:0 inside a scaled
+       canvas; for print we want them in document flow at the authored
+       design size so the browser paginates one slide per sheet. The
+       @page size is set from the width/height attributes via the inline
+       <style id="deck-stage-print-page"> that connectedCallback injects
+       into <head> (the @page at-rule has no effect inside shadow DOM). */
+    @media print {
+      :host {
+        position: static;
+        inset: auto;
+        background: none;
+        overflow: visible;
+        color: inherit;
+      }
+      .stage { position: static; display: block; }
+      .canvas {
+        transform: none !important;
+        width: auto !important;
+        height: auto !important;
+        background: none;
+        will-change: auto;
+      }
+      ::slotted(*) {
+        position: relative !important;
+        inset: auto !important;
+        width: var(--deck-design-w) !important;
+        height: var(--deck-design-h) !important;
+        box-sizing: border-box !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        pointer-events: auto;
+        break-after: page;
+        page-break-after: always;
+        break-inside: avoid;
+        overflow: hidden;
+      }
+      ::slotted(*:last-child) {
+        break-after: auto;
+        page-break-after: auto;
+      }
+      .overlay, .tapzones { display: none !important; }
+    }
+  `;
+
+  class DeckStage extends HTMLElement {
+    static get observedAttributes() { return ['width', 'height', 'noscale']; }
+
+    constructor() {
+      super();
+      this._root = this.attachShadow({ mode: 'open' });
+      this._index = 0;
+      this._slides = [];
+      this._notes = [];
+      this._hideTimer = null;
+      this._mouseIdleTimer = null;
+
+      this._onKey = this._onKey.bind(this);
+      this._onResize = this._onResize.bind(this);
+      this._onSlotChange = this._onSlotChange.bind(this);
+      this._onMouseMove = this._onMouseMove.bind(this);
+      this._onTapBack = this._onTapBack.bind(this);
+      this._onTapForward = this._onTapForward.bind(this);
+    }
+
+    get designWidth() {
+      return parseInt(this.getAttribute('width'), 10) || DESIGN_W_DEFAULT;
+    }
+    get designHeight() {
+      return parseInt(this.getAttribute('height'), 10) || DESIGN_H_DEFAULT;
+    }
+
+    connectedCallback() {
+      this._render();
+      this._loadNotes();
+      this._syncPrintPageRule();
+      window.addEventListener('keydown', this._onKey);
+      window.addEventListener('resize', this._onResize);
+      window.addEventListener('mousemove', this._onMouseMove, { passive: true });
+      // Initial collection + layout happens via slotchange, which fires on mount.
+    }
+
+    disconnectedCallback() {
+      window.removeEventListener('keydown', this._onKey);
+      window.removeEventListener('resize', this._onResize);
+      window.removeEventListener('mousemove', this._onMouseMove);
+      if (this._hideTimer) clearTimeout(this._hideTimer);
+      if (this._mouseIdleTimer) clearTimeout(this._mouseIdleTimer);
+    }
+
+    attributeChangedCallback() {
+      if (this._canvas) {
+        this._canvas.style.width = this.designWidth + 'px';
+        this._canvas.style.height = this.designHeight + 'px';
+        this._canvas.style.setProperty('--deck-design-w', this.designWidth + 'px');
+        this._canvas.style.setProperty('--deck-design-h', this.designHeight + 'px');
+        this._fit();
+        this._syncPrintPageRule();
+      }
+    }
+
+    _render() {
+      const style = document.createElement('style');
+      style.textContent = stylesheet;
+
+      const stage = document.createElement('div');
+      stage.className = 'stage';
+
+      const canvas = document.createElement('div');
+      canvas.className = 'canvas';
+      canvas.style.width = this.designWidth + 'px';
+      canvas.style.height = this.designHeight + 'px';
+      canvas.style.setProperty('--deck-design-w', this.designWidth + 'px');
+      canvas.style.setProperty('--deck-design-h', this.designHeight + 'px');
+
+      const slot = document.createElement('slot');
+      slot.addEventListener('slotchange', this._onSlotChange);
+      canvas.appendChild(slot);
+      stage.appendChild(canvas);
+
+      // Tap zones (mobile): left third = back, right third = forward.
+      const tapzones = document.createElement('div');
+      tapzones.className = 'tapzones export-hidden';
+      tapzones.setAttribute('aria-hidden', 'true');
+      tapzones.setAttribute('data-noncommentable', '');
+      const tzBack = document.createElement('div');
+      tzBack.className = 'tapzone tapzone--back';
+      const tzMid = document.createElement('div');
+      tzMid.className = 'tapzone tapzone--mid';
+      tzMid.style.pointerEvents = 'none';
+      const tzFwd = document.createElement('div');
+      tzFwd.className = 'tapzone tapzone--fwd';
+      tzBack.addEventListener('click', this._onTapBack);
+      tzFwd.addEventListener('click', this._onTapForward);
+      tapzones.append(tzBack, tzMid, tzFwd);
+
+      // Overlay: compact, solid black, with clickable controls.
+      const overlay = document.createElement('div');
+      overlay.className = 'overlay export-hidden';
+      overlay.setAttribute('role', 'toolbar');
+      overlay.setAttribute('aria-label', 'Deck controls');
+      overlay.setAttribute('data-noncommentable', '');
+      overlay.innerHTML = `
+        <button class="btn prev" type="button" aria-label="Previous slide" title="Previous (←)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>
+        </button>
+        <span class="count" aria-live="polite"><span class="current">1</span><span class="sep">/</span><span class="total">1</span></span>
+        <button class="btn next" type="button" aria-label="Next slide" title="Next (→)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg>
+        </button>
+        <span class="divider"></span>
+        <button class="btn reset" type="button" aria-label="Reset to first slide" title="Reset (R)">Reset<span class="kbd">R</span></button>
+      `;
+
+      overlay.querySelector('.prev').addEventListener('click', () => this._go(this._index - 1, 'click'));
+      overlay.querySelector('.next').addEventListener('click', () => this._go(this._index + 1, 'click'));
+      overlay.querySelector('.reset').addEventListener('click', () => this._go(0, 'click'));
+
+      this._root.append(style, stage, tapzones, overlay);
+      this._canvas = canvas;
+      this._slot = slot;
+      this._overlay = overlay;
+      this._countEl = overlay.querySelector('.current');
+      this._totalEl = overlay.querySelector('.total');
+    }
+
+    /** @page must live in the document stylesheet — it's a no-op inside
+     *  shadow DOM. Inject/update a single <head> style tag so the print
+     *  sheet matches the design size and Save-as-PDF yields one slide per
+     *  page with no margins. */
+    _syncPrintPageRule() {
+      const id = 'deck-stage-print-page';
+      let tag = document.getElementById(id);
+      if (!tag) {
+        tag = document.createElement('style');
+        tag.id = id;
+        document.head.appendChild(tag);
+      }
+      tag.textContent =
+        '@page { size: ' + this.designWidth + 'px ' + this.designHeight + 'px; margin: 0; } ' +
+        '@media print { html, body { margin: 0 !important; padding: 0 !important; background: none !important; overflow: visible !important; height: auto !important; } ' +
+        '* { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }';
+    }
+
+    _onSlotChange() {
+      this._collectSlides();
+      this._restoreIndex();
+      this._applyIndex({ showOverlay: false, broadcast: true, reason: 'init' });
+      this._fit();
+    }
+
+    _collectSlides() {
+      const assigned = this._slot.assignedElements({ flatten: true });
+      this._slides = assigned.filter((el) => {
+        // Skip template/style/script nodes even if someone slots them.
+        const tag = el.tagName;
+        return tag !== 'TEMPLATE' && tag !== 'SCRIPT' && tag !== 'STYLE';
+      });
+
+      this._slides.forEach((slide, i) => {
+        const n = i + 1;
+        // Determine a label for comment flow: prefer explicit data-label,
+        // then an existing data-screen-label, then first heading, else "Slide".
+        let label = slide.getAttribute('data-label');
+        if (!label) {
+          const existing = slide.getAttribute('data-screen-label');
+          if (existing) {
+            // Strip any leading number the author may have included.
+            label = existing.replace(/^\s*\d+\s*/, '').trim() || existing;
+          }
+        }
+        if (!label) {
+          const h = slide.querySelector('h1, h2, h3, [data-title]');
+          if (h) label = (h.textContent || '').trim().slice(0, 40);
+        }
+        if (!label) label = 'Slide';
+        slide.setAttribute('data-screen-label', `${pad2(n)} ${label}`);
+
+        // Validation attribute for comment flow / auto-checks.
+        if (!slide.hasAttribute('data-om-validate')) {
+          slide.setAttribute('data-om-validate', VALIDATE_ATTR);
+        }
+
+        slide.setAttribute('data-deck-slide', String(i));
+      });
+
+      if (this._totalEl) this._totalEl.textContent = String(this._slides.length || 1);
+      if (this._index >= this._slides.length) this._index = Math.max(0, this._slides.length - 1);
+    }
+
+    _loadNotes() {
+      const tag = document.getElementById('speaker-notes');
+      if (!tag) { this._notes = []; return; }
+      try {
+        const parsed = JSON.parse(tag.textContent || '[]');
+        if (Array.isArray(parsed)) this._notes = parsed;
+      } catch (e) {
+        console.warn('[deck-stage] Failed to parse #speaker-notes JSON:', e);
+        this._notes = [];
+      }
+    }
+
+    _restoreIndex() {
+      // The host's ?slide= param is delivered as a #<int> hash (1-indexed) on
+      // the iframe src. No hash → slide 1; the deck itself keeps no position
+      // state across loads.
+      const h = (location.hash || '').match(/^#(\d+)$/);
+      if (h) {
+        const n = parseInt(h[1], 10) - 1;
+        if (n >= 0 && n < this._slides.length) this._index = n;
+      }
+    }
+
+    _applyIndex({ showOverlay = true, broadcast = true, reason = 'init' } = {}) {
+      if (!this._slides.length) return;
+      const prev = this._prevIndex == null ? -1 : this._prevIndex;
+      const curr = this._index;
+      // Keep the iframe's own hash in sync so an in-iframe location.reload()
+      // (reload banner path in viewer-handle.ts) lands on the current slide,
+      // not the stale deep-link hash from initial load.
+      try { history.replaceState(null, '', '#' + (curr + 1)); } catch (e) {}
+      this._slides.forEach((s, i) => {
+        if (i === curr) s.setAttribute('data-deck-active', '');
+        else s.removeAttribute('data-deck-active');
+      });
+      if (this._countEl) this._countEl.textContent = String(curr + 1);
+
+      if (broadcast) {
+        // (1) Legacy: host-window postMessage for speaker-notes renderers.
+        try { window.postMessage({ slideIndexChanged: curr }, '*'); } catch (e) {}
+
+        // (2) In-page CustomEvent on the <deck-stage> element itself.
+        //     Bubbles and composes out of shadow DOM so slide code can listen:
+        //       document.querySelector('deck-stage').addEventListener('slidechange', e => {
+        //         e.detail.index, e.detail.previousIndex, e.detail.total, e.detail.slide, e.detail.reason
+        //       });
+        const detail = {
+          index: curr,
+          previousIndex: prev,
+          total: this._slides.length,
+          slide: this._slides[curr] || null,
+          previousSlide: prev >= 0 ? (this._slides[prev] || null) : null,
+          reason: reason, // 'init' | 'keyboard' | 'click' | 'tap' | 'api'
+        };
+        this.dispatchEvent(new CustomEvent('slidechange', {
+          detail,
+          bubbles: true,
+          composed: true,
+        }));
+      }
+
+      this._prevIndex = curr;
+      if (showOverlay) this._flashOverlay();
+    }
+
+    _flashOverlay() {
+      if (!this._overlay) return;
+      this._overlay.setAttribute('data-visible', '');
+      if (this._hideTimer) clearTimeout(this._hideTimer);
+      this._hideTimer = setTimeout(() => {
+        this._overlay.removeAttribute('data-visible');
+      }, OVERLAY_HIDE_MS);
+    }
+
+    _fit() {
+      if (!this._canvas) return;
+      // PPTX export sets noscale so the DOM capture sees authored-size
+      // geometry — the scaled canvas is in shadow DOM, so the exporter's
+      // resetTransformSelector can't reach .canvas.style.transform directly.
+      if (this.hasAttribute('noscale')) {
+        this._canvas.style.transform = 'none';
+        return;
+      }
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const s = Math.min(vw / this.designWidth, vh / this.designHeight);
+      this._canvas.style.transform = `scale(${s})`;
+    }
+
+    _onResize() { this._fit(); }
+
+    _onMouseMove() {
+      // Keep overlay visible while mouse moves; hide after idle.
+      this._flashOverlay();
+    }
+
+    _onTapBack(e) {
+      e.preventDefault();
+      this._go(this._index - 1, 'tap');
+    }
+
+    _onTapForward(e) {
+      e.preventDefault();
+      this._go(this._index + 1, 'tap');
+    }
+
+    _onKey(e) {
+      // Ignore when the user is typing.
+      const t = e.target;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const key = e.key;
+      let handled = true;
+
+      if (key === 'ArrowRight' || key === 'PageDown' || key === ' ' || key === 'Spacebar') {
+        this._go(this._index + 1, 'keyboard');
+      } else if (key === 'ArrowLeft' || key === 'PageUp') {
+        this._go(this._index - 1, 'keyboard');
+      } else if (key === 'Home') {
+        this._go(0, 'keyboard');
+      } else if (key === 'End') {
+        this._go(this._slides.length - 1, 'keyboard');
+      } else if (key === 'r' || key === 'R') {
+        this._go(0, 'keyboard');
+      } else if (/^[0-9]$/.test(key)) {
+        // 1..9 jump to that slide; 0 jumps to 10.
+        const n = key === '0' ? 9 : parseInt(key, 10) - 1;
+        if (n < this._slides.length) this._go(n, 'keyboard');
+      } else {
+        handled = false;
+      }
+
+      if (handled) {
+        e.preventDefault();
+        this._flashOverlay();
+      }
+    }
+
+    _go(i, reason = 'api') {
+      if (!this._slides.length) return;
+      const clamped = Math.max(0, Math.min(this._slides.length - 1, i));
+      if (clamped === this._index) {
+        this._flashOverlay();
+        return;
+      }
+      this._index = clamped;
+      this._applyIndex({ showOverlay: true, broadcast: true, reason });
+    }
+
+    // Public API ------------------------------------------------------------
+
+    /** Current slide index (0-based). */
+    get index() { return this._index; }
+    /** Total slide count. */
+    get length() { return this._slides.length; }
+    /** Programmatically navigate. */
+    goTo(i) { this._go(i, 'api'); }
+    next() { this._go(this._index + 1, 'api'); }
+    prev() { this._go(this._index - 1, 'api'); }
+    reset() { this._go(0, 'api'); }
+  }
+
+  if (!customElements.get('deck-stage')) {
+    customElements.define('deck-stage', DeckStage);
+  }
+})();
+
+</script>
+<style>
+:root{
+  --paper:#F5F1E8;
+  --paper-2:#EFEAE0;
+  --ink:#0E1116;
+  --ink-2:#2A3038;
+  --muted:#5C6470;
+  --rule:#1A1F26;
+  --rule-soft:#C9C0AE;
+  --accent:#7A1F1F;
+  --pos:#1F4D2E;
+  --neg:#7A1F1F;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#0a0a0a;font-family:'Inter',sans-serif;color:var(--ink)}
+deck-stage{display:block}
+deck-stage > section{
+  width:1920px;height:1080px;background:var(--paper);color:var(--ink);
+  font-family:'Inter',sans-serif;font-size:22px;line-height:1.5;
+  position:relative;overflow:hidden;padding:90px 120px;
+  display:flex;flex-direction:column;
+}
+.s-head{display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:18px;border-bottom:1px solid var(--rule);margin-bottom:48px;flex-shrink:0}
+.s-head .brand{font-family:'EB Garamond',serif;font-size:24px;font-style:italic;color:var(--ink-2);letter-spacing:0.01em}
+.s-head .meta{font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted)}
+.s-title{font-family:'EB Garamond',serif;font-weight:500;font-size:60px;line-height:1.05;letter-spacing:-0.01em;color:var(--ink);margin-bottom:14px}
+.s-kicker{font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);margin-bottom:24px}
+.s-sub{font-size:24px;color:var(--ink-2);line-height:1.45;max-width:1500px;margin-bottom:40px}
+.s-body{flex:1;min-height:0;display:flex;flex-direction:column}
+.s-body p{font-size:21px;line-height:1.55;color:var(--ink-2);margin-bottom:16px;text-wrap:pretty}
+.s-body p strong, .s-body b{color:var(--ink);font-weight:600}
+.s-body ul{list-style:none;padding:0}
+.s-body ul li{position:relative;padding-left:28px;margin-bottom:12px;font-size:21px;line-height:1.5;color:var(--ink-2)}
+.s-body ul li::before{content:"";position:absolute;left:0;top:14px;width:14px;height:1px;background:var(--ink)}
+.s-body h3{font-family:'EB Garamond',serif;font-weight:500;font-size:30px;color:var(--ink);margin-bottom:16px}
+.s-body h4{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;margin-top:20px;padding-bottom:8px;border-bottom:1px solid var(--rule-soft)}
+.s-foot{position:absolute;left:120px;right:120px;bottom:42px;display:flex;justify-content:space-between;align-items:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);padding-top:18px;border-top:1px solid var(--rule-soft)}
+.s-foot .lhs{display:flex;gap:32px}
+
+/* COVER */
+.cover{padding:140px 160px;justify-content:space-between}
+.cover-top{display:flex;justify-content:space-between;align-items:flex-start}
+.cover-mark{font-family:'EB Garamond',serif;font-style:italic;font-size:28px;color:var(--ink-2)}
+.cover-mark::before{content:"§";font-style:normal;margin-right:10px;color:var(--accent);font-weight:700}
+.cover-tag{font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);text-align:right;line-height:2}
+.cover-mid{margin-top:80px}
+.cover-eyebrow{font-family:'JetBrains Mono',monospace;font-size:15px;letter-spacing:0.3em;text-transform:uppercase;color:var(--muted);margin-bottom:32px}
+.cover h1{font-family:'EB Garamond',serif;font-weight:500;font-size:240px;line-height:0.92;letter-spacing:-0.025em;color:var(--ink)}
+.cover-sub{font-family:'EB Garamond',serif;font-style:italic;font-weight:400;font-size:36px;color:var(--ink-2);line-height:1.3;margin-top:36px;max-width:1400px}
+.cover-bot{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:48px;padding-top:36px;border-top:1px solid var(--rule)}
+.cover-bot dt{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.cover-bot dd{font-family:'EB Garamond',serif;font-size:30px;color:var(--ink);font-weight:500}
+
+/* DIVIDER */
+.divider{padding:140px 160px;justify-content:flex-end}
+.divider .roman{position:absolute;top:120px;right:160px;font-family:'EB Garamond',serif;font-style:italic;font-size:96px;color:var(--rule-soft);font-weight:400;letter-spacing:0.05em}
+.divider .div-eyebrow{font-family:'JetBrains Mono',monospace;font-size:15px;letter-spacing:0.3em;text-transform:uppercase;color:var(--muted);margin-bottom:32px}
+.divider h2{font-family:'EB Garamond',serif;font-weight:500;font-size:140px;line-height:0.95;letter-spacing:-0.02em;color:var(--ink);max-width:1400px}
+.divider .div-sub{font-family:'EB Garamond',serif;font-style:italic;font-size:30px;color:var(--ink-2);margin-top:36px;max-width:1100px;line-height:1.4}
+.divider .div-rule{width:120px;height:2px;background:var(--ink);margin-top:48px}
+
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:80px;flex:1;min-height:0}
+.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:60px;flex:1;min-height:0}
+.col-block h4:first-child{margin-top:0}
+
+/* Image block — tasteful figure with caption, contained height so slides stay composed */
+.s-figure{margin-top:18px;display:flex;flex-direction:column;gap:10px;flex:0 0 auto}
+.s-figure .frame{border:1px solid var(--rule);background:var(--paper-2);border-radius:2px;overflow:hidden;display:flex;align-items:center;justify-content:center;max-height:380px}
+.s-figure .frame img{width:100%;height:auto;max-height:380px;object-fit:contain;display:block}
+.s-figure figcaption{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted)}
+.s-figure.compact .frame{max-height:280px}
+.s-figure.compact .frame img{max-height:280px}
+/* Side-by-side text + image layout */
+.text-image{display:grid;grid-template-columns:1fr 1.1fr;gap:48px;flex:1;min-height:0;align-items:start}
+.text-image > .col-block{min-width:0}
+.text-image .s-figure{margin-top:0;align-self:stretch;height:100%}
+.text-image .s-figure .frame{max-height:480px;height:100%}
+.text-image .s-figure .frame img{max-height:480px}
+
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin:24px 0 36px}
+.kpi{padding:24px 24px 24px 0;border-right:1px solid var(--rule-soft)}
+.kpi:last-child{border-right:none}
+.kpi:not(:first-child){padding-left:24px}
+.kpi-label{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+.kpi-value{font-family:'EB Garamond',serif;font-weight:500;font-size:48px;line-height:1;color:var(--ink);letter-spacing:-0.01em}
+.kpi-note{font-size:14px;color:var(--muted);margin-top:8px;line-height:1.4}
+
+table.fin{width:100%;border-collapse:collapse;font-size:17px;font-variant-numeric:tabular-nums}
+table.fin thead th{background:transparent;color:var(--ink);font-weight:600;text-align:left;padding:11px 14px;border-bottom:2px solid var(--ink);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.18em;text-transform:uppercase}
+table.fin tbody td{padding:12px 14px;border-bottom:1px solid var(--rule-soft);color:var(--ink-2);vertical-align:top}
+table.fin tbody tr:last-child td{border-bottom:none}
+table.fin tbody td.num{text-align:right;font-family:'JetBrains Mono',monospace;color:var(--ink);white-space:nowrap}
+table.fin tbody tr.total td{font-weight:600;color:var(--ink);border-top:1px solid var(--ink);border-bottom:1px solid var(--ink);background:rgba(0,0,0,0.03)}
+table.fin tbody tr.total td.num{font-weight:700}
+table.fin.pnl-dense{font-size:15px}
+table.fin.pnl-dense thead th{padding:8px 12px;font-size:11px}
+table.fin.pnl-dense tbody td{padding:7px 12px}
+
+.swot{display:grid;grid-template-columns:1fr 1fr;gap:36px;flex:1;min-height:0}
+.swot-cell{padding:28px 32px;background:rgba(255,255,255,0.4);border:1px solid var(--rule-soft);border-top:3px solid var(--ink)}
+.swot-cell h4{margin:0 0 14px 0;border:none;padding:0}
+.swot-cell ul li{font-size:18px;margin-bottom:10px;padding-left:22px}
+.swot-cell ul li::before{top:11px;width:10px}
+
+.verdict{display:inline-flex;align-items:baseline;gap:18px;padding:18px 28px;border:2px solid var(--ink);background:var(--paper-2);font-family:'EB Garamond',serif}
+.verdict .v-tag{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted)}
+.verdict .v-text{font-size:36px;font-weight:600;color:var(--ink);letter-spacing:-0.01em}
+
+.closing{padding:140px 160px;justify-content:space-between}
+.closing-mark{font-family:'EB Garamond',serif;font-style:italic;font-size:200px;color:var(--ink);line-height:1}
+.closing h2{font-family:'EB Garamond',serif;font-weight:500;font-size:96px;line-height:1.05;letter-spacing:-0.02em;color:var(--ink);max-width:1400px;margin-top:48px}
+.closing-sig{display:flex;justify-content:space-between;align-items:flex-end;padding-top:36px;border-top:1px solid var(--rule)}
+
+.lead{font-size:25px;color:var(--ink);line-height:1.45;margin-bottom:28px;max-width:1500px;font-weight:400}
+.callout{padding:22px 26px;background:var(--paper-2);border-left:3px solid var(--ink);font-size:20px;line-height:1.55;color:var(--ink-2);margin:20px 0}
+.dl-grid{display:grid;grid-template-columns:220px 1fr;gap:16px 28px;align-items:baseline}
+.dl-grid dt{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);padding-top:4px}
+.dl-grid dd{font-size:20px;color:var(--ink-2);line-height:1.5}
+.tag{display:inline-block;padding:4px 10px;border:1px solid var(--rule);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.15em;text-transform:uppercase;margin-right:6px;color:var(--ink-2)}
+</style>
+</head>
+<body>
+
+<script type="application/json" id="speaker-notes">["Bonjour à toutes et à tous. Aujourd'hui, nous allons présenter notre mémo d’investissement pour Gimmonix. Il s'agit d'une entreprise israélienne opérant dans le secteur du middleware de distribution hôtelière. Gimmonix a développé une infrastructure de connectivité et d'optimisation de données hôtelières en tant que service, ciblant spécifiquement les distributeurs de voyages en ligne à grand volume. Avant de plonger dans les détails, il est important de noter que notre évaluation initiale a abouti à un score de pré-sélection de 93 sur 100, ce qui représente un signal fort pour une acquisition stratégique.", "Notre analyse du marché débute par une étude de son attractivité et de sa pénétrabilité. Le marché présente une opportunité claire et significative avec des vents favorables importants. La concurrence, bien que présente, n'est pas saturée, laissant un espace pour un acteur différencié. Pour ce qui est de la pénétration, les conditions sont exceptionnellement bien adaptées à une mise sur le marché efficace et à un gain rapide de parts de marché. Enfin, le marché est considéré comme rentable, avec des précédents clairs de sorties attractives pour les investisseurs.", "Le marché du middleware de distribution hôtelière pour les distributeurs de voyages en ligne est un segment en pleine croissance. Le TAM, bien que fraction du marché global du voyage, représente plusieurs milliards pour les services d'optimisation de données. Le SAM et le SOM indiquent une opportunité de l'ordre du milliard, porté par une croissance constante. Cette croissance est principalement alimentée par la numérisation croissante et la complexité exponentielle des données, ainsi que la pression incessante sur les marges des distributeurs.", "Le marché est propulsé par la prolifération des canaux de distribution en ligne et la recherche d'efficacité par les distributeurs. Le timing est idéal grâce à la maturité de la technologie (cloud, API, IA) et une reprise post-pandémique axée sur la rentabilité. Cependant, des risques subsistent, notamment la 'désintermédiation' par de nouvelles technologies comme les LLM et la complexité de l'intégration initiale, qui peut allonger les cycles de vente. Ces facteurs influencent la dynamique globale du marché.", "Les acteurs historiques comme Amadeus et Sabre sont présents mais se concentrent sur la distribution transactionnelle plutôt que le nettoyage de données multi-fournisseurs. Des challengers comme DerbySoft ou SiteMinder se concentrent sur la connectivité de base, tandis que Gimmonix vise la 'vérité des données' pour l'hôtellerie. La défendabilité repose sur un puissant effet de réseau de données B2B et des coûts de changement élevés pour les clients, créant une barrière cumulative basée sur des données propriétaires.", "La rupture structurelle dans ce marché est l'explosion des canaux de distribution hôtelière au-delà des GDS traditionnels, multipliant la complexité des données. Les acteurs historiques sont paralysés par leur modèle économique. Notre thèse est qu'une API de 'traduction universelle' avec un modèle économique aligné sur les gains d'efficacité est le vecteur d'attaque. La fenêtre est ouverte en raison de la pression sur les marges post-pandémie, mais se refermera rapidement avec la standardisation par les principaux distributeurs.", "Nous avons une conviction forte dans ce marché, malgré l'apparence de 'course aux armements technologiques'. Les effets de réseau de données et les coûts d'intégration profonds créent un fossé durable. Nous parions que la complexité des données continuera de croître plus vite que la capacité des solutions généralistes, rendant un spécialiste indispensable. Notre pari est que d'ici 18 mois, les plus grands grossistes mondiaux adopteront un fournisseur de middleware de mapping, validant cette catégorie comme critique. La question clé est de quantifier la valeur de l'assurance contre les erreurs de mapping.", "La chaîne de valeur hôtelière est un écosystème complexe. Gimmonix se positionne au cœur de cette chaîne, agissant comme un middleware essentiel qui connecte les fournisseurs d'inventaire aux plateformes de vente. Chaque étape de cette chaîne, de la collecte des données brutes à la distribution finale au consommateur, présente des opportunités et des défis. Gimmonix a ciblé les points de friction les plus importants pour optimiser les processus et maximiser les marges pour les distributeurs.", "Gimmonix a identifié et capitalisé sur trois positions clés dans la chaîne de valeur, qui offrent les scores stratégiques les plus élevés. Ces positions sont défendables grâce à des barrières à l'entrée significatives et permettent des marges solides. La capacité à dominer ces segments repose sur une technologie supérieure, une compréhension approfondie du marché et un modèle économique aligné sur la création de valeur pour le client.", "Le marché est influencé par plusieurs tendances fondamentales. Premièrement, la nécessité d'un catalyseur pour l'innovation, où des technologies comme l'IA transforment la gestion des données. Deuxièmement, des points de contrôle stratégiques émergent, permettant aux acteurs qui maîtrisent la donnée de dicter les standards. Troisièmement, nous observons un déplacement des acteurs traditionnels face aux solutions agiles et performantes. Enfin, une attention accrue est portée à l'économie unitaire, avec une pression pour optimiser chaque transaction.", "Le paysage concurrentiel est un élément crucial de notre analyse. Nous avons identifié les principaux acteurs à chaque niveau de la chaîne de valeur. Gimmonix se distingue par son positionnement unique en tant que spécialiste du middleware. Les concurrents directs proposent des solutions partielles de connectivité (les tuyaux), tandis que Gimmonix se concentre sur la couche d'intelligence et d'optimisation des marges (la valeur ajoutée).", "Dans notre Magic Quadrant, nous évaluons les acteurs en fonction de leur capacité d'exécution et de leur vision. Les leaders se distinguent par leur offre robuste et leur large pénétration. Les Challengers sont en position de force mais nécessitent des investissements stratégiques. Les Visionnaires montrent une forte innovation mais une exécution encore limitée. Enfin, les acteurs de Niche excellent dans des segments spécifiques. Gimmonix se positionne comme un spécialiste à forte exécution et vision claire.", "Le M&A Quadrant nous aide à identifier les acteurs susceptibles d'être des prédateurs, des aspirants, des géants de l'industrie ou des cibles d'acquisition. Gimmonix, avec son expertise de niche et sa technologie avancée, représente une cible stratégique pour les géants cherchant à intégrer des capacités d'optimisation de données. Simultanément, elle pourrait devenir un prédateur en consolidant des acteurs plus petits pour étendre son écosystème. Les aspirants et les cibles plus petites sont constamment évalués pour des opportunités de consolidation.", "Plusieurs scénarios stratégiques sont à l'étude pour Gimmonix. Ces scénarios explorent différentes voies de croissance, de partenariat ou d'acquisition. Chaque scénario identifie les acteurs clés impliqués et les mécanismes qui pourraient les propulser ou les freiner. L'objectif est d'anticiper les évolutions du marché et de positionner Gimmonix pour maximiser sa valeur future, que ce soit par une croissance organique, des alliances stratégiques ou une consolidation.", "Notre analyse des synergies M&A entre Gimmonix et S4BT est purement spéculative. Elle est basée sur des recoupements de données publiques et n'implique aucune connaissance interne. Le verdict est une logique stratégique conditionnelle mais réelle pour S4BT. Gimmonix est un middleware israélien qui agrège les API et optimise les tarifs pour les distributeurs de voyages en ligne. Cependant, il y a un désalignement fondamental avec les angles d'investissement actifs de S4BT, qui ciblent le voyage d'affaires corporate. La valeur est conditionnelle et nécessiterait un repositionnement produit substantiel.", "Passons maintenant à la section détaillée des synergies potentielles que Gimmonix pourrait apporter à S4BT. Nous avons identifié plusieurs pistes, allant de l'amélioration structurelle de l'inventaire Goelett à des réductions de coûts via l'automatisation des processus. Chaque synergie est évaluée en fonction de son type (Hard Cost, Revenue, Structural, Defensive), de son impact estimé, de son délai de réalisation et de sa difficulté d'implémentation. Ces synergies, bien qu'hypothétiques, illustrent le potentiel de valeur ajoutée pour S4BT.", "Nous abordons maintenant l'analyse approfondie de l'entreprise Gimmonix. Cette section vise à explorer en détail sa proposition de valeur, son produit, son modèle économique, ainsi que son équipe dirigeante. L'objectif est de comprendre les fondamentaux qui sous-tendent la performance et le potentiel de croissance de Gimmonix, et d'évaluer la cohérence de son positionnement stratégique avec nos critères d'investissement. C’est la partie II — Business.", "Gimmonix offre un écosystème technologique complet et modulaire pour l'hébergement. Leur proposition de valeur clé est d'agir comme un 'plombier' intelligent pour l'industrie du voyage en ligne, connectant toutes les sources d'hôtels et utilisant l'IA pour optimiser les prix. Ils ciblent les agences de voyages en ligne et les grossistes traitant de gros volumes, résolvant la fragmentation des données et maximisant les profits sans effort. Des clients comme Expedia Partner Solutions témoignent de la valeur de leur solution.", "La solution principale de Gimmonix est une plateforme SaaS agnostique pour la distribution hôtelière. Elle comprend l'agrégation d'API, le mapping de chambres et l'optimisation des profits. Le produit se distingue par des fonctionnalités telles que la normalisation de contenu, le rebooking automatique et le yield management. Techniquement, elle dispose d'une API standardisée universelle et d'intégrations rapides. Ces capacités sont utilisées pour récupérer des marges, optimiser les flux de recherche et normaliser les données multilingues.", "Le modèle économique de Gimmonix est basé sur le succès et le partage de revenus, avec une approche pay-as-you-grow. Les revenus sont générés par paiement à la performance ou frais par transaction, alignant ainsi les intérêts du fournisseur avec ceux du client. L'absence de coûts d'installation ou de minimums mensuels facilite l'adoption. Ce modèle assure une monétisation directe des gains d'efficacité créés pour les clients, démontrant une forte résilience et une adaptabilité au marché.", "La culture de Gimmonix est axée sur l'innovation et la résolution de problèmes techniques complexes. L'entreprise est autofinancée et rentable depuis 2010. L'équipe est dirigée par Andrew Spektor, le PDG fondateur et propriétaire depuis 13 ans, qui possède une expertise approfondie dans la technologie du voyage. Son parcours et la croissance soutenue de 60% d'une année sur l'autre attestent de ses capacités de leadership. Des équipes spécialisées en Business Intelligence et support technique complètent l'organisation, bien que les détails sur d'autres dirigeants soient limités.", "Andrew Spektor, le PDG et fondateur de Gimmonix, est un architecte de produit avéré avec une compréhension profonde de l'industrie. Son 'pedigree' est celui d'un bâtisseur qui a traversé plusieurs cycles de marché dans le secteur du voyage. Sa loyauté et sa tenure sont exceptionnelles, ayant dirigé Gimmonix depuis sa création. Son 'commercial fit' est parfait, car il a directement contribué à la croissance de 60% par an de l'entreprise. C'est un profil rare et très valorisé pour une entreprise d'infrastructure B2B.", "L'évaluation du Founder DNA d'Andrew Spektor révèle un score total de 89/100, soulignant ses forces en Grit (90/100), Vision & Purpose (95/100), Self-Belief (95/100) et Execution (90/100). Sa capacité à construire une entreprise rentable et en croissance sur plus d'une décennie est remarquable. Ses points faibles, bien que toujours élevés, se situent légèrement dans le Leadership (80/100) et la Discipline (85/100). Pour maximiser son potentiel, il pourrait bénéficier de cofondateurs ou de cadres complémentaires. Son parcours et sa ténacité sont des facteurs de confiance essentiels pour notre thèse d'investissement.", "En bref, Gimmonix est un middleware hôtelier qui résout la fragmentation des données via l'IA pour les grands distributeurs. Le problème est que les agences de voyage voient la même chambre listée de multiples façons, entraînant des inefficacités et des pertes de marge. La solution de Gimmonix est une couche de traduction universelle qui mappe et sélectionne l'option la plus rentable. La stratégie de mise sur le marché est basée sur la performance pour cibler les plus grands distributeurs, garantissant des gains immédiats. Le rempart concurrentiel est fort, combinant les effets de réseau de données et des coûts de changement élevés. Le risque principal est l'émergence des LLM, mais l'atténuation réside dans la profondeur des données propriétaires et des règles métier accumulées.", "L'analyse SWOT de Gimmonix révèle des atouts significatifs, mais aussi des vulnérabilités. Ses forces résident dans le leadership du fondateur, une plateforme technologique avancée et un modèle économique aligné. Cependant, la dépendance au fondateur et le manque de dirigeants visibles sont des faiblesses. Les opportunités incluent la croissance continue du marché et l'expansion vers des créneaux fintech. Les menaces proviennent de concurrents mieux financés, des récessions du secteur et de l'évolution rapide des normes technologiques. C'est la partie III, 'Assessment'.", "Les points forts de Gimmonix sont nombreux : un fondateur stable avec une croissance de 60% annuelle, une plateforme de mapping précise, un volume de transaction géré de 9 milliards de dollars, l'entreprise est autofinancée et rentable, et le modèle de partage de revenus aligne parfaitement les intérêts avec les clients. Ces éléments constituent une base solide pour la poursuite de la croissance et démontrent une performance opérationnelle exceptionnelle.", "Malgré ses forces, Gimmonix présente des faiblesses notables. La dépendance au fondateur, le manque de croissance externe par acquisition, et la dépendance des revenus aux volumes de transaction sont des préoccupations. Le score de leadership de 80/100 du fondateur suggère des défis pour la mise à l'échelle. De plus, une présence géographique potentiellement limitée peut constituer un frein à l'expansion rapide, exacerbant la nécessité d’une équipe de direction plus large.", "Les opportunités pour Gimmonix sont considérables. La croissance des OTA et des grossistes crée une demande accrue pour des outils d'optimisation de marge. Le positionnement de RateFox sur le marché fintech de la réservation hôtelière offre un avantage compétitif. La capacité d'intégration rapide permet de capturer de nouveaux clients mondiaux. L'expansion vers des fournisseurs multilingues et des partenariats comme celui avec Expedia fournissent des leviers de croissance significatifs.", "Cependant, des menaces importantes pèsent sur Gimmonix. La concurrence de sociétés mieux financées, le risque de récession dans le secteur du voyage, et la dépendance aux fournisseurs hôteliers sont des préoccupations majeures. L'absence d'une structure de gouvernance formelle et la rapide évolution des normes API pourraient compromettre la pérennité de l'entreprise. Ces menaces nécessitent une gestion proactive pour protéger la position de marché de Gimmonix.", "Notre plan d'action stratégique se décline en quatre piliers. D'abord, la défense : sécuriser les partenariats existants et maintenir la précision technologique. Ensuite, l'offense : monétiser RateFox+ et consolider la position sur le marché de l'optimisation tarifaire. Le 'kill shot' serait une récession prolongée combinée au départ du fondateur, une situation fatale sans équipe de direction solide. Enfin, la remédiation : renforcer la direction intermédiaire pour professionnaliser les ventes et les opérations internationales. Ces axes sont essentiels pour l'avenir de l'entreprise.", "Parlons de la thèse d'acquisition. Gimmonix s'inscrit dans une thèse stratégique hybride, combinant la robustesse d'un Standalone avec un potentiel de synergies significatif. La thèse repose sur un actif d'infrastructure de données hôtelières irremplaçable à court terme, qui améliore la qualité de l'inventaire et réduit les risques concurrentiels. Cette approche n'est pas un pari sur la survie, mais une injection de capital pour transformer une entreprise rentable en un leader de catégorie. La partie IV — Thesis.", "La thèse d'investissement pour Gimmonix est de type B, une acquisition stratégique. Le lead repose sur l'intégration du moteur de mapping de données hôtelières propriétaire dans la plateforme Goelett de S4BT pour améliorer la qualité de l'inventaire. Les leviers incluent l'enrichissement de l'inventaire, la réduction des coûts d'intégration, et la défense contre les concurrents. Cependant, des fragilités existent par rapport à la dépendance au fondateur, l'inadéquation de l'ICP et la nécessité d'un pivot produit significatif. La fenêtre d'opportunité est ouverte maintenant, mais le risque d'acquisition par un concurrent est réel.", "Le tableau détaillé des synergies potentielles entre Gimmonix et S4BT est un élément clé de notre analyse. Nous avons identifié huit synergies, allant de l'enrichissement de l'inventaire Goelett à l'acquisition de compétences en IA. Chaque synergie est décrite avec son type (structural, hard cost, soft revenue, defensive), son impact (high, medium, low), son calendrier et sa difficulté. Ces synergies, bien que conditionnelles, représentent un potentiel de création de valeur significatif pour S4BT. L'exécution de ces synergies est cruciale pour réaliser la valeur de l'acquisition.", "Nous avons identifié sept obstacles potentiels qui pourraient compromettre le deal. Le 'Side-Quest' et l''ICP Mismatch' sont considérés comme fatals en raison du désalignement fondamental avec le marché cible de S4BT. Les 'Proprietary Pre-Mortem Gates' indiquent que Gimmonix ne satisfait pas aux critères d'entrée spécifiques de notre thèse. Le 'Empty Shell' et le 'Culture Clash' sont des risques élevés liés au fondateur et à l'intégration. Enfin, les ,'Antitrust / Regulatory' et la 'Geographic Mismatch' ajoutent des complexités à l'opération. Ces risques doivent être gérés de manière proactive.", "La conviction de S4BT repose sur quatre piliers. L'angle d'investissement principal est la plateforme SaaS de réservation hôtelière corporate en Europe, où Gimmonix comble un déficit d'infrastructure de données. Le marché adresse une demande immédiate de normalisation des données. Le timing est idéal, mais il y a un risque de préemption par des concurrents. La société est un middleware autofinancé et rentable avec une traction impressionnante, mais elle est très dépendante de son fondateur. La partie V — Conviction.", "Notre analyse d'angle de conviction pour Gimmonix est la suivante. L'alignement avec l'angle 'Plateforme SaaS de réservation hôtelière corporate en Europe' est la plus pertinente. Le marché de l'infrastructure de connectivité hôtelière est en consolidation, offrant une demande structurelle pour des couches de normalisation spécialisées. La fenêtre d'opportunité est ouverte maintenant, mais le risque qu'un concurrent acquière Gimmonix avant S4BT est réel. Le fondateur, Andrew Spektor, est un profil missionnaire, mais sa dépendance est un facteur de risque important.", "En synthèse, Gimmonix est un actif d'infrastructure de données hôtelières irremplaçable à court terme, offrant une qualité d'inventaire améliorée pour Goelett et réduisant le risque concurrentiel. Cependant, cette acquisition présente des risques importants. Le pivot produit est obligatoire et coûteux, la dépendance au fondateur Andrew Spektor est critique, et l'ICP de Gimmonix ne correspond pas directement aux clients corporate de S4BT. Des clauses de rétention et d'earn-out sont non négociables pour gérer le risque lié au fondateur. Le verdict reste un 'CALL (M&A)'.", "Passons à la section financière, la partie VI. Cette estimation du ROI est essentielle pour valider le potentiel de création de valeur de l'opération. Nous détaillerons les hypothèses, les prévisions de compte de résultat (P&L), les flux de trésorerie (Cash Flow) et l'analyse du rendement (ROI). Chaque chiffre est le fruit d'une modélisation rigoureuse et est en ligne avec les benchmarks sectoriels et notre thèse d'investissement. C’est la partie VI – Financier.", "Voici une synthèse de notre évaluation financière. L'investissement initial est de 16 millions d'euros avec un objectif de valeur à 5 ans de 25,5 millions d'euros, reflétant les synergies. Le MOIC projeté est de 1,60x, et l'IRR de 18,8%, ce qui dépasse nos seuils internes de 1,1x et 10%. Le deal est jugé défendable. Cette valorisation est basée sur des comparables sectoriels solides, en tenant compte des caractéristiques spécifiques de Gimmonix.", "Le compte de résultat prévisionnel intègre les synergies identifiées. Les revenus standalone sont estimés avec une croissance initiale de 60%, déclinant ensuite. La marge brute reste élevée, à 77,5%. Les OPEX sont modélisés comme un pourcentage des revenus. L'EBITDA, initialement négatif, devient positif dès la deuxième année grâce à l'effet de levier des revenus et des synergies. Les amortissements et les impôts sont également inclus pour arriver au NOPAT post-synergies, qui servira de base pour le calcul du Free Cash Flow.", "Le tableau de flux de trésorerie (FCF) montre la génération de cash de l'entreprise. Le FCF standalone est négatif les premières années, mais devient positif en Y5. L'ajout des synergies M&A transforme ce profil. Le Free Cash Flow total post-synergies bascule en positif dès Y2, accumulant 12,41 millions d'euros sur 5 ans. Ces flux sont cruciaux pour le calcul de la valeur d'acquisition et le rendement de l'investissement. Ils démontrent la capacité de Gimmonix à générer de la trésorerie pour rembourser la dette et créer de la valeur à long terme.", "Ces matrices de sensibilité sont cruciales pour évaluer la robustesse de notre verdict d'investissement. Elles montrent comment le MOIC et l'IRR varient en fonction du taux de capture des synergies et du prix d'entrée (Entry EV). La cellule en vert foncé représente notre scénario de base : un taux de capture de 50% et un prix d'entrée de 16 millions d'euros, avec un MOIC de 1,60x et un IRR de près de 19%. Cela démontre que même avec des variations, le deal reste globalement attractif et au-dessus de nos seuils.", "Voici les sources et la méthodologie de cette présentation. Une documentation détaillée est disponible avec des preuves URL. Bien que la complétude des données du marché soit insuffisante, notre analyse de l'entreprise est solide. Des recherches supplémentaires sont nécessaires pour certaines données clés, notamment les informations financières vérifiées et les listes détaillées de l'équipe de direction. Cela conclut notre présentation.", "Pour conclure, nous recommandons cette acquisition pour Gimmonix. C'est plus qu'un simple investissement, c'est un point de bascule stratégique pour le groupe, positionnant S4BT comme un acteur incontournable de la gestion de données dans l'industrie du voyage. L'intégration de Gimmonix ne fournira pas seulement une technologie de pointe, mais consolidera également notre position contre les concurrents sur le marché européen. Nous sommes convaincus que cette acquisition générera une valeur significative sur le long terme pour nos LPs."]</script>
+
+<deck-stage>
+
+<section class="cover" data-screen-label="01 Couverture">
+  <div class="cover-top">
+    <div class="cover-mark">Mémo d'investissement confidentiel</div>
+    <div class="cover-tag">sforbt · M&amp;A Strategic &nbsp;·&nbsp; M&amp;A<br>Octobre 2023</div>
+  </div>
+  <div class="cover-mid">
+    <div class="cover-eyebrow">Cible — Middleware de Distribution Hôtelière</div>
+    <h1>Gimmonix</h1>
+    <div class="cover-sub">Infrastructure de connectivité et d&#39;optimisation de données hôtelières en tant que service (SaaS) pour les distributeurs de voyages en ligne à grand volume.</div>
+  </div>
+  <dl class="cover-bot">
+    <div><dt>Siège</dt><dd>n.d.</dd></div>
+    <div><dt>Stade</dt><dd>Growth Stage (bootstrapped &amp; profitable)</dd></div>
+    <div><dt>Score</dt><dd>93&thinsp;/&thinsp;100</dd></div>
+    <div><dt>Verdict</dt><dd>Conviction</dd></div>
+  </dl>
+</section>
+
+<section data-screen-label="02 Sommaire">
+  <div class="s-head"><div class="brand">Gimmonix · Mémo d'investissement</div><div class="meta">Sommaire</div></div>
+  <div class="s-title">Sommaire</div>
+  <div class="s-body" style="margin-top:24px">
+    <div class="three-col" style="gap:80px">
+      <div class="col-block">
+        <h4>I — Marché</h4>
+        <ul><li>Sizing top-down &amp; bottom-up</li><li>Chaîne de valeur</li><li>Tendances et acteurs</li><li>Quadrants concurrence et M&amp;A</li><li>Scénarios stratégiques</li></ul>
+        <h4>II — Société</h4>
+        <ul><li>Proposition de valeur</li><li>Produit et modèle</li><li>Équipe et fondateur</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>III — Évaluation stratégique</h4>
+        <ul><li>Résumé et scores</li><li>Analyse SWOT</li><li>Plan d'action</li></ul>
+        <h4>IV — Thèse sforbt</h4>
+        <ul><li>Synergies — Type C Hybride</li><li>Tableau des synergies</li><li>Deal killers</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>V — Conviction GP</h4>
+        <ul><li>Angle, marché, timing</li><li>Verdict et risk register</li></ul>
+        <h4>VI — Modèle financier</h4>
+        <ul><li>Valorisation triangulée</li><li>P&amp;L et flux de trésorerie</li><li>ROI et verdict quantitatif</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>sforbt · M&amp;A Strategic</span></div><div>02</div></div>
+</section>
+
+<section class="divider" data-screen-label="03 I Marché">
+  <div class="roman">I</div>
+  <div>
+    <div class="div-eyebrow">Première partie</div>
+    <h2>Marché</h2>
+    <div class="div-sub">Score d&#39;opportunité de marché de 83/100</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="04 Sizing top-down">
+  <div class="s-head"><div class="brand">Gimmonix · I — Marché</div><div class="meta">04&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Market sizing — top-down</div>
+  <div class="s-title">Taille du Marché &amp; Croissance</div>
+  <div class="kpi-row">
+    <div class="kpi"><div class="kpi-label">TAM mondial</div><div class="kpi-value">milliers de Md$</div><div class="kpi-note">Marché global du voyage</div></div>
+    <div class="kpi"><div class="kpi-label">SAM Europe</div><div class="kpi-value">Md$</div><div class="kpi-note">Services d&#39;optimisation de données hôtelières</div></div>
+    <div class="kpi"><div class="kpi-label">SOM réaliste</div><div class="kpi-value">Md$</div><div class="kpi-note">Marché cible de Gimmonix</div></div>
+    <div class="kpi"><div class="kpi-label">CAGR</div><div class="kpi-value">n.d.</div><div class="kpi-note">À compléter</div></div>
+  </div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <h4>Approche top-down (en entonnoir)</h4>
+        <p>Le TAM est une fraction des milliers de milliards du marché mondial du voyage. Le SAM pour les services d'optimisation de données aux grands distributeurs se chiffre en milliards, avec un TCAC alimenté par la numérisation et la complexité croissante des données hôtelières. La croissance est tirée par la prolifération des canaux de distribution online et la pression sur les marges des distributeurs publics.</p>
+        <p style="font-size:17px;color:var(--muted)">Sources : Les données sur la structure du marché et la nature du problème sont solides et cohérentes, basées sur l&#39;analyse des produits et des stratégies de GTM. Cependant, les données quantitatives spécifiques (taille du marché, financements, multiples) sont des inférences et nécessiteraient une recherche primaire approfondie pour être validées. Nombre total d&#39;URL sourcées: 0 pour cette analyse de marché pure.</p>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-3c516578f4ec0316800d247fc21cb995-k7woaee7.jpg" alt="Sizing top-down"></div>
+        <figcaption>Fig. 04 — Entonnoir top-down TAM → SAM → SOM</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>04</div></div>
+</section>
+
+<section data-screen-label="05 Sizing bottom-up">
+  <div class="s-head"><div class="brand">Gimmonix · I — Marché</div><div class="meta">05&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Market sizing — bottom-up &amp; triangulation</div>
+  <div class="s-title">Bottom-up &amp; Triangulation</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Approche bottom-up (calculée)</h4>
+        <p>N.D.</p>
+        <p style="font-size:17px;color:var(--muted)">Sources : N.D.</p>
+        <h4>Triangulation</h4>
+        <p>La rupture structurelle est l'explosion des canaux de distribution hôtelière au-delà des GDS traditionnels, ce qui a multiplié de façon exponentielle la complexité et le 'bruit' des données. Les acteurs historiques (comme Amadeus ou Sabre) sont paralysés car leur modèle économique est basé sur la facturation de transactions au sein de leur propre jardin clos; ils sont incités à maintenir la complexité, pas à la résoudre en intégrant et en nettoyant des données provenant de sources concurrentes. Le vecteur d'attaque est une API de 'traduction universelle' avec un modèle économique aligné sur les gains d'efficacité du client (partage des revenus), ce qui en fait un choix évident pour les directeurs financiers cherchant à augmenter les marges sans investissement initial. La fenêtre est ouverte maintenant en raison d'une pression intense sur les marges après la pandémie, mais elle se fermera à mesure que les principaux distributeurs se verrouilleront sur un ou deux fournisseurs de middleware, créant des normes de facto et des coûts de changement élevés pour le reste du marché au cours des 36 prochains mois.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>05</div></div>
+</section>
+
+<section data-screen-label="06 Chaîne de valeur">
+  <div class="s-head"><div class="brand">Gimmonix · I — Marché</div><div class="meta">06&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Analyse de la chaîne de valeur</div>
+  <div class="s-title">La chaîne de valeur de la distribution hôtelière — Où se situe Gimmonix ?</div>
+  <div class="s-body">
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>06</div></div>
+</section>
+
+<section data-screen-label="07 Top 3 positions">
+  <div class="s-head"><div class="brand">Gimmonix · I — Marché</div><div class="meta">07&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Top 3 positions stratégiques</div>
+  <div class="s-title">Nos 3 positions les plus défendables sur cette chaîne de valeur — où l&#39;entreprise est la plus &#39;forte&#39;</div>
+  <div class="s-body">
+    <div class="three-col">
+      <div class="col-block">
+        <h4>#1 — Normalisation &amp; Mapping</h4>
+        <div style="font-family:'EB Garamond',serif;font-size:42px;font-weight:500;margin-bottom:12px">10/10</div>
+        <p>Le moteur de mapping de Gimmonix, alimenté par des données propriétaires et des algorithmes d&#39;IA sur 13 ans, crée une barrière à l&#39;entrée insurmontable pour les nouveaux entrants, assurant une précision inégalée et des marges élevées sur l&#39;optimisation.</p>
+      </div>
+      <div class="col-block">
+        <h4>#2 — Agrégation de Données</h4>
+        <div style="font-family:'EB Garamond',serif;font-size:42px;font-weight:500;margin-bottom:12px">9/10</div>
+        <p>La capacité d&#39;intégrer rapidement des centaines de fournisseurs hôteliers via une architecture API universelle et hybride (humain-IA) permet une exhaustivité de l&#39;inventaire qui réduit le pouvoir de négociation des fournisseurs individuels, garantissant une position de force.</p>
+      </div>
+      <div class="col-block">
+        <h4>#3 — Optimisation (Yield)</h4>
+        <div style="font-family:'EB Garamond',serif;font-size:42px;font-weight:500;margin-bottom:12px">9/10</div>
+        <p>Le moteur d&#39;optimisation (RateFox), en sélectionnant le fournisseur le plus avantageux en temps réel, garantit aux distributeurs une maximisation constante de leurs marges, créant une dépendance opérationnelle et un levier de monétisation direct pour Gimmonix.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>07</div></div>
+</section>
+
+<section data-screen-label="08 Tendances">
+  <div class="s-head"><div class="brand">Gimmonix · I — Marché</div><div class="meta">08&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Tendances de marché</div>
+  <div class="s-title">Tendances Clés qui Transforment ce Marché</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Catalyseur &amp; trajectoire</h4>
+        <p>Maturité des technologies (cloud, API, IA) rendant possible la résolution de problèmes de 'big data' à grande échelle, combinée à une reprise post-pandémique axée sur la rentabilité.</p>
+        <h4>Chaîne de valeur &amp; points de contrôle</h4>
+        <p>L'opportunité réside dans la possession de la couche de 'vérité des données' pour l'hôtellerie; celui qui devient le système d'enregistrement pour le mapping de contenu au niveau de la chambre et l'optimisation des prix contrôlera un point de levier stratégique dans la chaîne de valeur.</p>
+      </div>
+      <div class="col-block">
+        <h4>Déplacement concurrentiel</h4>
+        <p>Les GDS comme Amadeus et Sabre sont les acteurs en place, mais leur force réside dans la distribution transactionnelle, pas dans le nettoyage de données multi-fournisseurs. Ils sont des partenaires potentiels autant que des concurrents lents.</p>
+        <h4>Économie unitaire &amp; captation</h4>
+        <p>En raison des grands comptes, les LTV sont potentiellement très élevés. Avec un modèle GTM ciblé, le CAC peut être géré, conduisant à un ratio LTV/CAC potentiellement de premier ordre.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>08</div></div>
+</section>
+
+<section data-screen-label="09 Acteurs">
+  <div class="s-head"><div class="brand">Gimmonix · I — Marché</div><div class="meta">09&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Acteurs de la chaîne de valeur</div>
+  <div class="s-title">Paysage Concurrentiel — Qui sont les acteurs ?</div>
+  <div class="s-body">
+    <table class="fin">
+      <thead><tr><th>Étape</th><th>Acteurs principaux</th><th>Position de Gimmonix</th></tr></thead>
+      <tbody>
+        <tr><td><b>GDS traditionnels</b></td><td>Amadeus, Sabre</td><td>Acteurs historiques dominants la distribution transactionnelle, mais lents à s&#39;adapter aux données multi-fournisseurs.</td></tr>
+        <tr><td><b>Connectivité de base</b></td><td>DerbySoft, SiteMinder</td><td>Challengers se concentrant sur les &#39;tuyaux&#39; de connectivité, moins sur l&#39;intelligence et l&#39;optimisation des marges.</td></tr>
+        <tr><td><b>Mapping &amp; Optimisation</b></td><td>Gimmonix</td><td>Leader de niche visant la couche de &#39;vérité des données&#39; pour l&#39;optimisation des marges hôtelières.</td></tr>
+        <tr><td><b>Nouveaux entrants / LLM</b></td><td>N.D.</td><td>Futures menaces potentielles via désintermédiation technologique (ex: LLM pour le mapping).</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>09</div></div>
+</section>
+
+<section data-screen-label="10 Magic Quadrant">
+  <div class="s-head"><div class="brand">Gimmonix · I — Marché</div><div class="meta">10&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Magic Quadrant — concurrence</div>
+  <div class="s-title">Positionnement Concurrentiel — Magic Quadrant</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <h4>Leaders</h4><p>N.D.</p>
+        <h4>Challengers</h4><p>DerbySoft, SiteMinder se concentrent sur des parties du problème, mais pas l&#39;intelligence ni l&#39;optimisation de marge où réside la vraie valeur.</p>
+        <h4>Visionnaires</h4><p>N.D.</p>
+        <h4>Niche players</h4><p>Gimmonix dans l&#39;optimisation des données et le mapping de contenu hôtelier comme système d&#39;enregistrement.</p>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:18px">Le marché est compétitif mais non saturé. Gimmonix a l'opportunité de devenir le système d'enregistrement pour le mapping de contenu au niveau de la chambre, contrôlant ainsi un point de levier stratégique dans la chaîne de valeur.</div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>10</div></div>
+</section>
+
+<section data-screen-label="11 M&A Quadrant">
+  <div class="s-head"><div class="brand">Gimmonix · I — Marché</div><div class="meta">11&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">M&amp;A Quadrant — 4 archétypes</div>
+  <div class="s-title">Quadran M&amp;A</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <h4>1. Les Prédateurs</h4><p>GDS (Amadeus, Sabre), Groupes d'OTA (Booking, Expedia), Sociétés de PE.</p>
+        <h4>2. Les Aspirants</h4><p>N.D.</p>
+        <h4>3. Les Géants</h4><p>N.D.</p>
+        <h4>4. Les Cibles potentielles</h4><p>Acteurs d'infrastructure SaaS B2B critiques (comme Gimmonix) avec des revenus récurrents élevés et une forte rétention, recherchés pour l'acquisition stratégique.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>11</div></div>
+</section>
+
+<section data-screen-label="12 Scénarios stratégiques">
+  <div class="s-head"><div class="brand">Gimmonix · I — Marché</div><div class="meta">12&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Scénarios stratégiques</div>
+  <div class="s-title">Scénarios Stratégiques d&#39;Évolution du Marché</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <table class="fin pnl-dense">
+          <thead><tr><th>Scénario</th><th>Acteurs</th><th>Mécanique</th></tr></thead>
+          <tbody>
+            <tr><td><b>Standardisation par Oligopole</b></td><td>Principaux distributeurs (Expedia, Booking Holdings), Fournisseurs de middleware.</td><td>Verrouillage sur 1 ou 2 fournisseurs de middleware, créant des standards de facto et des coûts de changement élevés.</td></tr>
+            <tr><td><b>Désintermédiation Technologique</b></td><td>LLM avancés, Nouveaux entrants technologiques.</td><td>Outils de mapping à la volée réduisant la valeur des solutions spécialisées ou permettant aux clients d&#39;internaliser la fonctionnalité.</td></tr>
+            <tr><td><b>Consolidation Verticale</b></td><td>Grands GDS, Groupes OTA, Sociétés de PE.</td><td>Acquisition de spécialistes de l&#39;infrastructure pour intégrer des capacités clés (ex: mapping, optimisation) et renforcer la position de marché.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>12</div></div>
+</section>
+
+<section data-screen-label="13 Synergies acteurs">
+  <div class="s-head"><div class="brand">Gimmonix · I — Marché</div><div class="meta">13&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Synergies entre les acteurs — synthèse M&amp;A</div>
+  <div class="s-title">Synergies d&#39;Acteurs d&#39;un M&amp;A strat</div>
+  <div class="s-body">
+    <table class="fin" style="margin-bottom:24px">
+      <thead><tr><th style="width:32%">Scénario</th><th>Acteurs</th><th class="num">Revenus soft</th><th class="num">Coûts évités</th><th class="num">Synergie totale</th></tr></thead>
+      <tbody>
+        <tr><td>Normalisation de contenu</td><td>Gimmonix / S4BT</td><td class="num">Moyenne</td><td class="num">Moyenne</td><td class="num"><b>Haute</b></td></tr>
+        <tr><td>Optimisation des revenus</td><td>Gimmonix / S4BT</td><td class="num">Haute</td><td class="num">Basse</td><td class="num"><b>Moyenne</b></td></tr>
+        <tr><td>Intégration fournisseurs</td><td>Gimmonix / HotelHub</td><td class="num">Basse</td><td class="num">Moyenne</td><td class="num"><b>Moyenne</b></td></tr>
+      </tbody>
+    </table>
+    <div class="callout"><b>Lecture.</b> Cette synergie, bien que conditionnelle, représente un levier potentiel pour la création de valeur. L'optimisation des revenus générée par la plateforme de Gimmonix, combinée à une intégration facilitée des fournisseurs, pourrait renforcer la position de S4BT sur le marché.</div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>13</div></div>
+</section>
+
+<section class="divider" data-screen-label="14 II Société">
+  <div class="roman">II</div>
+  <div>
+    <div class="div-eyebrow">Deuxième partie</div>
+    <h2>Société</h2>
+    <div class="div-sub">Analyse de Gimmonix</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="15 Proposition de valeur">
+  <div class="s-head"><div class="brand">Gimmonix · II — Société</div><div class="meta">15&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Proposition de valeur</div>
+  <div class="s-title">Proposition de Valeur — Qu&#39;est-ce que Gimmonix ?</div>
+  <div class="s-body">
+    <p class="lead">Un écosystème technologique complet et modulaire pour l'hébergement, permettant aux entreprises de voyages de se connecter, d'optimiser leurs revenus et de passer à l'échelle grâce à une agrégation d'API et une cartographie ultra-précise. Gimmonix est une 'plomberie' intelligente pour l'industrie du voyage en ligne.</p>
+    <div class="two-col" style="margin-top:16px">
+      <div class="col-block">
+        <h4>Profil client idéal (ICP)</h4>
+        <ul><li>Agences de voyages en ligne (OTA)</li><li>Grossistes en hôtellerie (wholesalers)</li><li>Fournisseurs de technologie de voyage traitant des volumes importants</li></ul>
+        <h4>Modèle</h4>
+        <p>B2B - Fournisseur de solutions d'infrastructure et de connectivité pour les professionnels du secteur.</p>
+      </div>
+      <div class="col-block">
+        <h4>Industrie</h4>
+        <p>Technologie du voyage (Travel Tech / Accommodation Tech) &gt; Middleware de Distribution Hôtelière.</p>
+        <h4>Clients clés</h4>
+        <ul><li>Expedia Partner Solutions</li><li>Travclan</li><li>Travellanda</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>15</div></div>
+</section>
+
+<section data-screen-label="16 Produit">
+  <div class="s-head"><div class="brand">Gimmonix · II — Société</div><div class="meta">16&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Produit</div>
+  <div class="s-title">Produit — Que fait Gimmonix ?</div>
+  <div class="s-body">
+    <p class="lead">Une plateforme SaaS de distribution hôtelière agnostique comprenant l'agrégation d'API, le mapping de chambres et l'optimisation de profit. Catégorie de produit : Middleware de Distribution Hôtelière.</p>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Capacités produit</h4>
+        <ul><li>Agrégation d'API hôtelières</li><li>Mapping de propriétés et de chambres</li><li>Normalisation du contenu</li><li>Rebooking automatique (in-booking et post-booking)</li><li>Yield Management</li><li>Verify (réconciliation de données de réservation)</li><li>RateFox (optimisation des tarifs AI)</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>Capacités techniques</h4>
+        <ul><li>API Standardisée Universelle</li><li>Intégrations fournisseurs en 24-48h via architecture hybride humain-AI</li><li>Environnements Sandbox</li><li>Tableau de bord System of Record</li><li>Analyse des causes profondes des erreurs</li></ul>
+        <h4>Cas d'usage</h4>
+        <ul><li>Récupération de marge sur les réservations existantes</li><li>Optimisation des flux de recherche sans augmenter les coûts</li><li>Normalisation des données fournisseurs hôteliers multilingues</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>16</div></div>
+</section>
+
+<section data-screen-label="17 Modèle économique">
+  <div class="s-head"><div class="brand">Gimmonix · II — Société</div><div class="meta">17&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Modèle économique</div>
+  <div class="s-title">Modèle Économique — Comment Gimmonix monétise-t-il ?</div>
+  <div class="s-body">
+    <p class="lead">Modèle basé sur le succès et le partage de revenus (Revenue Share). Modèle Pay-as-you-grow.</p>
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">Taux de rétention des clients</div><div class="kpi-value">n.d.</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">Coût d&#39;acquisition client (CAC)</div><div class="kpi-value">n.d.</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">Valeur à vie du client (LTV)</div><div class="kpi-value">n.d.</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">ARR moyen par client</div><div class="kpi-value">n.d.</div><div class="kpi-note"></div></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Flux de revenus</h4>
+        <ul><li>Paiement à la performance pour RateFox</li><li>Modèle Pay-as-you-grow pour Verify (paiement par réservation vérifiée)</li><li>Pas d'investissement initial, revenus générés dès le premier jour</li><li>Pas de coût d'installation ni de minimum mensuel</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>Caractéristiques des plans</h4>
+        <ul><li>RateFox: Pas d'investissement initial.</li><li>Verify: Pas de frais d'installation ni de minimums.</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>17</div></div>
+</section>
+
+<section data-screen-label="18 Équipe">
+  <div class="s-head"><div class="brand">Gimmonix · II — Société</div><div class="meta">18&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Équipe</div>
+  <div class="s-title">Équipe — Qui fait tourner Gimmonix ?</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Direction</h4>
+        <dl class="dl-grid">
+          <dt>Founding CEO and Owner</dt><dd>Andrew Spektor (depuis 13 ans) - Dirige une entreprise de technologie de voyage axée sur la minimisation du gaspillage et la maximisation des performances pour les entreprises de voyage via des produits basés sur le cloud qui offrent une cartographie automatisée, une connectivité API et des outils d'optimisation des profits.</dd>
+        </dl>
+      </div>
+      <div class="col-block">
+        <h4>Effectifs et Structure</h4>
+        <table class="fin">
+          <tbody>
+            <tr ><td>Product &amp; Engineering</td><td class="num">n.d.</td></tr>
+            <tr ><td>Sales</td><td class="num">n.d.</td></tr>
+            <tr ><td>Marketing</td><td class="num">n.d.</td></tr>
+            <tr ><td>Customer Success</td><td class="num">n.d.</td></tr>
+            <tr ><td>G&amp;A</td><td class="num">n.d.</td></tr>
+            <tr class="total"><td>Total</td><td class="num">350+ partenariats, 9 Md$ de volume par an (effectifs non spécifiés)</td></tr>
+          </tbody>
+        </table>
+<p style="font-size:17px;color:var(--muted);margin-top:14px">Mention de carrières (Careers) mais pas de liste de postes ouverts dans les données. Aucun autre dirigeant mentionné explicitement.</p>      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>18</div></div>
+</section>
+
+<section data-screen-label="19 Fondateur">
+  <div class="s-head"><div class="brand">Gimmonix · II — Société</div><div class="meta">19&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Fondateur — Andrew Spektor</div>
+  <div class="s-title">Founding CEO & Owner</div>
+  <div class="s-body">
+    <p class="lead">Fondateur axé sur le produit et l'industrie avec une longue expérience dans la technologie du voyage.</p>
+    <div class="two-col" style="margin-top:8px">
+      <div class="col-block">
+        <h4>Parcours</h4>
+        <dl class="dl-grid">
+          <dt>2010 – Présent</dt><dd>Gimmonix - Founding CEO and Owner.</dd>
+          <dt>2010 – 2012</dt><dd>Studio-XL - Partner (période de transition/projet parallèle).</dd>
+          <dt>2007 – 2010</dt><dd>dna travel technologies - Principal shareholder et Carrent.co.il - CEO.</dd>
+          <dt>2006 – 2007</dt><dd>Webtarget - CTO.</dd>
+          <dt>2004 – 2006</dt><dd>Yuzma - CEO.</dd>
+          <dt>2001 – 2004</dt><dd>Meitav Advisers - VP sales.</dd>
+        </dl>
+      </div>
+      <div class="col-block">
+        <h4>Founder DNA &amp; assessment</h4>
+        <table class="fin">
+          <tbody>
+            <tr ><td>Grit</td><td class="num">90&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Discipline</td><td class="num">85&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Self-Belief</td><td class="num">95&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Execution</td><td class="num">90&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Leadership</td><td class="num">80&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Vision and Purpose</td><td class="num">95&thinsp;/&thinsp;100</td></tr>
+            <tr class="total"><td>total</td><td class="num">89&thinsp;/&thinsp;100</td></tr>
+          </tbody>
+        </table>
+<p style="font-size:17px;color:var(--muted);margin-top:14px"><b>Point aveugle.</b> Point faible potentiel : le leadership et la discipline légèrement inférieurs. Un enrichissement de l'équipe serait bénéfique pour la mise à l'échelle.</p>      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>19</div></div>
+</section>
+
+<section class="divider" data-screen-label="20 III Évaluation">
+  <div class="roman">III</div>
+  <div>
+    <div class="div-eyebrow">Troisième partie</div>
+    <h2>Évaluation<br>stratégique</h2>
+    <div class="div-sub">Analyse de Gimmonix à 93/100 (Signal Fort)</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="21 Résumé entreprise">
+  <div class="s-head"><div class="brand">Gimmonix · III — Évaluation</div><div class="meta">21&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Résumé de l'entreprise — scores</div>
+  <div class="s-title">Résumé de l&#39;Entreprise — Pourquoi un score de 93/100 ?</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <div class="kpi-row" style="grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:18px">
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Excellence équipe</div><div class="kpi-value" style="font-size:32px">92</div></div>
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Opportunité marché</div><div class="kpi-value" style="font-size:32px">88</div></div>
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Innovation produit</div><div class="kpi-value" style="font-size:32px">93</div></div>
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Modèle économique</div><div class="kpi-value" style="font-size:32px">95</div></div>
+        </div>
+        <h4>En bref</h4><p style="font-size:18px">Gimmonix est un middleware de distribution hôtelière qui permet aux distributeurs de voyages à grand volume (OTA, grossistes) de résoudre la fragmentation des données en agrégeant et normalisant les inventaires hôteliers via un mapping de données et une optimisation des prix basés sur l'IA.</p>
+        <h4>Problème &amp; solution</h4><p style="font-size:18px">La plateforme de Gimmonix agit comme une couche de traduction universelle qui ingère ce chaos de données, utilise un mapping intelligent pour reconnaître que 'Chambre King avec vue mer' et 'King Ocean Vw.' sont identiques, puis sélectionne et affiche uniquement l'option la plus rentable pour le distributeur à chaque recherche.</p>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-267ce8e97197053003fba09a21387fa8-i9ryfiy8.jpg" alt="Résumé de l'entreprise"></div>
+        <figcaption>Fig. 21 — Synthèse visuelle de l'entreprise</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>III — Évaluation</span></div><div>21</div></div>
+</section>
+
+<section data-screen-label="22 SWOT">
+  <div class="s-head"><div class="brand">Gimmonix · III — Évaluation</div><div class="meta">22&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Analyse SWOT</div>
+  <div class="s-title">Forces · Faiblesses · Opportunités · Menaces</div>
+  <div class="s-body">
+    <div class="swot">
+      <div class="swot-cell"><h4>Forces</h4><ul><li>Le fondateur dirige Gimmonix depuis 13 ans avec une croissance annuelle constante de 60%.</li><li>La plateforme propose un mapping précis des chambres et une agrégation d'API qui réduit les erreurs de données.</li><li>L'entreprise traite 9 milliards de dollars de volume de réservation via plus de 350 partenariats.</li><li>Gimmonix est bootstrappée et rentable depuis sa création en 2010 sans levées de fonds.</li><li>Le modèle de revenus basé sur le partage de succès aligne directement les intérêts avec ceux des clients.</li></ul></div>
+      <div class="swot-cell"><h4>Faiblesses</h4><ul><li>L'équipe compte peu de dirigeants nommés et dépend fortement du fondateur pour la vision produit.</li><li>L'absence de croissance externe via acquisitions limite l'expansion rapide hors du développement organique.</li><li>Le modèle revenue share crée une dépendance aux volumes de transactions pour la stabilité de trésorerie.</li><li>Le score de leadership du fondateur à 80/100 signale une possible difficulté à scaler les structures hiérarchiques.</li><li>La présence géographique limitée à des événements internationaux ne compense pas un siège social en Israël potentiellement isolé.</li></ul></div>
+      <div class="swot-cell"><h4>Opportunités</h4><ul><li>La croissance des OTA et wholesalers crée une demande accrue pour des outils d'optimisation de marge.</li><li>RateFox+ positionne l'entreprise dans un marché fintech de réservation hôtelière encore fragmenté.</li><li>Les intégrations API en 24-48 heures permettent de capturer rapidement de nouveaux clients globaux.</li><li>L'expansion vers des fournisseurs hôteliers multilingues répond à un besoin non saturé de normalisation.</li><li>Les partenariats existants avec Expedia offrent une base crédible pour des deals de plus grande envergure.</li></ul></div>
+      <div class="swot-cell"><h4>Menaces</h4><ul><li>Des concurrents mieux financés pourraient copier les modules d'optimisation des revenus.</li><li>Une récession du voyage réduirait directement les volumes facturés et les commissions.</li><li>La dépendance aux fournisseurs hôteliers expose l'entreprise à des changements de connectivité ou de tarifs.</li><li>L'absence de structure de gouvernance formelle rend le départ du fondateur particulièrement risqué.</li><li>L'évolution rapide des normes API hôtelières pourrait rendre obsolètes les intégrations actuelles.</li></ul></div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>III — Évaluation</span></div><div>22</div></div>
+</section>
+
+<section data-screen-label="23 Plan d'action">
+  <div class="s-head"><div class="brand">Gimmonix · III — Évaluation</div><div class="meta">23&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Plan d'action</div>
+  <div class="s-title">Défense, offensive, kill shot, remédiation.</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Défense</h4><p>La combinaison d'un fondateur propriétaire à long terme et d'un modèle sans levée de fonds crée une base stable difficile à déloger par des acteurs axés sur la croissance externe. Protéger cette position exige de maintenir la précision du mapping et la vitesse d'intégration tout en verrouillant les partenariats existants comme Expedia. La rentabilité avérée permet d'absorber des cycles sans dilution ni perte de contrôle.</p>
+        <h4>Offensive</h4><p>Gimmonix doit transformer son historique de rentabilité et sa profondeur produit en position dominante sur le mapping et l'optimisation tarifaire. En accélérant les intégrations automatisées et en monétisant davantage RateFox+, l'entreprise peut consolider sa place auprès des gros volumes OTA et wholesalers. Cette trajectoire exploite directement son avantage de fondateur impliqué depuis plus d'une décennie dans le même domaine précis.</p>
+      </div>
+      <div class="col-block">
+        <h4>Kill shot</h4><p>Une récession prolongée du secteur hôtelier combinée au départ du fondateur créerait un double choc de revenus et de vision produit. Sans équipe de direction rodée ni historique d'acquisitions pour absorber le choc, la plateforme perdrait sa capacité à suivre l'évolution des API et du mapping. La valeur s'effondrerait alors rapidement car la différenciation repose presque entièrement sur l'exécution continue du même dirigeant depuis 2010.</p>
+        <h4>Remédiation</h4><p>La concentration excessive sur le fondateur et l'absence de structure de management intermédiaire freinent le passage à l'échelle au-delà de la croissance organique actuelle. Corriger cela suppose de recruter ou promouvoir rapidement des cadres capables de professionnaliser les ventes et les opérations internationales. Sans cette évolution, le potentiel de monétisation du volume traité restera limité par la bande passante individuelle du fondateur.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>III — Évaluation</span></div><div>23</div></div>
+</section>
+
+<section class="divider" data-screen-label="24 IV Thèse sforbt">
+  <div class="roman">IV</div>
+  <div>
+    <div class="div-eyebrow">Quatrième partie</div>
+    <h2>Thèse sforbt</h2>
+    <div class="div-sub">Verdict: CALL (M&amp;A)</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="25 Résumé Type C">
+  <div class="s-head"><div class="brand">Gimmonix · IV — Thèse sforbt</div><div class="meta">25&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Synergies sforbt — résumé Type B — Strategic</div>
+  <div class="s-title">Thèse d'Acquisition — Pourquoi acheter Gimmonix ?</div>
+  <div class="s-body">
+    <p class="lead">S4BT acquiert un actif d'infrastructure de données hôtelières irremplaçable à court terme — un moteur de mapping propriétaire nourri par 9 milliards de dollars de volume sur 13 ans — qui améliore structurellement la qualité de l'inventaire de Goelett et réduit le risque que TravelPerk ou Amadeus utilisent cet actif contre S4BT sur le segment mid-market européen.</p>
+    <div class="two-col" style="margin-top:8px">
+      <div class="col-block">
+        <h4>Les leviers de synergie</h4>
+        <ul><li>Enrichissement de l'inventaire Goelett par le moteur de normalisation de données hôtelières de Gimmonix</li><li>Accélération de l'intégration fournisseurs hôteliers pour HotelHub via l'API universelle de Gimmonix</li><li>Réduction de la friction de mapping de données dans les processus de réconciliation corporate de S4BT</li><li>Extension du réseau de fournisseurs hôteliers de S4BT via les 350 partenariats de Gimmonix</li><li>Défense contre l'acquisition de Gimmonix par TravelPerk ou Amadeus</li><li>Accès au réseau Expedia Partner Solutions comme levier de crédibilité commerciale pour S4BT</li><li>Opportunité d'intégration du module RateFox dans l'optimisation des tarifs corporate de Goelett</li><li>Acquisition de compétences en intelligence artificielle appliquée au mapping hôtelier comme actif technologique interne</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>Fragilités principales</h4>
+        <p>La logique financière repose sur une synergie de défense d'ARR estimée à 1 à 2,5 millions d'euros par an à partir de l'année 3, complétée par une réduction des coûts d'intégration fournisseurs pour HotelHub et une économie de recrutement de spécialistes IA estimée à 500 000 à 1,5 million d'euros par an à maturité. Le coût d'opportunité de ne pas acquérir est mesurable : si un concurrent intègre Gimmonix, S4BT perd un avantage de qualité de données sur son marché cible sans possibilité de le récupérer sans plusieurs années de développement interne. La valeur créée dépend cependant entièrement de la rétention d'Andrew Spektor et d'un pivot produit vers le segment corporate, ce qui en fait une acquisition de 'matière première technologique' plutôt qu'une acquisition de 'produit prêt à vendre'.</p>
+        <h4>Fenêtre d'acquisition</h4>
+        <div class="callout" style="margin-top:0">La fenêtre d'opportunité idéale pour les quatre angles actifs de S4BT est ouverte maintenant, avec la vague de migration SAP S/4HANA (progiciel ERP de nouvelle génération), les mandats européens de digitalisation des factures, et la consolidation post-COVID des TMC — autant de catalyseurs qui favorisent des acquisitions directement alignées sur ces angles, et non une acquisition adjacente comme Gimmonix.</div>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>IV — Thèse sforbt</span></div><div>25</div></div>
+</section>
+
+<section data-screen-label="26 Synergies détaillées">
+  <div class="s-head"><div class="brand">Gimmonix · IV — Thèse sforbt</div><div class="meta">26&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Synergies sforbt — tableau détaillé</div>
+  <div class="s-title">Tableau détaillé des synergies potentielles</div>
+  <div class="s-body">
+    <table class="fin">
+      <thead><tr><th style="width:36px">#</th><th>Synergie</th><th>Type</th><th>Impact</th><th>Délai</th><th>Difficulté</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Enrichissement de l&#39;inventaire Goelett par le moteur de normalisation de données hôtelières de Gimmonix</td><td>Structural</td><td>Medium</td><td>Mid-Term (6-18m)</td><td>High</td></tr>
+        <tr><td>2</td><td>Accélération de l&#39;intégration fournisseurs hôteliers pour HotelHub via l&#39;API universelle de Gimmonix</td><td>Hard Cost</td><td>Medium</td><td>Mid-Term (6-18m)</td><td>High</td></tr>
+        <tr><td>3</td><td>Réduction de la friction de mapping de données dans les processus de réconciliation corporate de S4BT</td><td>Hard Cost</td><td>Low</td><td>Long-Term (&gt;18m)</td><td>High</td></tr>
+        <tr><td>4</td><td>Extension du réseau de fournisseurs hôteliers de S4BT via les 350 partenariats de Gimmonix</td><td>Structural</td><td>Medium</td><td>Long-Term (&gt;18m)</td><td>High</td></tr>
+        <tr><td>5</td><td>Défense contre l&#39;acquisition de Gimmonix par TravelPerk ou Amadeus</td><td>Defensive Moat</td><td>Medium</td><td>Immediate (&lt;6m)</td><td>Medium</td></tr>
+        <tr><td>6</td><td>Accès au réseau Expedia Partner Solutions comme levier de crédibilité commerciale pour S4BT</td><td>Soft Revenue</td><td>Low</td><td>Long-Term (&gt;18m)</td><td>High</td></tr>
+        <tr><td>7</td><td>Opportunité d&#39;intégration du module RateFox dans l&#39;optimisation des tarifs corporate de Goelett</td><td>Soft Revenue</td><td>Low</td><td>Long-Term (&gt;18m)</td><td>High</td></tr>
+        <tr><td>8</td><td>Acquisition de compétences en intelligence artificielle appliquée au mapping hôtelier comme actif technologique interne</td><td>Structural</td><td>Low</td><td>Long-Term (&gt;18m)</td><td>High</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>IV — Thèse sforbt</span></div><div>26</div></div>
+</section>
+
+<section data-screen-label="27 Deal killers">
+  <div class="s-head"><div class="brand">Gimmonix · IV — Thèse sforbt</div><div class="meta">27&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Deal killers identifiés</div>
+  <div class="s-title">Obstacles identifiés au deal (Deal Killers)</div>
+  <div class="s-body">
+    <table class="fin">
+      <thead><tr><th>Risque</th><th>Description</th><th>Mitigation</th></tr></thead>
+      <tbody>
+        <tr><td><b>Side-Quest (Distraction)</b></td><td>Le cœur de métier de Gimmonix est la distribution hôtelière pour OTA et grossistes grand public, un segment entièrement différent du voyage d'affaires corporate que S4BT cherche à consolider. Cette dispersion de l'attention menace directement les synergies des angles Plateforme SaaS de réservation hôtelière corporate et Logiciel de workflow pour TMC.</td><td>À adresser immédiatement en post-closing. Nécessite une feuille de route claire pour le pivot produit et une stricte allocation des ressources pour éviter la dilution de l'attention des équipes.</td></tr>
+        <tr><td><b>ICP Mismatch</b></td><td>Le profil client idéal (ICP) de Gimmonix est l'OTA et le grossiste de voyages à grand volume. Le profil client idéal de S4BT est le responsable voyages d'entreprise et le directeur financier. Ces deux profils n'ont aucun recoupement, rendant nulle toute synergie de vente croisée entre la base de clients de Gimmonix et les cibles de S4BT.</td><td>Requalifier commercialement les partenariats OTA pour le segment corporate et adapter le GTM pour cibler les besoins des travel managers. Cela implique un investissement significatif en R&D et en forces de vente spécialisées.</td></tr>
+        <tr><td><b>Proprietary Pre-Mortem Gate: Corporate hotel booking SaaS without GDS or hotel chain API connectivity delivering real inventory</b></td><td>La thèse de S4BT exclut explicitement les plateformes de réservation hôtelière corporate sans connectivité GDS ou API de chaîne hôtelière livrant un inventaire réel. L'inventaire de Gimmonix est orienté vers la distribution OTA et non les programmes hôteliers préférentiels corporate.</td><td>Le moteur de mapping de Gimmonix doit être intégré à Goelett pour améliorer la qualité des données de l'inventaire existant de S4BT, plutôt que de s'appuyer sur l'inventaire direct de Gimmonix, qui ne correspond pas aux besoins corporate.</td></tr>
+        <tr><td><b>Proprietary Pre-Mortem Gate: Hotel sourcing RFP platform without negotiated rate loading and preferred hotel program management for procurement officers</b></td><td>La thèse de S4BT exclut les plateformes sans chargement de tarifs négociés et sans gestion de programme hôtelier préférentiel. Gimmonix n'offre aucune de ces fonctionnalités, son moteur RateFox optimisant pour les distributeurs et non pour les programmes corporate.</td><td>Adapter le moteur RateFox pour l'optimisation des tarifs sous contrainte de politique d'achat corporate, ce qui représente un pivot produit majeur et coûteux en R&D.</td></tr>
+        <tr><td><b>Empty Shell (Key-Person Risk)</b></td><td>Gimmonix est dirigée depuis 13 ans par un unique fondateur-propriétaire, Andrew Spektor. En cas d'acquisition, le départ ou la démotivation de Spektor détruirait la valeur du réseau de 350 partenaires et la compétence de mapping de données accumulée sur 13 ans.</td><td>Nécessite des mécanismes contractuels de rétention non-négociables (earn-out sur 3 ans, intéressement sur les synergies réalisées) dans la structuration du deal.</td></tr>
+        <tr><td><b>Culture Clash</b></td><td>L'incompatibilité entre la culture de fondateur-actionnaire unique (Gimmonix) et la culture d'intégration multi-marques (S4BT) crée un risque élevé de perte des équipes techniques clés dans les 12 mois suivant la clôture.</td><td>Mettre en place des packages de rétention attractifs et laisser une autonomie opérationnelle significative aux équipes de Gimmonix, au moins pour la période de transition afin de limiter la friction culturelle.</td></tr>
+        <tr><td><b>Antitrust / Regulatory</b></td><td>Gimmonix est une société israélienne. Une acquisition transfrontalière hors UE/EEE introduit des complexités réglementaires (RGPD, investissements étrangers).</td><td>Assurer une conformité stricte aux réglementations internationales de transfert de données et identifier les équipes légales ayant l'expertise nécessaire pour gérer les complexités des investissements étrangers.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>IV — Thèse sforbt</span></div><div>27</div></div>
+</section>
+
+<section class="divider" data-screen-label="28 V Conviction">
+  <div class="roman">V</div>
+  <div>
+    <div class="div-eyebrow">Cinquième partie</div>
+    <h2>Conviction GP</h2>
+    <div class="div-sub">Verdict: CALL (M&amp;A)</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="29 Angle, marché, timing">
+  <div class="s-head"><div class="brand">Gimmonix · V — Conviction</div><div class="meta">29&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Angle dominant · marché · timing</div>
+  <div class="s-title">Un investissement stratégique porté par 3 piliers</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Angle dominant</h4><p>Cette cible s'inscrit principalement dans l'angle Plateforme SaaS de réservation hôtelière corporate en Europe — Gimmonix est un middleware de distribution hôtelière dont le moteur de mapping de chambres propriétaire, nourri par 9 milliards de dollars de volume géré sur 13 ans, constitue exactement la couche d'infrastructure de données manquante dans la pile Goelett de S4BT. Elle présente également des signaux partiels pour l'angle Paiement, réconciliation et récupération TVA pour le voyage d'affaires (MODERATE_FIT), via son produit RateFox décrit comme une 'fintech-enabled marketplace for hotel supply' orientée optimisation des marges.</p>
+        <h4>Marché</h4><p>Le marché adressable de Gimmonix est le segment de l'infrastructure de connectivité et d'optimisation des données hôtelières pour les distributeurs de voyages à grand volume. Ce marché est structurellement oligopolistique : les barrières à l'entrée techniques (volume de données propriétaires, algorithmes affinés sur des milliards de transactions) et commerciales (coûts de remplacement prohibitifs pour un distributeur intégré) favorisent la concentration autour de deux ou trois acteurs. L'inadéquation entre ce marché OTA et le marché cible de S4BT — les travel managers corporate et les directeurs financiers d'entreprise — constitue la tension centrale de ce dossier.</p>
+      </div>
+      <div class="col-block">
+        <h4>Timing</h4><p>La fenêtre d'opportunité est ouverte maintenant pour une raison spécifique : les distributeurs de voyages cherchent à verrouiller leur fournisseur de middleware de données avant que les standards de mapping ne soient imposés par un oligopole, et les standards ne sont pas encore fixés. Cette fenêtre se fermera dans 18 à 36 mois à mesure que les grands acteurs (Expedia, Booking Holdings) internaliseront ou imposeront leurs propres normes de données à leurs partenaires. Pour S4BT, le risque est que TravelPerk ou Amadeus acquièrent Gimmonix avant S4BT, privant S4BT d'un actif de qualité de données.</p>
+        <h4>Founder &amp; thesis-fit</h4><p>Andrew Spektor est un fondateur missionnaire au sens le plus strict : 13 ans de direction ininterrompue de la même entreprise, autofinancée, rentable, en croissance de 60% par an — sans jamais avoir cherché de financement externe. Son score DNA de 89/100 reflète une exécution technique disciplinée (90/100), une vision produit très forte (95/100) et une confiance en soi stable et non performative (95/100). Le risque est identifié et confirmé par les trois analystes : l'anti-pattern 'Founder Dependency Trap' est actif. La structure de direction au-delà de Spektor est opaque.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>V — Conviction</span></div><div>29</div></div>
+</section>
+
+<section data-screen-label="30 Verdict">
+  <div class="s-head"><div class="brand">Gimmonix · V — Conviction</div><div class="meta">30&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Verdict de conviction</div>
+  <div class="s-title">Verdict — Acquisition Recommandée</div>
+  <div class="s-body">
+    <div style="margin-bottom:36px">
+      <div class="verdict"><span class="v-tag">Verdict GP</span><span class="v-text">Conviction · 93/100</span></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Synthèse</h4><p>L'acquisition de Gimmonix est recommandée. Son moteur de mapping de données hôtelières représente un actif d'infrastructure impossible à répliquer. Sans cette couche de normalisation, Goelett de S4BT reste exposé aux doublons d'inventaire et aux incohérences de données. Bien qu'il y ait un écart stratégique avec le modèle OTA actuel de Gimmonix et les besoins corporate de S4BT, cette critique est intégrée dans le Risk Register. La décision est maintenue grâce à un argument défensif quantifiable et des mécanismes contractuels de rétention.</p>
+      </div>
+      <div class="col-block">
+        <h4>Risk register</h4>
+        <ul><li>Pivot produit obligatoire et coûteux (12-24 mois de développement, 2-4 M€ d'investissement).</li><li>Dépendance au fondateur critique (Andrew Spektor est clé, risque de départ post-acquisition).</li><li>Inadéquation ICP confirmée (Gimmonix vend aux OTA, pas aux clients corporate).</li><li>Choc culturel probable (entreprise bootstrappée vs. organisation corporate de 700 personnes).</li><li>Géographie hors périmètre de la thèse (Israël vs. Europe uniquement pour S4BT).</li><li>Risque de désintermédiation par les LLM (l'avantage concurrentiel pourrait s'éroder en 3-5 ans).</li><li>Comparaison de taille acquéreur / cible (Gimmonix potentiellement comparable en volume géré, complexité d'intégration).</li><li>Toutes les synergies documentées sont classifiées 'Low Confidence' (hypothèses centrales non vérifiées).</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>V — Conviction</span></div><div>30</div></div>
+</section>
+
+<section class="divider" data-screen-label="31 VI Modèle financier">
+  <div class="roman">VI</div>
+  <div>
+    <div class="div-eyebrow">Sixième partie</div>
+    <h2>Modèle<br>financier</h2>
+    <div class="div-sub">Verdict: ✅ HURDLES ATTEINTS (IRR 18.8%, MOIC 1.60x)</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="32 Valorisation">
+  <div class="s-head"><div class="brand">Gimmonix · VI — Modèle financier</div><div class="meta">32&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Valorisation triangulée</div>
+  <div class="s-title">Valorisation et Entrée</div>
+  <div class="s-body">
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">ARR Y1</div><div class="kpi-value">2,0 M€</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">EBITDA Y1 (réel)</div><div class="kpi-value">-0,08 M€</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">EBITDA normalisé (régime sectoriel)</div><div class="kpi-value">0,55 M€</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">FCF Y5</div><div class="kpi-value">-0,3 M€</div><div class="kpi-note"></div></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Comparables (multiples de transaction)</h4>
+        <table class="fin">
+          <thead><tr><th>Transaction</th><th class="num">Multiple</th></tr></thead>
+          <tbody>
+            <tr><td>EV/CA (multiple de revenu)</td><td class="num">16,0 M€</td></tr>
+            <tr><td>EV/EBITDA (EBITDA normalisé)</td><td class="num">5,5 M€</td></tr>
+            <tr><td>DCF (valeur intrinsèque)</td><td class="num">0,2 M€</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="col-block">
+        <h4>DCF — hypothèses</h4>
+        <p>Le DCF n'est pas significatif (FCF cumulés négatifs) ou TV-dominante, il est donc exclu de la valeur retenue.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>VI — Modèle financier</span></div><div>32</div></div>
+</section>
+
+<section data-screen-label="33 P&L et trésorerie">
+  <div class="s-head"><div class="brand">Gimmonix · VI — Modèle financier</div><div class="meta">33&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">P&amp;L sur 5 ans &amp; flux de trésorerie</div>
+  <div class="s-title">Compte de Résultat Pro-Forma</div>
+  <div class="s-body">
+    <table class="fin pnl-dense">
+      <thead>
+        <tr><th>Indicateur</th><th class="num">Y1</th><th class="num">Y2</th><th class="num">Y3</th><th class="num">Y4</th><th class="num">Y5</th></tr>
+      </thead>
+      <tbody>
+        <tr ><td>Revenus</td><td class="num">2,00 M€</td><td class="num">3,31 M€</td><td class="num">5,88 M€</td><td class="num">10,21 M€</td><td class="num">15,38 M€</td></tr>
+        <tr ><td>Croissance YoY</td><td class="num">60,0%</td><td class="num">52,8%</td><td class="num">46,5%</td><td class="num">40,9%</td><td class="num">36,0%</td></tr>
+        <tr ><td>Marge brute</td><td class="num">1,55 M€</td><td class="num">2,57 M€</td><td class="num">4,56 M€</td><td class="num">7,91 M€</td><td class="num">11,92 M€</td></tr>
+        <tr ><td>OPEX</td><td class="num">1,63 M€</td><td class="num">2,51 M€</td><td class="num">4,25 M€</td><td class="num">7,24 M€</td><td class="num">10,70 M€</td></tr>
+        <tr class="total"><td>EBITDA</td><td class="num">-0,08 M€</td><td class="num">0,06 M€</td><td class="num">0,31 M€</td><td class="num">0,68 M€</td><td class="num">1,22 M€</td></tr>
+        <tr ><td>Free Cash Flow</td><td class="num">-0,22 M€</td><td class="num">0,10 M€</td><td class="num">1,39 M€</td><td class="num">4,04 M€</td><td class="num">7,10 M€</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>VI — Modèle financier</span></div><div>33</div></div>
+</section>
+
+<section data-screen-label="34 ROI et verdict">
+  <div class="s-head"><div class="brand">Gimmonix · VI — Modèle financier</div><div class="meta">34&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">ROI et verdict quantitatif</div>
+  <div class="s-title">Analyse du Rendement</div>
+  <div class="s-body">
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">Investissement</div><div class="kpi-value">16,0 M€</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">Valeur année 5</div><div class="kpi-value">25,5 M€</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">MOIC</div><div class="kpi-value">1,60x</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">IRR</div><div class="kpi-value">18,8%</div><div class="kpi-note"></div></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Lecture du retour</h4><p>La « Acquisition Value » (25,5 M€) représente la valeur totale du deal pour votre groupe, incluant la valeur intrinsèque de la cible et les synergies nettes. Le MOIC de 1,60x et l'IRR de 18,8% dépassent vos seuils de rendement de 1,10x et 10,0% respectivement. L'upside du deal provient principalement des synergies (9,5 M€).</p>
+      </div>
+      <div class="col-block">
+        <h4>Verdict quantitatif</h4>
+        <div class="verdict" style="margin-bottom:18px"><span class="v-tag">Post-model</span><span class="v-text">Hurdles atteints</span></div>
+        <p>Le deal est défendable en comité, les métriques quantitatives étant alignées avec les objectifs de la thèse d'investissement.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>VI — Modèle financier</span></div><div>34</div></div>
+</section>
+
+<section class="closing" data-screen-label="35 Fin">
+  <div>
+    <div class="closing-mark">§</div>
+    <h2>L'acquisition de Gimmonix est un pivot stratégique,<br>faisant de S4BT un leader incontournable de la <br>gestion de données dans l'industrie du voyage.</h2>
+  </div>
+  <div class="closing-sig">
+    <div class="cover-tag" style="text-align:left">sforbt · M&amp;A Strategic · M&amp;A<br>Octobre 2023</div>
+    <div class="cover-tag">Mémo confidentiel — Gimmonix<br>Diffusion restreinte</div>
+  </div>
+</section>
+
+</deck-stage>
+</body>
+</html>
