@@ -371,7 +371,27 @@
     initLightboxHandlers();
     initDetailsToggleFallback();
     linkifyValueChainURLs();
+    spaceValueChainStages();
     hideEmptySynergies();
+  }
+
+  /* The /build-memo backend emits stage titles as <b>STAGE N: ...</b> mid-flow,
+     and the LLM is inconsistent about inserting <br/><br/> before each one — so
+     when a stage's prose ends without a trailing break, the next stage title
+     renders on the same line as the previous paragraph. Force every stage
+     header to its own block with top margin, regardless of preceding markup. */
+  function spaceValueChainStages() {
+    var section = document.getElementById('value-chain');
+    if (!section) return;
+    var STAGE_RE = /^\s*STAGE\s+\d+\s*[:\-—–]/i;
+    var bolds = section.querySelectorAll('b, strong');
+    for (var i = 0; i < bolds.length; i++) {
+      var b = bolds[i];
+      if (!STAGE_RE.test(b.textContent || '')) continue;
+      b.style.display = 'block';
+      b.style.marginTop = '1.6em';
+      b.style.paddingTop = '0.2em';
+    }
   }
 
   /* The /build-memo backend renders value chain stage descriptions verbatim,
