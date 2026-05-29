@@ -1,0 +1,1465 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Mémo Pestaly — sforbt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+/**
+ * <deck-stage noscale> — reusable web component for HTML decks.
+ *
+ * Handles:
+ *  (a) speaker notes — reads <script type="application/json" id="speaker-notes">
+ *      and posts {slideIndexChanged: N} to the parent window on nav.
+ *  (b) keyboard navigation — ←/→, PgUp/PgDn, Space, Home/End, number keys.
+ *  (c) press R to reset to slide 0 (with a tasteful keyboard hint).
+ *  (d) bottom-center overlay showing slide count + hints, fades out on idle.
+ *  (e) auto-scaling — inner canvas is a fixed design size (default 1920×1080)
+ *      scaled with `transform: scale()` to fit the viewport, letterboxed.
+ *      Set the `noscale` attribute to render at authored size (1:1) — the
+ *      PPTX exporter sets this so its DOM capture sees unscaled geometry.
+ *  (f) print — `@media print` lays every slide out as its own page at the
+ *      design size, so the browser's Print → Save as PDF produces a clean
+ *      one-page-per-slide PDF with no extra setup.
+ *
+ * Slides are HIDDEN, not unmounted. Non-active slides stay in the DOM with
+ * `visibility: hidden` + `opacity: 0`, so their state (videos, iframes,
+ * form inputs, React trees) is preserved across navigation.
+ *
+ * Lifecycle event — the component dispatches a `slidechange` CustomEvent on
+ * itself whenever the active slide changes (including the initial mount).
+ * The event bubbles and composes out of shadow DOM, so you can listen on
+ * the <deck-stage> element or on document:
+ *
+ *   document.querySelector('deck-stage').addEventListener('slidechange', (e) => {
+ *     e.detail.index         // new 0-based index
+ *     e.detail.previousIndex // previous index, or -1 on init
+ *     e.detail.total         // total slide count
+ *     e.detail.slide         // the new active slide element
+ *     e.detail.previousSlide // the prior slide element, or null on init
+ *     e.detail.reason        // 'init' | 'keyboard' | 'click' | 'tap' | 'api'
+ *   });
+ *
+ * Persistence: none at the deck level. The host app keeps the current slide
+ * in its own URL (?slide=) and re-delivers it via location.hash on load, so a
+ * bare load with no hash always starts at slide 1.
+ *
+ * Usage:
+ *   <deck-stage width="1920" height="1080">
+ *     <section data-label="Title">...</section>
+ *     <section data-label="Agenda">...</section>
+ *   </deck-stage>
+ *
+ * Slides are the direct element children of <deck-stage>. Each slide is
+ * automatically tagged with:
+ *   - data-screen-label="NN Label"   (1-indexed, for comment flow)
+ *   - data-om-validate="no_overflowing_text,no_overlapping_text,slide_sized_text"
+ */
+
+(() => {
+  const DESIGN_W_DEFAULT = 1920;
+  const DESIGN_H_DEFAULT = 1080;
+  const OVERLAY_HIDE_MS = 1800;
+  const VALIDATE_ATTR = 'no_overflowing_text,no_overlapping_text,slide_sized_text';
+
+  const pad2 = (n) => String(n).padStart(2, '0');
+
+  const stylesheet = `
+    :host {
+      position: fixed;
+      inset: 0;
+      display: block;
+      background: #000;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+      overflow: hidden;
+    }
+
+    .stage {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .canvas {
+      position: relative;
+      transform-origin: center center;
+      flex-shrink: 0;
+      background: #fff;
+      will-change: transform;
+    }
+
+    /* Slides live in light DOM (via <slot>) so authored CSS still applies.
+       We absolutely position each slotted child to stack them. */
+    ::slotted(*) {
+      position: absolute !important;
+      inset: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      box-sizing: border-box !important;
+      overflow: hidden;
+      opacity: 0;
+      pointer-events: none;
+      visibility: hidden;
+    }
+    ::slotted([data-deck-active]) {
+      opacity: 1;
+      pointer-events: auto;
+      visibility: visible;
+    }
+
+    /* Tap zones for mobile — back/forward thirds like Stories.
+       Transparent, no visible UI, don't block the overlay. */
+    .tapzones {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      z-index: 2147482000;
+      pointer-events: none;
+    }
+    .tapzone {
+      flex: 1;
+      pointer-events: auto;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* Only activate tap zones on coarse pointers (touch devices). */
+    @media (hover: hover) and (pointer: fine) {
+      .tapzones { display: none; }
+    }
+
+    .overlay {
+      position: fixed;
+      left: 50%;
+      bottom: 22px;
+      transform: translate(-50%, 6px) scale(0.92);
+      filter: blur(6px);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      background: #000;
+      color: #fff;
+      border-radius: 999px;
+      font-size: 12px;
+      font-feature-settings: "tnum" 1;
+      letter-spacing: 0.01em;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 260ms ease, transform 260ms cubic-bezier(.2,.8,.2,1), filter 260ms ease;
+      transform-origin: center bottom;
+      z-index: 2147483000;
+      user-select: none;
+    }
+    .overlay[data-visible] {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translate(-50%, 0) scale(1);
+      filter: blur(0);
+    }
+
+    .btn {
+      appearance: none;
+      -webkit-appearance: none;
+      background: transparent;
+      border: 0;
+      margin: 0;
+      padding: 0;
+      color: inherit;
+      font: inherit;
+      cursor: default;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 28px;
+      min-width: 28px;
+      border-radius: 999px;
+      color: rgba(255,255,255,0.72);
+      transition: background 140ms ease, color 140ms ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+    .btn:active { background: rgba(255,255,255,0.18); }
+    .btn:focus { outline: none; }
+    .btn:focus-visible { outline: none; }
+    .btn::-moz-focus-inner { border: 0; }
+    .btn svg { width: 14px; height: 14px; display: block; }
+    .btn.reset {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      padding: 0 10px 0 12px;
+      gap: 6px;
+      color: rgba(255,255,255,0.72);
+    }
+    .btn.reset .kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 10px;
+      line-height: 1;
+      color: rgba(255,255,255,0.88);
+      background: rgba(255,255,255,0.12);
+      border-radius: 4px;
+    }
+
+    .count {
+      font-variant-numeric: tabular-nums;
+      color: #fff;
+      font-weight: 500;
+      padding: 0 8px;
+      min-width: 42px;
+      text-align: center;
+      font-size: 12px;
+    }
+    .count .sep { color: rgba(255,255,255,0.45); margin: 0 3px; font-weight: 400; }
+    .count .total { color: rgba(255,255,255,0.55); }
+
+    .divider {
+      width: 1px;
+      height: 14px;
+      background: rgba(255,255,255,0.18);
+      margin: 0 2px;
+    }
+
+    /* ── Print: one page per slide, no chrome ────────────────────────────
+       The screen layout stacks every slide at inset:0 inside a scaled
+       canvas; for print we want them in document flow at the authored
+       design size so the browser paginates one slide per sheet. The
+       @page size is set from the width/height attributes via the inline
+       <style id="deck-stage-print-page"> that connectedCallback injects
+       into <head> (the @page at-rule has no effect inside shadow DOM). */
+    @media print {
+      :host {
+        position: static;
+        inset: auto;
+        background: none;
+        overflow: visible;
+        color: inherit;
+      }
+      .stage { position: static; display: block; }
+      .canvas {
+        transform: none !important;
+        width: auto !important;
+        height: auto !important;
+        background: none;
+        will-change: auto;
+      }
+      ::slotted(*) {
+        position: relative !important;
+        inset: auto !important;
+        width: var(--deck-design-w) !important;
+        height: var(--deck-design-h) !important;
+        box-sizing: border-box !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        pointer-events: auto;
+        break-after: page;
+        page-break-after: always;
+        break-inside: avoid;
+        overflow: hidden;
+      }
+      ::slotted(*:last-child) {
+        break-after: auto;
+        page-break-after: auto;
+      }
+      .overlay, .tapzones { display: none !important; }
+    }
+  `;
+
+  class DeckStage extends HTMLElement {
+    static get observedAttributes() { return ['width', 'height', 'noscale']; }
+
+    constructor() {
+      super();
+      this._root = this.attachShadow({ mode: 'open' });
+      this._index = 0;
+      this._slides = [];
+      this._notes = [];
+      this._hideTimer = null;
+      this._mouseIdleTimer = null;
+
+      this._onKey = this._onKey.bind(this);
+      this._onResize = this._onResize.bind(this);
+      this._onSlotChange = this._onSlotChange.bind(this);
+      this._onMouseMove = this._onMouseMove.bind(this);
+      this._onTapBack = this._onTapBack.bind(this);
+      this._onTapForward = this._onTapForward.bind(this);
+    }
+
+    get designWidth() {
+      return parseInt(this.getAttribute('width'), 10) || DESIGN_W_DEFAULT;
+    }
+    get designHeight() {
+      return parseInt(this.getAttribute('height'), 10) || DESIGN_H_DEFAULT;
+    }
+
+    connectedCallback() {
+      this._render();
+      this._loadNotes();
+      this._syncPrintPageRule();
+      window.addEventListener('keydown', this._onKey);
+      window.addEventListener('resize', this._onResize);
+      window.addEventListener('mousemove', this._onMouseMove, { passive: true });
+      // Initial collection + layout happens via slotchange, which fires on mount.
+    }
+
+    disconnectedCallback() {
+      window.removeEventListener('keydown', this._onKey);
+      window.removeEventListener('resize', this._onResize);
+      window.removeEventListener('mousemove', this._onMouseMove);
+      if (this._hideTimer) clearTimeout(this._hideTimer);
+      if (this._mouseIdleTimer) clearTimeout(this._mouseIdleTimer);
+    }
+
+    attributeChangedCallback() {
+      if (this._canvas) {
+        this._canvas.style.width = this.designWidth + 'px';
+        this._canvas.style.height = this.designHeight + 'px';
+        this._canvas.style.setProperty('--deck-design-w', this.designWidth + 'px');
+        this._canvas.style.setProperty('--deck-design-h', this.designHeight + 'px');
+        this._fit();
+        this._syncPrintPageRule();
+      }
+    }
+
+    _render() {
+      const style = document.createElement('style');
+      style.textContent = stylesheet;
+
+      const stage = document.createElement('div');
+      stage.className = 'stage';
+
+      const canvas = document.createElement('div');
+      canvas.className = 'canvas';
+      canvas.style.width = this.designWidth + 'px';
+      canvas.style.height = this.designHeight + 'px';
+      canvas.style.setProperty('--deck-design-w', this.designWidth + 'px');
+      canvas.style.setProperty('--deck-design-h', this.designHeight + 'px');
+
+      const slot = document.createElement('slot');
+      slot.addEventListener('slotchange', this._onSlotChange);
+      canvas.appendChild(slot);
+      stage.appendChild(canvas);
+
+      // Tap zones (mobile): left third = back, right third = forward.
+      const tapzones = document.createElement('div');
+      tapzones.className = 'tapzones export-hidden';
+      tapzones.setAttribute('aria-hidden', 'true');
+      tapzones.setAttribute('data-noncommentable', '');
+      const tzBack = document.createElement('div');
+      tzBack.className = 'tapzone tapzone--back';
+      const tzMid = document.createElement('div');
+      tzMid.className = 'tapzone tapzone--mid';
+      tzMid.style.pointerEvents = 'none';
+      const tzFwd = document.createElement('div');
+      tzFwd.className = 'tapzone tapzone--fwd';
+      tzBack.addEventListener('click', this._onTapBack);
+      tzFwd.addEventListener('click', this._onTapForward);
+      tapzones.append(tzBack, tzMid, tzFwd);
+
+      // Overlay: compact, solid black, with clickable controls.
+      const overlay = document.createElement('div');
+      overlay.className = 'overlay export-hidden';
+      overlay.setAttribute('role', 'toolbar');
+      overlay.setAttribute('aria-label', 'Deck controls');
+      overlay.setAttribute('data-noncommentable', '');
+      overlay.innerHTML = `
+        <button class="btn prev" type="button" aria-label="Previous slide" title="Previous (←)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>
+        </button>
+        <span class="count" aria-live="polite"><span class="current">1</span><span class="sep">/</span><span class="total">1</span></span>
+        <button class="btn next" type="button" aria-label="Next slide" title="Next (→)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg>
+        </button>
+        <span class="divider"></span>
+        <button class="btn reset" type="button" aria-label="Reset to first slide" title="Reset (R)">Reset<span class="kbd">R</span></button>
+      `;
+
+      overlay.querySelector('.prev').addEventListener('click', () => this._go(this._index - 1, 'click'));
+      overlay.querySelector('.next').addEventListener('click', () => this._go(this._index + 1, 'click'));
+      overlay.querySelector('.reset').addEventListener('click', () => this._go(0, 'click'));
+
+      this._root.append(style, stage, tapzones, overlay);
+      this._canvas = canvas;
+      this._slot = slot;
+      this._overlay = overlay;
+      this._countEl = overlay.querySelector('.current');
+      this._totalEl = overlay.querySelector('.total');
+    }
+
+    /** @page must live in the document stylesheet — it's a no-op inside
+     *  shadow DOM. Inject/update a single <head> style tag so the print
+     *  sheet matches the design size and Save-as-PDF yields one slide per
+     *  page with no margins. */
+    _syncPrintPageRule() {
+      const id = 'deck-stage-print-page';
+      let tag = document.getElementById(id);
+      if (!tag) {
+        tag = document.createElement('style');
+        tag.id = id;
+        document.head.appendChild(tag);
+      }
+      tag.textContent =
+        '@page { size: ' + this.designWidth + 'px ' + this.designHeight + 'px; margin: 0; } ' +
+        '@media print { html, body { margin: 0 !important; padding: 0 !important; background: none !important; overflow: visible !important; height: auto !important; } ' +
+        '* { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }';
+    }
+
+    _onSlotChange() {
+      this._collectSlides();
+      this._restoreIndex();
+      this._applyIndex({ showOverlay: false, broadcast: true, reason: 'init' });
+      this._fit();
+    }
+
+    _collectSlides() {
+      const assigned = this._slot.assignedElements({ flatten: true });
+      this._slides = assigned.filter((el) => {
+        // Skip template/style/script nodes even if someone slots them.
+        const tag = el.tagName;
+        return tag !== 'TEMPLATE' && tag !== 'SCRIPT' && tag !== 'STYLE';
+      });
+
+      this._slides.forEach((slide, i) => {
+        const n = i + 1;
+        // Determine a label for comment flow: prefer explicit data-label,
+        // then an existing data-screen-label, then first heading, else "Slide".
+        let label = slide.getAttribute('data-label');
+        if (!label) {
+          const existing = slide.getAttribute('data-screen-label');
+          if (existing) {
+            // Strip any leading number the author may have included.
+            label = existing.replace(/^\s*\d+\s*/, '').trim() || existing;
+          }
+        }
+        if (!label) {
+          const h = slide.querySelector('h1, h2, h3, [data-title]');
+          if (h) label = (h.textContent || '').trim().slice(0, 40);
+        }
+        if (!label) label = 'Slide';
+        slide.setAttribute('data-screen-label', `${pad2(n)} ${label}`);
+
+        // Validation attribute for comment flow / auto-checks.
+        if (!slide.hasAttribute('data-om-validate')) {
+          slide.setAttribute('data-om-validate', VALIDATE_ATTR);
+        }
+
+        slide.setAttribute('data-deck-slide', String(i));
+      });
+
+      if (this._totalEl) this._totalEl.textContent = String(this._slides.length || 1);
+      if (this._index >= this._slides.length) this._index = Math.max(0, this._slides.length - 1);
+    }
+
+    _loadNotes() {
+      const tag = document.getElementById('speaker-notes');
+      if (!tag) { this._notes = []; return; }
+      try {
+        const parsed = JSON.parse(tag.textContent || '[]');
+        if (Array.isArray(parsed)) this._notes = parsed;
+      } catch (e) {
+        console.warn('[deck-stage] Failed to parse #speaker-notes JSON:', e);
+        this._notes = [];
+      }
+    }
+
+    _restoreIndex() {
+      // The host's ?slide= param is delivered as a #<int> hash (1-indexed) on
+      // the iframe src. No hash → slide 1; the deck itself keeps no position
+      // state across loads.
+      const h = (location.hash || '').match(/^#(\d+)$/);
+      if (h) {
+        const n = parseInt(h[1], 10) - 1;
+        if (n >= 0 && n < this._slides.length) this._index = n;
+      }
+    }
+
+    _applyIndex({ showOverlay = true, broadcast = true, reason = 'init' } = {}) {
+      if (!this._slides.length) return;
+      const prev = this._prevIndex == null ? -1 : this._prevIndex;
+      const curr = this._index;
+      // Keep the iframe's own hash in sync so an in-iframe location.reload()
+      // (reload banner path in viewer-handle.ts) lands on the current slide,
+      // not the stale deep-link hash from initial load.
+      try { history.replaceState(null, '', '#' + (curr + 1)); } catch (e) {}
+      this._slides.forEach((s, i) => {
+        if (i === curr) s.setAttribute('data-deck-active', '');
+        else s.removeAttribute('data-deck-active');
+      });
+      if (this._countEl) this._countEl.textContent = String(curr + 1);
+
+      if (broadcast) {
+        // (1) Legacy: host-window postMessage for speaker-notes renderers.
+        try { window.postMessage({ slideIndexChanged: curr }, '*'); } catch (e) {}
+
+        // (2) In-page CustomEvent on the <deck-stage> element itself.
+        //     Bubbles and composes out of shadow DOM so slide code can listen:
+        //       document.querySelector('deck-stage').addEventListener('slidechange', e => {
+        //         e.detail.index, e.detail.previousIndex, e.detail.total, e.detail.slide, e.detail.reason
+        //       });
+        const detail = {
+          index: curr,
+          previousIndex: prev,
+          total: this._slides.length,
+          slide: this._slides[curr] || null,
+          previousSlide: prev >= 0 ? (this._slides[prev] || null) : null,
+          reason: reason, // 'init' | 'keyboard' | 'click' | 'tap' | 'api'
+        };
+        this.dispatchEvent(new CustomEvent('slidechange', {
+          detail,
+          bubbles: true,
+          composed: true,
+        }));
+      }
+
+      this._prevIndex = curr;
+      if (showOverlay) this._flashOverlay();
+    }
+
+    _flashOverlay() {
+      if (!this._overlay) return;
+      this._overlay.setAttribute('data-visible', '');
+      if (this._hideTimer) clearTimeout(this._hideTimer);
+      this._hideTimer = setTimeout(() => {
+        this._overlay.removeAttribute('data-visible');
+      }, OVERLAY_HIDE_MS);
+    }
+
+    _fit() {
+      if (!this._canvas) return;
+      // PPTX export sets noscale so the DOM capture sees authored-size
+      // geometry — the scaled canvas is in shadow DOM, so the exporter's
+      // resetTransformSelector can't reach .canvas.style.transform directly.
+      if (this.hasAttribute('noscale')) {
+        this._canvas.style.transform = 'none';
+        return;
+      }
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const s = Math.min(vw / this.designWidth, vh / this.designHeight);
+      this._canvas.style.transform = `scale(${s})`;
+    }
+
+    _onResize() { this._fit(); }
+
+    _onMouseMove() {
+      // Keep overlay visible while mouse moves; hide after idle.
+      this._flashOverlay();
+    }
+
+    _onTapBack(e) {
+      e.preventDefault();
+      this._go(this._index - 1, 'tap');
+    }
+
+    _onTapForward(e) {
+      e.preventDefault();
+      this._go(this._index + 1, 'tap');
+    }
+
+    _onKey(e) {
+      // Ignore when the user is typing.
+      const t = e.target;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const key = e.key;
+      let handled = true;
+
+      if (key === 'ArrowRight' || key === 'PageDown' || key === ' ' || key === 'Spacebar') {
+        this._go(this._index + 1, 'keyboard');
+      } else if (key === 'ArrowLeft' || key === 'PageUp') {
+        this._go(this._index - 1, 'keyboard');
+      } else if (key === 'Home') {
+        this._go(0, 'keyboard');
+      } else if (key === 'End') {
+        this._go(this._slides.length - 1, 'keyboard');
+      } else if (key === 'r' || key === 'R') {
+        this._go(0, 'keyboard');
+      } else if (/^[0-9]$/.test(key)) {
+        // 1..9 jump to that slide; 0 jumps to 10.
+        const n = key === '0' ? 9 : parseInt(key, 10) - 1;
+        if (n < this._slides.length) this._go(n, 'keyboard');
+      } else {
+        handled = false;
+      }
+
+      if (handled) {
+        e.preventDefault();
+        this._flashOverlay();
+      }
+    }
+
+    _go(i, reason = 'api') {
+      if (!this._slides.length) return;
+      const clamped = Math.max(0, Math.min(this._slides.length - 1, i));
+      if (clamped === this._index) {
+        this._flashOverlay();
+        return;
+      }
+      this._index = clamped;
+      this._applyIndex({ showOverlay: true, broadcast: true, reason });
+    }
+
+    // Public API ------------------------------------------------------------
+
+    /** Current slide index (0-based). */
+    get index() { return this._index; }
+    /** Total slide count. */
+    get length() { return this._slides.length; }
+    /** Programmatically navigate. */
+    goTo(i) { this._go(i, 'api'); }
+    next() { this._go(this._index + 1, 'api'); }
+    prev() { this._go(this._index - 1, 'api'); }
+    reset() { this._go(0, 'api'); }
+  }
+
+  if (!customElements.get('deck-stage')) {
+    customElements.define('deck-stage', DeckStage);
+  }
+})();
+
+</script>
+<style>
+:root{
+  --paper:#F5F1E8;
+  --paper-2:#EFEAE0;
+  --ink:#0E1116;
+  --ink-2:#2A3038;
+  --muted:#5C6470;
+  --rule:#1A1F26;
+  --rule-soft:#C9C0AE;
+  --accent:#7A1F1F;
+  --pos:#1F4D2E;
+  --neg:#7A1F1F;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#0a0a0a;font-family:'Inter',sans-serif;color:var(--ink)}
+deck-stage{display:block}
+deck-stage > section{
+  width:1920px;height:1080px;background:var(--paper);color:var(--ink);
+  font-family:'Inter',sans-serif;font-size:22px;line-height:1.5;
+  position:relative;overflow:hidden;padding:90px 120px;
+  display:flex;flex-direction:column;
+}
+.s-head{display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:18px;border-bottom:1px solid var(--rule);margin-bottom:48px;flex-shrink:0}
+.s-head .brand{font-family:'EB Garamond',serif;font-size:24px;font-style:italic;color:var(--ink-2);letter-spacing:0.01em}
+.s-head .meta{font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted)}
+.s-title{font-family:'EB Garamond',serif;font-weight:500;font-size:60px;line-height:1.05;letter-spacing:-0.01em;color:var(--ink);margin-bottom:14px}
+.s-kicker{font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);margin-bottom:24px}
+.s-sub{font-size:24px;color:var(--ink-2);line-height:1.45;max-width:1500px;margin-bottom:40px}
+.s-body{flex:1;min-height:0;display:flex;flex-direction:column}
+.s-body p{font-size:21px;line-height:1.55;color:var(--ink-2);margin-bottom:16px;text-wrap:pretty}
+.s-body p strong, .s-body b{color:var(--ink);font-weight:600}
+.s-body ul{list-style:none;padding:0}
+.s-body ul li{position:relative;padding-left:28px;margin-bottom:12px;font-size:21px;line-height:1.5;color:var(--ink-2)}
+.s-body ul li::before{content:"";position:absolute;left:0;top:14px;width:14px;height:1px;background:var(--ink)}
+.s-body h3{font-family:'EB Garamond',serif;font-weight:500;font-size:30px;color:var(--ink);margin-bottom:16px}
+.s-body h4{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;margin-top:20px;padding-bottom:8px;border-bottom:1px solid var(--rule-soft)}
+.s-foot{position:absolute;left:120px;right:120px;bottom:42px;display:flex;justify-content:space-between;align-items:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);padding-top:18px;border-top:1px solid var(--rule-soft)}
+.s-foot .lhs{display:flex;gap:32px}
+
+/* COVER */
+.cover{padding:140px 160px;justify-content:space-between}
+.cover-top{display:flex;justify-content:space-between;align-items:flex-start}
+.cover-mark{font-family:'EB Garamond',serif;font-style:italic;font-size:28px;color:var(--ink-2)}
+.cover-mark::before{content:"§";font-style:normal;margin-right:10px;color:var(--accent);font-weight:700}
+.cover-tag{font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);text-align:right;line-height:2}
+.cover-mid{margin-top:80px}
+.cover-eyebrow{font-family:'JetBrains Mono',monospace;font-size:15px;letter-spacing:0.3em;text-transform:uppercase;color:var(--muted);margin-bottom:32px}
+.cover h1{font-family:'EB Garamond',serif;font-weight:500;font-size:240px;line-height:0.92;letter-spacing:-0.025em;color:var(--ink)}
+.cover-sub{font-family:'EB Garamond',serif;font-style:italic;font-weight:400;font-size:36px;color:var(--ink-2);line-height:1.3;margin-top:36px;max-width:1400px}
+.cover-bot{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:48px;padding-top:36px;border-top:1px solid var(--rule)}
+.cover-bot dt{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.cover-bot dd{font-family:'EB Garamond',serif;font-size:30px;color:var(--ink);font-weight:500}
+
+/* DIVIDER */
+.divider{padding:140px 160px;justify-content:flex-end}
+.divider .roman{position:absolute;top:120px;right:160px;font-family:'EB Garamond',serif;font-style:italic;font-size:96px;color:var(--rule-soft);font-weight:400;letter-spacing:0.05em}
+.divider .div-eyebrow{font-family:'JetBrains Mono',monospace;font-size:15px;letter-spacing:0.3em;text-transform:uppercase;color:var(--muted);margin-bottom:32px}
+.divider h2{font-family:'EB Garamond',serif;font-weight:500;font-size:140px;line-height:0.95;letter-spacing:-0.02em;color:var(--ink);max-width:1400px}
+.divider .div-sub{font-family:'EB Garamond',serif;font-style:italic;font-size:30px;color:var(--ink-2);margin-top:36px;max-width:1100px;line-height:1.4}
+.divider .div-rule{width:120px;height:2px;background:var(--ink);margin-top:48px}
+
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:80px;flex:1;min-height:0}
+.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:60px;flex:1;min-height:0}
+.col-block h4:first-child{margin-top:0}
+
+/* Image block — tasteful figure with caption, contained height so slides stay composed */
+.s-figure{margin-top:18px;display:flex;flex-direction:column;gap:10px;flex:0 0 auto}
+.s-figure .frame{border:1px solid var(--rule);background:var(--paper-2);border-radius:2px;overflow:hidden;display:flex;align-items:center;justify-content:center;max-height:380px}
+.s-figure .frame img{width:100%;height:auto;max-height:380px;object-fit:contain;display:block}
+.s-figure figcaption{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted)}
+.s-figure.compact .frame{max-height:280px}
+.s-figure.compact .frame img{max-height:280px}
+/* Side-by-side text + image layout */
+.text-image{display:grid;grid-template-columns:1fr 1.1fr;gap:48px;flex:1;min-height:0;align-items:start}
+.text-image > .col-block{min-width:0}
+.text-image .s-figure{margin-top:0;align-self:stretch;height:100%}
+.text-image .s-figure .frame{max-height:480px;height:100%}
+.text-image .s-figure .frame img{max-height:480px}
+
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin:24px 0 36px}
+.kpi{padding:24px 24px 24px 0;border-right:1px solid var(--rule-soft)}
+.kpi:last-child{border-right:none}
+.kpi:not(:first-child){padding-left:24px}
+.kpi-label{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+.kpi-value{font-family:'EB Garamond',serif;font-weight:500;font-size:48px;line-height:1;color:var(--ink);letter-spacing:-0.01em}
+.kpi-note{font-size:14px;color:var(--muted);margin-top:8px;line-height:1.4}
+
+table.fin{width:100%;border-collapse:collapse;font-size:17px;font-variant-numeric:tabular-nums}
+table.fin thead th{background:transparent;color:var(--ink);font-weight:600;text-align:left;padding:11px 14px;border-bottom:2px solid var(--ink);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.18em;text-transform:uppercase}
+table.fin tbody td{padding:12px 14px;border-bottom:1px solid var(--rule-soft);color:var(--ink-2);vertical-align:top}
+table.fin tbody tr:last-child td{border-bottom:none}
+table.fin tbody td.num{text-align:right;font-family:'JetBrains Mono',monospace;color:var(--ink);white-space:nowrap}
+table.fin tbody tr.total td{font-weight:600;color:var(--ink);border-top:1px solid var(--ink);border-bottom:1px solid var(--ink);background:rgba(0,0,0,0.03)}
+table.fin tbody tr.total td.num{font-weight:700}
+table.fin.pnl-dense{font-size:15px}
+table.fin.pnl-dense thead th{padding:8px 12px;font-size:11px}
+table.fin.pnl-dense tbody td{padding:7px 12px}
+
+.swot{display:grid;grid-template-columns:1fr 1fr;gap:36px;flex:1;min-height:0}
+.swot-cell{padding:28px 32px;background:rgba(255,255,255,0.4);border:1px solid var(--rule-soft);border-top:3px solid var(--ink)}
+.swot-cell h4{margin:0 0 14px 0;border:none;padding:0}
+.swot-cell ul li{font-size:18px;margin-bottom:10px;padding-left:22px}
+.swot-cell ul li::before{top:11px;width:10px}
+
+.verdict{display:inline-flex;align-items:baseline;gap:18px;padding:18px 28px;border:2px solid var(--ink);background:var(--paper-2);font-family:'EB Garamond',serif}
+.verdict .v-tag{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted)}
+.verdict .v-text{font-size:36px;font-weight:600;color:var(--ink);letter-spacing:-0.01em}
+
+.closing{padding:140px 160px;justify-content:space-between}
+.closing-mark{font-family:'EB Garamond',serif;font-style:italic;font-size:200px;color:var(--ink);line-height:1}
+.closing h2{font-family:'EB Garamond',serif;font-weight:500;font-size:96px;line-height:1.05;letter-spacing:-0.02em;color:var(--ink);max-width:1400px;margin-top:48px}
+.closing-sig{display:flex;justify-content:space-between;align-items:flex-end;padding-top:36px;border-top:1px solid var(--rule)}
+
+.lead{font-size:25px;color:var(--ink);line-height:1.45;margin-bottom:28px;max-width:1500px;font-weight:400}
+.callout{padding:22px 26px;background:var(--paper-2);border-left:3px solid var(--ink);font-size:20px;line-height:1.55;color:var(--ink-2);margin:20px 0}
+.dl-grid{display:grid;grid-template-columns:220px 1fr;gap:16px 28px;align-items:baseline}
+.dl-grid dt{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);padding-top:4px}
+.dl-grid dd{font-size:20px;color:var(--ink-2);line-height:1.5}
+.tag{display:inline-block;padding:4px 10px;border:1px solid var(--rule);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.15em;text-transform:uppercase;margin-right:6px;color:var(--ink-2)}
+</style>
+</head>
+<body>
+
+<script type="application/json" id="speaker-notes">["Bonjour à tous et bienvenue. Aujourd'hui, nous allons nous pencher sur Pestaly, une entreprise que nous évaluons dans le cadre de nos critères d'investissement. Pestaly opère dans le secteur des services de lutte antiparasitaire franchisés pour les propriétés résidentielles et commerciales à travers la France. Notre objectif est de comprendre en profondeur son modèle d'affaires, son potentiel de marché et les risques associés, afin de déterminer si elle correspond à notre thèse d'investissement.", "Pestaly cible un marché de niche mais en forte croissance : le contrôle parasitaire franchisé. Notre approche combine une analyse quantitative de l'attractivité, de la pénétrabilité, de la gagnabilité et de la récompense du marché, avec une évaluation qualitative de la thèse de l'entreprise. Le score agrégé de 72,5/100 suggère un environnement modérément favorable, nécessitant une navigation stratégique prudente. Nous allons détailler chaque composante pour justifier ce score.", "Le marché du contrôle parasitaire vise à protéger la santé et l'intégrité des propriétés. Sa fragmentation actuelle génère une qualité de service inégale, un manque de transparence et un suivi insatisfaisant. Pestaly se positionne précisément sur cette douleur en offrant des services professionnels et préventifs, avec une structuration digitale qui doit lui permettre de capitaliser sur la récurrence de la demande et de bâtir une relation de confiance durable avec ses clients. La profitabilité se concentre dans une délivrance de service efficace et récurrente.", "Notre thèse de marché repose sur deux piliers : l'urbanisation croissante et le changement climatique, qui amplifient les infestations, créant une demande persistante. Les acteurs traditionnels peinent à s'adapter, manquant de protocoles standardisés et d'infrastructures numériques. Pestaly, avec son modèle de franchise numérisé et ses services de haute qualité, cherche à combler ce vide. La fenêtre est ouverte grâce aux régulations (Certibiocide) qui élèvent les standards professionnels, mais se fermera lorsque les acteurs établis consolideront ou digitaliseront, nous imposant une acquisition rapide de parts de marché.", "Notre conviction est de niveau 'Moyen'. Bien qu'un investisseur discipliné puisse hésiter face à la fragmentation du marché, nous parions sur la capacité de Mickael Di Luca à industrialiser des services fragmentés via la technologie et le modèle franchisé. La condition testable est que le réseau franchisé digitalisé puisse capter des parts de marché significatives en France d'ici 36 mois. Un éclaircissement sur les processus de lead generation et d'onboarding lors du premier appel pourrait renforcer notre conviction, ou l'affaiblir si les données manquent de clarté.", "Le marché est jugé attractif avec un score de 75/100. La demande sous-jacente est forte, propulsée par la prise de conscience de la santé publique et les réglementations. Le timing est opportun, avec une forte croissance prévue, tirée par des facteurs environnementaux et réglementaires. Cependant, les risques incluent une concurrence locale intense et la nécessité de maintenir une qualité de service élevée à travers un réseau en croissance rapide. Des chiffres de croissance plus précis seraient nécessaires pour une évaluation complète.", "Le marché est 'gagnable' avec un score de 70/100. Il est compétitif, mais des voies de différenciation sont claires. Les acteurs historiques sont souvent familiaux et manquent d'outils digitaux. Pestaly cible un 'espace blanc' en offrant un service national, standardisé et technologique. La défense se construit par la réputation de marque, la satisfaction client à 100% et la certification des techniciens, créant un coût de changement pour les clients. Nous allons chercher la preuve de cette capacité à pénétrer un marché fragmenté.", "Le marché est 'pénétrable' avec un très bon score de 85/100. Le modèle GTM de Pestaly, axé sur la franchise, est très efficace. Il permet une acquisition client efficiente et une expansion géographique rapide sans alourdir les coûts de l'entité centrale. La transparence tarifaire et la scalabilité du modèle, avec un contrôle qualité centralisé, sont des atouts majeurs. Nous devrons approfondir les indicateurs de LTV/CAC spécifiques pour valider pleinement cette hypothèse.", "Le marché est 'récompensant' avec un score de 60/100, la note la plus faible. L'absence de données de financement publiques pour Pestaly, suggérant un autofinancement, n'offre pas une validation externe forte. Les multiples de sortie pour le secteur sont inconnus, rendant l'évaluation du potentiel de plus-value complexe. Les acheteurs stratégiques potentiels pourraient être de grands groupes de facility management ou des géants du contrôle parasitaire. Le profil de revenus récurrents est positif, mais la taille des retours n'est pas claire, nécessitant une analyse approfondie pour aligner ce marché avec les exigences de rendement de notre fonds.", "En synthèse, le marché combine une attractivité et une gagnabilité modérées avec un GTM très pénétrable, mais une perspective de sortie moins évidente. Cela souligne l'importance d'un fondateur exceptionnel en matière de discipline opérationnelle et de scaling capital-efficient. Pestaly, sous la direction de Mickael Di Luca, doit devenir un réseau national dominant, générateur de cash, soit comme un actif financier fort, soit comme une cible d'acquisition stratégique, plutôt que d'attendre une sortie technologique à haut multiple immédiate. La fiabilité des données sources est correcte, mais nous avons besoin de compléter les points critiques du marché.", "Voici la chaîne de valeur du marché de la lutte antiparasitaire. Pestaly se positionne principalement sur les étapes de service et de prévention, avec une intégration forte des technologies digitales. Chaque étape est critique pour la fidélisation client et la construction de la `data moat`. Le score entre 0 et 10 indique notre conviction sur la capacité de Pestaly à dominer chaque maillon. Une stratégie d'acquisition ou de partenariat peut être envisagée sur les maillons les moins bien notés si elles ont un impact sur la rétention.", "Notre analyse a permis d'identifier trois positions stratégiques clés pour Pestaly. La première est la capacité à offrir un service standardisé et professionnel, différencié par la qualité et la traçabilité. La deuxième concerne son modèle de franchise unique, permettant une expansion rapide et capital-efficiente. Enfin, l'expertise du fondateur en intégration technologique et opérations à grande échelle est un atout majeur. Ces positions lui confèrent un avantage concurrentiel durable dans un marché fragmenté et en évolution.", "Nous observons plusieurs tendances clés. Le changement climatique et l'urbanisation accrue agissent comme catalyseurs, augmentant la demande pour les services de Pestaly. Les points de contrôle essentiels sont la conformité réglementaire (Certibiocide) et la qualité de service unifiée à travers le réseau. Le déplacement des acteurs traditionnels par un modèle digitalisé et standardisé, comme celui de Pestaly, est en cours. Enfin, l'économie unitaire du franchisé doit permettre de financer le développement de l'activité.", "Le paysage concurrentiel est vaste, avec des acteurs locaux très implantés et des géants internationaux. Pestaly doit continuer à se démarquer par sa capacité à offrir une alternative structurée et conforme. Le positionnement précis de Pestaly, entre les indépendants très locaux et les grands groupes plutôt corporate, est un avantage. Il s'agit de capter le mieux des deux mondes et de construire une position de leadership par le service et l'industrialisation.", "Le Magic Quadrant est un outil pour positionner les acteurs concurrents. Nous avons identifié des leaders comme Rentokil Initial, des challengers locaux qui cherchent à s'étendre, des visionnaires qui tentent des approches innovantes mais ne sont pas à l'échelle, et enfin, des acteurs de niche très spécialisés. Pestaly se situe en tant que disruptive, avec un fort potentiel de croissance si elle réussit à maintenir son avance technologique et à étendre son réseau sans compromettre la qualité.", "Notre quadrant M&A identifie les opportunités et menaces dans le paysage des fusions-acquisitions. Les prédateurs pourraient être de grands groupes de facility management cherchant à intégrer le contrôle parasitaire. Les aspirants sont des startups bien financées dans les services à domicile qui pourraient pivoter. Les géants, comme Rentokil Initial, pourraient envisager une acquisition si Pestaly atteint une taille critique. Enfin, Pestaly elle-même est une cible pour consolider les petits acteurs. Ceci positionne Pestaly comme un actif stratégique avec des options multiples à l'horizon.", "Nous avons identifié plusieurs scénarios clés. Le scénario de croissance organique prévoit un développement constant via l'ouverture de nouvelles franchises. Un scénario de consolidation verrait Pestaly acquérir de plus petits acteurs pour renforcer sa présence. Enfin, un scénario d'innovation technologique permettrait d'augmenter la valeur des services par des outils prédictifs. La capacité de Pestaly à naviguer entre ces scénarios déterminera son succès à long terme.", "Voici une analyse des synergies potentielles si Pestaly venait à être acquise ou à fusionner. Les synergies 'Hard Cost' proviennent d'économies d'échelle sur les achats de produits. Les synergies 'Revenue' peuvent être réalisées par des ventes croisées avec d'autres services ou une expansion géographique plus rapide. Les synergies de 'Capability' renforceraient l'offre technologique et le savoir-faire. Enfin, les synergies 'Défensives' protégeraient les parts de marché face à la concurrence. Nous avons classé l'impact, le calendrier et la difficulté de chaque synergie. Cette table est à lire comme l'intégration de Pestaly dans un groupe plus large.", "Mickael Di Luca, le fondateur, est un bâtisseur d'entreprises reconnu, qui a démontré sa capacité à transformer des marchés fragmentés en utilisant la technologie et le modèle de franchise. Ayant lancé Devibox et ARTIBOX, son expérience dans l'intégration de solutions logicielles est un atout. Son pedigree, bien que non universitaire, est complété par 13 ans chez Air France Industries, gage d'une grande rigueur opérationnelle. C'est un entrepreneur méthodique et persévérant, avec une vision claire pour l'industrialisation des services.", "Mickael Di Luca est un entrepreneur sériel, à la fois innovant et enclin à la franchise. Il excelle à identifier les lacunes du marché et à bâtir des modèles scalables. Les 13 ans chez Air France Industries lui ont apporté une discipline opérationnelle rigoureuse. Sa capacité à développer des logiciels sur mesure et à orchestrer des plateformes pour différentes industries démontre son talent pour l'innovation. Il a une compréhension intime des défis opérationnels et de marché.", "La carrière de Mickael Di Luca se caractérise par une transition réussie du monde corporate à l'entrepreneuriat disruptif. Après treize ans chez Air France Industries, il a fondé Avenir Rénovations, un modèle basé sur la sous-traitance et la franchise. Sa capacité à innover l'a mené à créer Devibox et ARTIBOX, des plateformes pour digitaliser le secteur de la construction. Sa trajectoire actuelle avec Pestaly, parallèlement à d'autres projets, témoigne d'un dynamisme constant et d'une volonté inébranlable d'optimiser les industries de service par la technologie et des frameworks évolutifs. Les dates des projets futurs sont un point à éclaircir en DD.", "Face au profil pléthorique du fondateur, nous avons établi un calendrier détaillé de ses réalisations. Son passage chez Air France Industries lui a conféré une solide base opérationnelle. Il a ensuite créé et fait grandir Avenir Rénovations, puis a étendu son expertise au développement logiciel avec Devibox. Son implication dans ARTIBOX et Avenir-Business.fr montre sa propension à innover, mais interroge aussi sur sa capacité à maintenir une concentration optimale sur Pestaly, compte tenu de la simultanéité des dates de création, qui sont à vérifier.", "L'évaluation du Founder DNA de Mickael Di Luca révèle des scores exceptionnels. Sa `Grit` (ténacité) est de 90/100, démontrée par sa persévérance à long terme. Sa `Discipline` est cotée 85/100, reflétée par ses décisions claires et orientées résultats. Sa `Self-Belief` (confiance en soi) est très élevée, à 95/100, preuve de sa capacité à prendre des risques. Son `Execution` est notée 90/100, indiquant une capacité à convertir sa vision en résultats tangibles. Enfin, sa `Vision & Purpose` (vision et sens) atteint 95/100, avec une cohérence thématique dans sa volonté de transformer l'industrie. Son score le plus faible, mais tout de même élevé, est en `Leadership` à 80/100. En synthèse, Mickael est un fondateur redoutable, avec une puissance de travail peu commune, qui s’épanouit dans l’industrialisation d'un marché traditionnel.", "Mickael Di Luca est un fondateur hautement efficace et dangereux, caractérisé par une `Grit`, une `Self-Belief` et une `Vision & Purpose` exceptionnelles. Sa capacité à maintenir des efforts à long terme et à prendre des risques importants est remarquable. Son exécution et sa discipline sont également très fortes, attestant de sa faculté à transformer sa vision en résultats tangibles. Cependant, son score en `Leadership` suggère qu'il pourrait bénéficier de co-fondateurs qui excellent dans le développement d'une culture collaborative. Cela l'aiderait à transiter d'un brillant entrepreneur-bâtisseur de systèmes vers un leader réellement multiplicateur, amplifiant ses capacités déjà formidables.", "Avant d'investir, nous avons mené une évaluation pré-screening détaillée. Le score global est de 80/100, indiquant un signal positif. L'excellence de l'équipe, sous la direction de Mickael Di Luca, excelle à 90/100. L'opportunité de marché est solide à 75/100. L'innovation produit, bien que dans un secteur traditionnel, atteint 70/100 grâce aux outils digitaux. Le modèle économique, basé sur la franchise, est bien noté (80/100). Enfin, la traction et la croissance sont robustes à 85/100. Ces scores agrégés confirment le potentiel de Pestaly et valident une première due diligence approfondie.", "Le SWOT révèle un Pestaly avec des forces évidentes, notamment l'expérience opérationnelle de Mickael Di Luca et un modèle de franchise éprouvé. La standardisation via les outils digitaux et les certifications renforce sa position. Cependant, des faiblesses subsistent, comme l'attention partagée du fondateur et le risque de dilution de la qualité en raison du modèle 100% sous-traité. Les opportunités sont nombreuses, de la capture de contrats nationaux à l'expansion rapide du réseau. Les menaces incluent la concurrence des grands groupes et la volatilité réglementaire. Ces éléments structurent notre réflexion pour la suite des analyses.", "Voici notre plan d'action stratégique, divisé en quatre axes. La `Defense` consiste à capitaliser sur les atouts de Pestaly pour consolider sa position, notamment grâce à la conformité réglementaire et à sa couverture nationale. L'`Offense` vise à accélérer l'expansion en répliquant le succès des précédents modèles franchisés du fondateur. Le `Kill Shot` met en lumière ce qui pourrait être fatal à l'entreprise si le fondateur se disperse trop. Enfin, la `Remediation` identifie les corrections nécessaires, principalement la nécessité d'une structure de leadership dédiée et centralisée pour Pestaly. Cette section est cruciale pour la construction de la thèse d'investissement.", "Notre thèse d'investissement pour Pestaly est de type B, c'est-à-dire `Stratégique`. Nous voyons Pestaly comme une opportunité de créer une plateforme nationale dominante dans un secteur fragmenté. Les leviers de valeur incluent un fondateur expérimenté, une forte traction, et un modèle de franchise capital-efficient avec une approche digitale innovante. Les fragilités résident dans la dilution de l'attention du fondateur et l'absence de données financières détaillées. La fenêtre d'opportunité est jugée ouverte, car le marché est en pleine mutation. Il est maintenant temps d'engager la discussion avec le fondateur.", "Nous avons identifié entre 6 et 10 synergies potentielles pour Pestaly. Les synergies `Hard Cost` concernent les économies d'échelle. Les synergies `Revenue` sont liées à l'expansion du marché et à la diversification des offres. Les synergies de `Capability` visent à renforcer les compétences technologiques et opérationnelles de l'entreprise. Enfin, les synergies `Défensives` concernent la protection de l'entreprise face à la concurrence. Pour chaque synergie, nous avons évalué son impact (High/Medium/Low), son calendrier de réalisation, et sa difficulté d'implémentation.", "Notre analyse des `Deal Killers` a permis d'identifier les risques majeurs qui pourraient compromettre cet investissement. Le premier risque est la dispersion du fondateur entre ses différents projets simultanés. Le second est l'incertitude quant à l'efficacité réelle de la `data moat`, c'est-à-dire si les données collectées sont utilisées de manière prédictive ou uniquement à des fins de conformité. Le troisième est le manque de visibilité sur les `unit economics` des franchisés. Enfin, la volatilité réglementaire est une menace constante. Pour chaque risque, nous proposons des actions d'atténuation. Ce sont des points essentiels pour la Due Diligence approfondie.", "Nous arrivons à la section Conviction. Notre angle d'investissement dominant est `'Early Stage Quality Signal'`, car le fondateur a une expertise opérationnelle approfondie, et la `data moat` de Pestaly commence à se former dès la première intervention. Le marché de la dératisation et désinfection est fragmenté et en consolidation, ce qui offre une excellente opportunité. Le timing est idéal grâce aux régulations qui poussent le marché. La société, bien que technologique, est une entreprise de services avec un modèle franchisé. Le fondateur est un transformateur de marché, mais sa dilution d'attention reste un risque majeur. La thèse d'investissement, axée sur les données et la conformité, est fortement validée. Nous continuons avec une conviction 'CONSIDER (Risk)'.", "Notre valorisation de Pestaly, basée sur un multiple de l'ARR, est de 8,0 M€. Cette valorisation utilise une approche `revenue` adaptée à un profil de croissance. Cependant, il existe un écart significatif avec la valeur basée sur l'EBITDA normalisé et le DCF, ce qui souligne une `confiance faible` dans la valorisation actuelle. L'offre basse et l'offre juste sont présentées, avec des tactiques de négociation pour chacune. La tension entre la valorisation de marché et nos `hurdles` de fonds est notable. Nous devrons négocier agressivement pour ramener cet investissement dans nos critères.", "Ce tableau présente les flux de revenus, la marge brute et les OPEX prévisionnels sur cinq ans. Chaque ligne est dérivée des hypothèses initiales du modèle, avec une croissance du chiffre d'affaires qui diminue au fil du temps. Les effectifs totaux sont également projetés pour chaque département. L'EBITDA annualisé est aussi une composante clé pour évaluer la rentabilité opérationnelle. Il va être important de comprendre la récurrence des revenus et le mix produit pour ajuster le P&L prévisionnel. Nous n'avons pas d'informations sur les prix et les volumes réels, ni le mix de services.", "L'analyse du retour sur investissement indique que, dans le scénario de base actuel, nous sommes `'BELOW HURDLE'`. L'investissement de 1,2 M€ sur 5 ans n'atteint pas les minimums requis de MOIC (5.00x) et d'IRR (35.0%) pour notre fonds. Le MOIC est de 1.96x et l'IRR est de 14.4%. Pour atteindre nos objectifs, nous devrons soit négocier une valorisation d'entrée plus faible, soit identifier des leviers de croissance ou de marge significatifs pour améliorer le profil de sortie. Cela sera le point central de nos discussions futures.", "Je vous remercie de votre attention. Pestaly représente une opportunité singulière, avec un fondateur missionnaire et un concept de franchise novateur exploitant une conjoncture marché favorable. Si la prochaine étape de Due Diligence confirme la capacité de l'entreprise à transformer ses données en avantage prédictif et résout les ambiguïtés de gouvernance, cet investissement pourrait devenir un actif stratégique pour notre fonds, et un moteur de transformation pour le marché français de la lutte antiparasitaire."]</script>
+
+<deck-stage>
+
+<section class="cover" data-screen-label="01 Couverture">
+  <div class="cover-top">
+    <div class="cover-mark">Mémo d'investissement confidentiel</div>
+    <div class="cover-tag">sforbt · M&amp;A Strategic &nbsp;·&nbsp; Investment Memo<br>Juin 2024</div>
+  </div>
+  <div class="cover-mid">
+    <div class="cover-eyebrow">Cible — Franchise Pest Control Services</div>
+    <h1>Pestaly</h1>
+    <div class="cover-sub">Franchise-based pest control and environmental health services for residential and commercial properties across France.</div>
+  </div>
+  <dl class="cover-bot">
+    <div><dt>Siège</dt><dd>Tours, Versailles, Saint-Gratien, and 10+ other French cities.</dd></div>
+    <div><dt>Stade</dt><dd>Early Stage</dd></div>
+    <div><dt>Score</dt><dd>60&thinsp;/&thinsp;100</dd></div>
+    <div><dt>Verdict</dt><dd>Consider</dd></div>
+  </dl>
+</section>
+
+<section data-screen-label="02 Sommaire">
+  <div class="s-head"><div class="brand">Pestaly · Mémo d'investissement</div><div class="meta">Sommaire</div></div>
+  <div class="s-title">Sommaire</div>
+  <div class="s-body" style="margin-top:24px">
+    <div class="three-col" style="gap:80px">
+      <div class="col-block">
+        <h4>I — Marché</h4>
+        <ul><li>Sizing top-down &amp; bottom-up</li><li>Chaîne de valeur</li><li>Tendances et acteurs</li><li>Quadrants concurrence et M&amp;A</li><li>Scénarios stratégiques</li></ul>
+        <h4>II — Société</h4>
+        <ul><li>Proposition de valeur</li><li>Produit et modèle</li><li>Équipe et fondateur</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>III — Évaluation stratégique</h4>
+        <ul><li>Résumé et scores</li><li>Analyse SWOT</li><li>Plan d'action</li></ul>
+        <h4>IV — Thèse sforbt</h4>
+        <ul><li>Synergies — Type C Hybride</li><li>Tableau des synergies</li><li>Deal killers</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>V — Conviction GP</h4>
+        <ul><li>Angle, marché, timing</li><li>Verdict et risk register</li></ul>
+        <h4>VI — Modèle financier</h4>
+        <ul><li>Valorisation triangulée</li><li>P&amp;L et flux de trésorerie</li><li>ROI et verdict quantitatif</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>sforbt · M&amp;A Strategic</span></div><div>02</div></div>
+</section>
+
+<section class="divider" data-screen-label="03 I Marché">
+  <div class="roman">I</div>
+  <div>
+    <div class="div-eyebrow">Première partie</div>
+    <h2>Marché</h2>
+    <div class="div-sub">Marché — 72.5/100</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="04 Sizing top-down">
+  <div class="s-head"><div class="brand">Pestaly · I — Marché</div><div class="meta">04&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Market sizing — top-down</div>
+  <div class="s-title">Marché du contrôle parasitaire (TAM — Top-Down)</div>
+  <div class="kpi-row">
+    <div class="kpi"><div class="kpi-label">TAM mondial</div><div class="kpi-value">2,9 Md$</div><div class="kpi-note">À compléter en DD</div></div>
+    <div class="kpi"><div class="kpi-label">SAM Europe</div><div class="kpi-value">1,5 Md$</div><div class="kpi-note">À compléter en DD</div></div>
+    <div class="kpi"><div class="kpi-label">SOM réaliste</div><div class="kpi-value">750 M$</div><div class="kpi-note">À compléter en DD</div></div>
+    <div class="kpi"><div class="kpi-label">CAGR</div><div class="kpi-value">19–20 %</div><div class="kpi-note">À compléter en DD</div></div>
+  </div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <h4>Approche top-down (en entonnoir)</h4>
+        <p>Le marché français de la lutte antiparasitaire, desservant les besoins résidentiels et commerciaux (dératisation, désinsectisation, désinfection), présente une demande substantielle et stable. Bien que les chiffres spécifiques du TAM, SAM ou SOM ne soient pas fournis publiquement, la demande est croissante en raison de la sensibilisation accrue à la santé publique et des facteurs environnementaux. Le timing est opportun en raison de l'évolution du marché vers des services certifiés et numériques, couplée à la nécessité croissante d'un contrôle professionnel.</p>
+        <p style="font-size:17px;color:var(--muted)">Sources : https://www.pestaly.fr</p>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-9de94b30169b7383e91453cdb99ee9db-ooo0bwqw.jpg" alt="Sizing top-down"></div>
+        <figcaption>Fig. 04 — Entonnoir top-down TAM → SAM → SOM</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>04</div></div>
+</section>
+
+<section data-screen-label="05 Sizing bottom-up">
+  <div class="s-head"><div class="brand">Pestaly · I — Marché</div><div class="meta">05&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Market sizing — bottom-up &amp; triangulation</div>
+  <div class="s-title">Bottom-Up : Approche par la franchise et le modèle économique</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Approche bottom-up (calculée)</h4>
+        <p>Pestaly emploie un modèle GTM (Go-To-Market) très efficace axé sur la franchise, combinant la génération centralisée de leads numériques avec une prestation de services directe et localisée par les franchisés. Ce modèle assure une acquisition client efficiente et une forte présence locale, favorisant une scalabilité élevée. Le modèle tarifaire est basé sur les services, offrant des devis gratuits et sans engagement pour les interventions individuelles et la maintenance préventive sous contrat, avec une transparence totale des prix, attirant à la fois les clients B2C et B2B. Bien que les ratios LTV/CAC spécifiques ne soient pas divulgués, le modèle de franchise assure intrinsèquement de solides économies unitaires pour le franchiseur.</p>
+        <p style="font-size:17px;color:var(--muted)">Sources : https://www.pestaly.fr, https://franchises-innovantes.fr/franchises/pestaly?utm_source=openai</p>
+        <h4>Triangulation</h4>
+        <p>La combinaison d'un marché modérément attractif et gagnable avec un GTM très pénétrable, mais un paysage de sortie moins gratifiant, suggère qu'un fondateur doté d'une discipline opérationnelle exceptionnelle et d'une capacité à se développer avec un capital-efficient est crucial ; les données sources sont robustes pour la plupart des éléments mais nécessitent une recherche plus approfondie sur les chiffres de marché spécifiques (TAM), les détails du paysage concurrentiel (financiers des titulaires, financement des concurrents) et les multiples de sortie historiques dans le secteur français du contrôle des nuisibles.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>05</div></div>
+</section>
+
+<section data-screen-label="06 Chaîne de valeur">
+  <div class="s-head"><div class="brand">Pestaly · I — Marché</div><div class="meta">06&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Analyse de la chaîne de valeur</div>
+  <div class="s-title">Chaîne de Valeur de la lutte antiparasitaire</div>
+  <div class="s-body">
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>06</div></div>
+</section>
+
+<section data-screen-label="07 Top 3 positions">
+  <div class="s-head"><div class="brand">Pestaly · I — Marché</div><div class="meta">07&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Top 3 positions stratégiques</div>
+  <div class="s-title">Les 3 positions du marché que nous voulons dominer</div>
+  <div class="s-body">
+    <div class="three-col">
+      <div class="col-block">
+        <h4>#1 — Services standardisés et professionnels</h4>
+        <div style="font-family:'EB Garamond',serif;font-size:42px;font-weight:500;margin-bottom:12px">9/10</div>
+        <p>Pestaly offre une approche unique et uniforme de haute qualité dans un marché fragmenté, assurant une défense solide par la réputation et le respect des réglementations, ce qui conduit à des marges plus élevées grâce à l&#39;efficacité opérationnelle et à la satisfaction client.</p>
+      </div>
+      <div class="col-block">
+        <h4>#2 — Modèle de franchise capital-efficient</h4>
+        <div style="font-family:'EB Garamond',serif;font-size:42px;font-weight:500;margin-bottom:12px">8/10</div>
+        <p>Le modèle de franchise permet une expansion rapide et localisée sans investissements capitaux directs lourds pour le franchiseur, générant des revenus récurrents issus des redevances et des frais, et assurant une bonne profitabilité pour l&#39;entité centrale.</p>
+      </div>
+      <div class="col-block">
+        <h4>#3 — Intégration technologique des opérations</h4>
+        <div style="font-family:'EB Garamond',serif;font-size:42px;font-weight:500;margin-bottom:12px">9/10</div>
+        <p>L&#39;utilisation d&#39;outils numériques pour le suivi, le reporting et l&#39;optimisation des interventions crée un avantage concurrentiel significatif et une &#39;data moat&#39;, augmentant la transparence et l&#39;efficience, ce qui se traduit par une amélioration constante des marges et une réduction les coûts à l&#39;échelle.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>07</div></div>
+</section>
+
+<section data-screen-label="08 Tendances">
+  <div class="s-head"><div class="brand">Pestaly · I — Marché</div><div class="meta">08&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Tendances de marché</div>
+  <div class="s-title">Tendances clés du marché &amp; points de contrôle</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Catalyseur &amp; trajectoire</h4>
+        <p>L'urbanisation croissante et le changement climatique amplifient les infestations de nuisibles, créant une demande persistante et récurrente pour des solutions efficaces et fiables.</p>
+        <h4>Chaîne de valeur &amp; points de contrôle</h4>
+        <p>La conformité réglementaire (Certibiocide, BPR) et la qualité de service standardisée sont des points de contrôle essentiels pour fidéliser les clients B2B et B2C.</p>
+      </div>
+      <div class="col-block">
+        <h4>Déplacement concurrentiel</h4>
+        <p>Les acteurs traditionnels, fragmentés et peu digitalisés, sont progressivement déplacés par des modèles comme Pestaly, proposant une exécution plus homogène et transparente.</p>
+        <h4>Économie unitaire &amp; captation</h4>
+        <p>Le modèle de franchise de Pestaly, avec des droits initiaux et des redevances, déplace le coût d'acquisition et l'effort opérationnel vers le franchisé, assurant un capital-efficient pour l'entité centrale et des économies unitaires robustes.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>08</div></div>
+</section>
+
+<section data-screen-label="09 Acteurs">
+  <div class="s-head"><div class="brand">Pestaly · I — Marché</div><div class="meta">09&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Acteurs de la chaîne de valeur</div>
+  <div class="s-title">Le paysage concurrentiel est fragmenté : les acteurs établis vs. les challengers émergents</div>
+  <div class="s-body">
+    <table class="fin">
+      <thead><tr><th>Étape</th><th>Acteurs principaux</th><th>Position de Pestaly</th></tr></thead>
+      <tbody>
+        <tr><td><b>Acteurs Locaux Indépendants</b></td><td>Entreprises familiales, petites structures sans standardisation ni outils digitaux.</td><td>Possèdent une forte relation client locale, mais manquent de cohérence et de capacité d&#39;échelle.</td></tr>
+        <tr><td><b>Challengers - Startups spécialisées</b></td><td>Entreprises plus récentes, parfois tech-enabled dans des niches spécifiques du service à domicile.</td><td>Proposent des solutions innovantes mais peinent à atteindre une couverture nationale et standardisée.</td></tr>
+        <tr><td><b>Géants Nationaux / Internationaux</b></td><td>Rentokil Initial, Anticimex, Ecolab Pest, ISS, Sodexo.</td><td>Dominent sur certains segments, mais n&#39;ont pas encore de modèle de franchise à l&#39;échelle nationale en France.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>09</div></div>
+</section>
+
+<section data-screen-label="10 Magic Quadrant">
+  <div class="s-head"><div class="brand">Pestaly · I — Marché</div><div class="meta">10&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Magic Quadrant — concurrence</div>
+  <div class="s-title">Magic Quadrant – Analyse des concurrents</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <h4>Leaders</h4><p>Rentokil Initial, Anticimex, Ecolab Pest (intégration de services)</p>
+        <h4>Challengers</h4><p>Acteurs locaux, bien établis régionalement, mais peu digitalisés</p>
+        <h4>Visionnaires</h4><p>Startups tech-enabled dans les services à domicile (potentiellement Pestaly)</p>
+        <h4>Niche players</h4><p>Entreprises ultra-spécialisées (désinsectisation de certains parasites, dératisation en milieu agricole)</p>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:18px">Pestaly se positionne comme un perturbateur innovant dans un marché fragmenté, visant à devenir le leader national grâce à son modèle hybride de franchise et d'intégration technologique. Ceci le place au carrefour des challengers et des visionnaires, avec une trajectoire de leader si l'exécution se maintient.</div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>10</div></div>
+</section>
+
+<section data-screen-label="11 M&A Quadrant">
+  <div class="s-head"><div class="brand">Pestaly · I — Marché</div><div class="meta">11&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">M&amp;A Quadrant — 4 archétypes</div>
+  <div class="s-title">M&amp;A Strategic Quadrant (vision à 5 ans)</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <h4>1. Les Prédateurs</h4><p>Grandes entreprises de services aux bâtiments (ISS, Sodexo) cherchant à intégrer le contrôle antiparasitaire pour diversifier leurs offres.</p>
+        <h4>2. Les Aspirants</h4><p>Fonds de Private Equity spécialisés dans les «roll-ups» de services, cherchant des plateformes pour consolider le marché.</p>
+        <h4>3. Les Géants</h4><p>Leaders mondiaux du contrôle parasitaire (Rentokil Initial, Orkin) visant à renforcer leur présence en France ou à acquérir une expertise en franchise/digitalisation.</p>
+        <h4>4. Les Cibles potentielles</h4><p>Acteurs locaux et régionaux, fragmentés et peu digitalisés, qui pourraient être acquis ou intégrés dans un réseau de franchise comme Pestaly.</p>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="n.d." alt="M&A Quadrant"></div>
+        <figcaption>Fig. 11 — M&amp;A Quadrant — 4 archétypes</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>11</div></div>
+</section>
+
+<section data-screen-label="12 Scénarios stratégiques">
+  <div class="s-head"><div class="brand">Pestaly · I — Marché</div><div class="meta">12&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Scénarios stratégiques</div>
+  <div class="s-title">Scénarios stratégiques – Que faire si le marché bouge ?</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <table class="fin pnl-dense">
+          <thead><tr><th>Scénario</th><th>Acteurs</th><th>Mécanique</th></tr></thead>
+          <tbody>
+            <tr><td><b>Accélération du déploiement des franchises</b></td><td>Pestaly, nouveaux franchisés, financements externes.</td><td>Capitaliser sur la demande croissante et la réglementation pour étendre rapidement le réseau national, en utilisant l&#39;expertise du fondateur en scaling.</td></tr>
+            <tr><td><b>Acquisition de petits acteurs locaux</b></td><td>Pestaly, acteurs locaux indépendants, Private Equity (en cas de roll-up).</td><td>Consolider le marché en acquérant des entreprises locales pour renforcer la densité géographique et la part de marché, intégrant leurs clients et leurs équipes.</td></tr>
+            <tr><td><b>Développement de l&#39;offre B2B (syndics, hôtellerie)</b></td><td>Pestaly, grands gestionnaires immobiliers, groupes hôteliers.</td><td>Cibler les contrats nationaux avec des acteurs B2B, en mettant en avant la standardisation, la traçabilité digitale et la conformité, apportant des revenus récurrents et des volumes élevés.</td></tr>
+            <tr><td><b>Innovation par la data et la prédiction</b></td><td>Pestaly, équipes R&amp;D, urbanistes, assureurs.</td><td>Exploiter la base de données d&#39;interventions pour développer des modèles prédictifs, étendant le TAM vers la gestion des risques et l&#39;assurance.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="n.d." alt="Scénarios stratégiques"></div>
+        <figcaption>Fig. 12 — Scénarios stratégiques M&amp;A</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>12</div></div>
+</section>
+
+<section data-screen-label="13 Synergies acteurs">
+  <div class="s-head"><div class="brand">Pestaly · I — Marché</div><div class="meta">13&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Synergies entre les acteurs — synthèse M&amp;A</div>
+  <div class="s-title">M&amp;A Strategic — Synergies avec les acteurs du marché</div>
+  <div class="s-body">
+    <table class="fin" style="margin-bottom:24px">
+      <thead><tr><th style="width:32%">Scénario</th><th>Acteurs</th><th class="num">Revenus soft</th><th class="num">Coûts évités</th><th class="num">Synergie totale</th></tr></thead>
+      <tbody>
+        <tr><td>Acquisition par un grand groupe de Facility Management</td><td>ISS, Sodexo</td><td class="num">Réputation améliorée, innovation, rétention talent.</td><td class="num">Optimisation des coûts d&#39;approvisionnement et back-office.</td><td class="num"><b>Impact Élevé</b></td></tr>
+        <tr><td>Acquisition par un fonds de Private Equity (roll-up)</td><td>Plusieurs fonds en France</td><td class="num">Expertise en croissance, support managérial accru.</td><td class="num">Standardisation des prix et processus post-acquisition.</td><td class="num"><b>Impact Élevé</b></td></tr>
+        <tr><td>Acquisition par un leader mondial du contrôle parasitaire</td><td>Rentokil Initial, Orkin</td><td class="num">Innovation technologique, transferts de best practices.</td><td class="num">Économies d&#39;échelle sur les produits et équipements.</td><td class="num"><b>Impact Moyen</b></td></tr>
+        <tr><td>Développement d&#39;un partenariat stratégique</td><td>Plateformes immobilières, assureurs</td><td class="num">Accès à de nouveaux marchés, renforcement de la marque.</td><td class="num">Revenue sharing, réduction des coûts de GTM.</td><td class="num"><b>Impact Moyen</b></td></tr>
+      </tbody>
+    </table>
+    <div class="callout"><b>Lecture.</b> Une intégration dans un groupe de Facility Management ou un rachat par un fonds de Private Equity offre les synergies les plus élevées, principalement grâce aux économies de coûts et à l'accès au marché. Un leader mondial pourrait bénéficier d'un modèle de franchise déjà éprouvé en France.</div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>13</div></div>
+</section>
+
+<section class="divider" data-screen-label="14 II Société">
+  <div class="roman">II</div>
+  <div>
+    <div class="div-eyebrow">Deuxième partie</div>
+    <h2>Société</h2>
+    <div class="div-sub">Business — Levier de création de valeur</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="15 Proposition de valeur">
+  <div class="s-head"><div class="brand">Pestaly · II — Société</div><div class="meta">15&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Proposition de valeur</div>
+  <div class="s-title">Value Proposition - Que fait Pestaly ?</div>
+  <div class="s-body">
+    <p class="lead">Pestaly fournit des services experts de lutte antiparasitaire (dératisation, désinsectisation, désinfection) avec un accent sur le diagnostic, le traitement ciblé et la prévention à long terme pour les particuliers et les professionnels en France.</p>
+    <div class="two-col" style="margin-top:16px">
+      <div class="col-block">
+        <h4>Profil client idéal (ICP)</h4>
+        <ul><li>Propriétaires résidentiels</li><li>Locataires d&#39;appartements</li><li>Gestionnaires immobiliers (syndics)</li><li>Secteurs hôteliers (hôtels, gîtes)</li><li>Sites professionnels sensibles (restaurants, entrepôts, écoles)</li></ul>
+        <h4>Modèle</h4>
+        <p>B2B + B2C</p>
+      </div>
+      <div class="col-block">
+        <h4>Industrie</h4>
+        <p>Contrôle Parasitaire / Services de Santé Environnementale</p>
+        <h4>Clients clés</h4>
+        <ul><li>Couturaud G. (Limoges)</li><li>Sami H. (Chartres)</li><li>Lea D. (Argenteuil)</li><li>Plus de 5000 interventions réalisées avec 100% de satisfaction.</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>15</div></div>
+</section>
+
+<section data-screen-label="16 Produit">
+  <div class="s-head"><div class="brand">Pestaly · II — Société</div><div class="meta">16&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Produit</div>
+  <div class="s-title">Produit &amp; Solution – Que propose Pestaly ?</div>
+  <div class="s-body">
+    <p class="lead">Pestaly propose une gestion professionnelle des nuisibles axée sur l'éradication des rongeurs, insectes et agents pathogènes, suivie par la sécurisation des propriétés. L'entreprise se distingue par une approche digitale et certifiée, complétée par des interventions d'urgence et un suivi rigoureux.</p>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Capacités produit</h4>
+        <ul><li>Contrôle des rongeurs (rats, souris)</li><li>Contrôle des insectes (punaises de lit, cafards, fourmis, guêpes, frelons)</li><li>Désinfection pathogène</li><li>Contrôle aviaire (protection contre les pigeons)</li><li>Intervention d'urgence 24/7</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>Capacités techniques</h4>
+        <ul><li>Utilisation de produits certifiés BPR (Biocidal Products Regulation)</li><li>Techniciens certifiés Certibiocide</li><li>Traçabilité digitale de type SOC</li><li>Piégeage thermique/mécanique</li><li>Étanchéité des points d'accès (mastic et treillis)</li></ul>
+        <h4>Cas d'usage</h4>
+        <ul><li>Traitement des infestations de punaises de lit dans les logements collectifs</li><li>Élimination des rats dans les cuisines de restaurant</li><li>Enlèvement d'urgence de nids de frelons</li><li>Surveillance sanitaire préventive pour les gestionnaires immobiliers</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>16</div></div>
+</section>
+
+<section data-screen-label="17 Modèle économique">
+  <div class="s-head"><div class="brand">Pestaly · II — Société</div><div class="meta">17&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Modèle économique</div>
+  <div class="s-title">Business Model – Comment gagne-t-il de l&#39;argent ?</div>
+  <div class="s-body">
+    <p class="lead">Pestaly opère sur un modèle de franchise basé sur les services, avec une tarification locale. L'entreprise offre des devis gratuits et sans obligation, et combine des frais d'intervention individuels avec des contrats de maintenance préventive.</p>
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">Taux de satisfaction client</div><div class="kpi-value">100%</div><div class="kpi-note">Sur 71 avis vérifiés</div></div>
+      <div class="kpi"><div class="kpi-label">Nombre d&#39;interventions réalisées</div><div class="kpi-value">5 000+</div><div class="kpi-note">Depuis la création</div></div>
+      <div class="kpi"><div class="kpi-label">Network de Franchises</div><div class="kpi-value">10+</div><div class="kpi-note">Agences en France</div></div>
+      <div class="kpi"><div class="kpi-label">Objectif agences (2025)</div><div class="kpi-value">250</div><div class="kpi-note">(extrapolé d&#39;Avenir Rénovations)</div></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Flux de revenus</h4>
+        <ul><li>Frais d'intervention individuelle</li><li>Contrats de maintenance préventive</li><li>Services d'urgence (supplément)</li><li>Audits sanitaires</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>Caractéristiques des plans</h4>
+        <ul><li>Plans d'intervention standard incluent diagnostic, traitement ciblé (2-3 visites), sécurisation des accès et suivi de 10-14 jours.</li><li>Tarification transparente sans frais cachés, variations régionales selon la sévérité et la configuration du site.</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>17</div></div>
+</section>
+
+<section data-screen-label="18 Équipe">
+  <div class="s-head"><div class="brand">Pestaly · II — Société</div><div class="meta">18&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Équipe</div>
+  <div class="s-title">L&#39;Équipe – Qui gère l&#39;entreprise ?</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Direction</h4>
+        <dl class="dl-grid">
+          <dt>Fondateur &amp; Président Exécutif</dt><dd>Mickael Di Luca, fondateur de Pestaly, mais aussi d'Avenir Rénovations, Devibox et ARTI-BOX. Expert en déploiement de franchises.</dd>
+          <dt>Directeur Général</dt><dd>Joël Cortinhal, en charge de la gestion opérationnelle et du développement de Pestaly.</dd>
+          <dt>Franchisé, Tours</dt><dd>Frederic Buffet, un exemple de succès dans le réseau de franchisés.</dd>
+          <dt>Franchisé, Versailles</dt><dd>Cedric Pereira, autre franchisé clé du réseau Pestaly.</dd>
+        </dl>
+      </div>
+      <div class="col-block">
+        <h4>Estimation des effectifs par département</h4>
+        <table class="fin">
+          <tbody>
+            <tr ><td>Product &amp; Engineering</td><td class="num">5-10</td></tr>
+            <tr ><td>Marketing</td><td class="num">10-15</td></tr>
+            <tr ><td>Sales</td><td class="num">10-15</td></tr>
+            <tr ><td>Support &amp; IT</td><td class="num">10-15</td></tr>
+            <tr ><td>General &amp; Admin (G&amp;A)</td><td class="num">10-15</td></tr>
+          </tbody>
+        </table>
+<p style="font-size:17px;color:var(--muted);margin-top:14px">Ces estimations couvrent l&#39;entité centrale et le support aux franchisés. Les techniciens sur le terrain sont majoritairement des employés des franchisés.</p>      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>18</div></div>
+</section>
+
+<section data-screen-label="19 Fondateur">
+  <div class="s-head"><div class="brand">Pestaly · II — Société</div><div class="meta">19&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Fondateur — Mickael Di Luca</div>
+  <div class="s-title">Fondateur & Président Exécutif</div>
+  <div class="s-body">
+    <p class="lead">Mickael Di Luca est un entrepreneur expérimenté, reconnu pour sa capacité à industrialiser des secteurs fragmentés par la technologie et la franchise. Son parcours chez Air France Industries et ses succès avec Avenir Rénovations, Devibox, et ARTI-BOX en font un expert du développement de réseaux et de l'intégration logicielle.</p>
+    <div class="two-col" style="margin-top:8px">
+      <div class="col-block">
+        <h4>Parcours</h4>
+        <dl class="dl-grid">
+          <dt>2023 – Présent</dt><dd>CEO Fondateur de ARTI-BOX, visant à révolutionner l'industrie de l'artisanat du bâtiment par une plateforme digitalisée.</dd>
+          <dt>2026 – Présent</dt><dd>Fondateur & Président Exécutif de Pestaly (Dates à clarifier).</dd>
+          <dt>2026 – Présent</dt><dd>CEO fondateur d'Avenir-Business.fr (Dates à clarifier).</dd>
+          <dt>2013 – Présent</dt><dd>CEO Fondateur d'Avenir Rénovations, réseau de franchise en pleine croissance.</dd>
+          <dt>2016 – 2020</dt><dd>Fondateur de DEVIBOX, éditeur de logiciels pour le secteur de la construction.</dd>
+          <dt>2000 – 2013</dt><dd>AOG DESK OFFICER chez Air France Industries KLM Engineering & Maintenance, où il a développé ses compétences opérationnelles.</dd>
+        </dl>
+      </div>
+      <div class="col-block">
+        <h4>Founder DNA &amp; assessment</h4>
+        <table class="fin">
+          <tbody>
+            <tr ><td>Grit</td><td class="num">90&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Discipline</td><td class="num">85&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Self-Belief</td><td class="num">95&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Execution</td><td class="num">90&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Leadership</td><td class="num">80&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Vision &amp; Purpose</td><td class="num">95&thinsp;/&thinsp;100</td></tr>
+            <tr class="total"><td>total</td><td class="num">90&thinsp;/&thinsp;100</td></tr>
+          </tbody>
+        </table>
+<p style="font-size:17px;color:var(--muted);margin-top:14px"><b>Point aveugle.</b> La dilution de son attention sur de multiples projets est un point de vigilance. Il a clairement besoin de co-fondateurs pour l'épauler et développer un leadership collectif.</p>      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>19</div></div>
+</section>
+
+<section class="divider" data-screen-label="20 III Évaluation">
+  <div class="roman">III</div>
+  <div>
+    <div class="div-eyebrow">Troisième partie</div>
+    <h2>Évaluation<br>stratégique</h2>
+    <div class="div-sub">Assessment – 80/100 (Signal positif)</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="21 Résumé entreprise">
+  <div class="s-head"><div class="brand">Pestaly · III — Évaluation</div><div class="meta">21&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Résumé de l'entreprise — scores</div>
+  <div class="s-title">Synthèse de l&#39;Évaluation Pré-screening</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <div class="kpi-row" style="grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:18px">
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Excellence équipe</div><div class="kpi-value" style="font-size:32px">90</div></div>
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Opportunité marché</div><div class="kpi-value" style="font-size:32px">75</div></div>
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Innovation produit</div><div class="kpi-value" style="font-size:32px">70</div></div>
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Modèle économique</div><div class="kpi-value" style="font-size:32px">80</div></div>
+        </div>
+        <h4>En bref</h4><p style="font-size:18px">Pestaly est une entreprise de services de lutte antiparasitaire franchisée qui permet aux propriétaires résidentiels et commerciaux de résoudre leurs infestations, en tirant parti d'un réseau national de franchisés certifiés et assistés numériquement, offrant des diagnostics experts et des traitements ciblés et écoresponsables.</p>
+        <h4>Problème &amp; solution</h4><p style="font-size:18px">Pestaly fournit une solution de contrôle parasitaire standardisée, professionnelle et à réponse rapide via un réseau de franchises, utilisant des outils numériques propriétaires pour un diagnostic cohérent, un traitement ciblé et des rapports transparents afin d'éliminer efficacement les infestations et de prévenir les récidives.</p>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-2d2a816a48a77e5f68ce88502f3d02b6-ypqcxa0p.jpg" alt="Résumé de l'entreprise"></div>
+        <figcaption>Fig. 21 — Synthèse visuelle de l'entreprise</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>III — Évaluation</span></div><div>21</div></div>
+</section>
+
+<section data-screen-label="22 SWOT">
+  <div class="s-head"><div class="brand">Pestaly · III — Évaluation</div><div class="meta">22&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Analyse SWOT</div>
+  <div class="s-title">Forces · Faiblesses · Opportunités · Menaces</div>
+  <div class="s-body">
+    <div class="swot">
+      <div class="swot-cell"><h4>Forces</h4><ul><li>L'expérience de Mickael Di Luca (Air France, Avenir Rénovations) apporte une discipline opérationnelle et une expertise éprouvée dans la construction de systèmes de franchise.</li><li>La traçabilité digitale (rapports, suivi photo, signatures électroniques) crée des registres d'intervention standardisés, réduisant la responsabilité et améliorant la conformité des franchisés.</li><li>Plus de 5000 interventions avec 100% de satisfaction sur les avis vérifiés, signalant une forte cohérence d'exécution dans un service où la qualité est essentielle.</li><li>L'offre de franchise clé en main inclut des leads générés et des protocoles structurés, facilitant l'intégration de nouveaux opérateurs et accélérant la densité du réseau.</li><li>Conformité BPR et techniciens Certibiocide positionnent Pestaly favorablement face au durcissement des réglementations européennes sur les produits biocides.</li></ul></div>
+      <div class="swot-cell"><h4>Faiblesses</h4><ul><li>L'attention du fondateur est partagée entre Pestaly, Avenir Rénovations, ARTIBOX et Avenir-Business.fr, ce qui indique une possible dilution de la concentration.</li><li>Les rôles de Mickael Di Luca (Président Exécutif) et Joël Cortinhal (Directeur Général) peuvent créer une ambiguïté sur l'autorité de décision finale.</li><li>L'absence de financement direct connu rend l'entreprise dépendante des frais de franchise et du cash-flow opérationnel pour son expansion nationale.</li><li>La forte dépendance à un modèle 100% sous-traité et franchisé augmente le risque de contrôle qualité en cas de difficultés financières ou de pénuries de personnel chez les opérateurs locaux.</li><li>Aucun effectif dédié à la R&D ou à l'ingénierie n'est divulgué, malgré les allégations de fonctionnalités de monitoring connecté et de plateforme digitale, suggérant un sous-investissement potentiel dans ces domaines.</li></ul></div>
+      <div class="swot-cell"><h4>Opportunités</h4><ul><li>La résurgence saisonnière des nuisibles (printemps/été) documentée par l'entreprise crée une demande récurrente et prévisible, que le réseau peut capter.</li><li>Les gestionnaires immobiliers et groupes hôteliers préfèrent les contrats nationaux ; la couverture multisites et le reporting digital de Pestaly offrent un avantage concurrentiel.</li><li>Le fondateur a déjà visé 250 agences pour Avenir Rénovations ; ce même playbook peut être appliqué pour une densité rapide dans le contrôle parasitaire.</li><li>Le positionnement écoresponsable (produits BPR, traitements réduits) s'aligne avec les exigences ESG croissantes des chaînes de restaurants et d'hôtels.</li><li>Les contrats de maintenance préventive pour les entrepôts et les écoles offrent des revenus récurrents à plus forte marge, lissant la dépendance aux interventions résidentielles ponctuelles.</li></ul></div>
+      <div class="swot-cell"><h4>Menaces</h4><ul><li>Les grands groupes internationaux de contrôle parasitaire peuvent sous-coter les prix et acquérir des franchises lors de ralentissements économiques.</li><li>Un durcissement des réglementations sur les produits biocides pourrait augmenter les coûts de conformité plus rapidement que les franchisés ne peuvent les absorber sans support centralisé.</li><li>Les contractions économiques affectent en premier les clients de la restauration et de l'hôtellerie, réduisant le volume d'interventions urgentes et contractuelles.</li><li>Les litiges entre franchisés sur l'allocation des leads ou les redevances pourraient entraîner une fragmentation du réseau.</li><li>L'implication concurrente du fondateur dans ARTIBOX risque de diluer les ressources et l'attention, précisément lorsque Pestaly a besoin d'une exécution concentrée pour atteindre une densité nationale défendable.</li></ul></div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>III — Évaluation</span></div><div>22</div></div>
+</section>
+
+<section data-screen-label="23 Plan d'action">
+  <div class="s-head"><div class="brand">Pestaly · III — Évaluation</div><div class="meta">23&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Plan d'action</div>
+  <div class="s-title">Défense, offensive, kill shot, remédiation.</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Défense</h4><p>La combinaison de rapports numériques standardisés et de techniciens certibiocides crée un "fossé de conformité" qui s'élargira à mesure que les réglementations européennes sur les biocides se resserreront. La couverture nationale déjà acquise dans plus de dix villes rend coûteux pour les nouveaux entrants de rivaliser avec les délais de réponse de moins de deux heures. L'accent continu sur les contrats préventifs avec les syndicats et les groupes hôteliers garantit des revenus B2B stables et moins sensibles aux prix que les interventions résidentielles ponctuelles.</p>
+        <h4>Offensive</h4><p>Il faut répliquer le système de franchise qui a fait passer Avenir Rénovations d'un site à 110 agences, en utilisant le même moteur de génération de leads et les mêmes protocoles de formation, mais appliqués au contrôle parasitaire. Prioriser le recrutement de contrats avec les gestionnaires immobiliers et l'hôtellerie, qui garantissent des revenus récurrents et augmentent les coûts de changement pour les concurrents. Mettre en place une petite équipe centrale pour la gestion des achats, la conformité et la maintenance de la plateforme numérique, afin que les franchisés puissent se concentrer uniquement sur l'exécution sur le terrain.</p>
+      </div>
+      <div class="col-block">
+        <h4>Kill shot</h4><p>Si Mickael Di Luca reste dispersé sur plusieurs projets simultanés et qu'un groupe national ou international de lutte antiparasitaire mieux capitalisé lance une campagne de recrutement ciblée de franchisés, le réseau de Pestaly stagnera. Les variations de qualité chez les franchisés mal soutenus apparaîtront alors dans les avis publics, entraînant un départ rapide des contrats B2B à forte valeur ajoutée qui ancrent actuellement le modèle.</p>
+        <h4>Remédiation</h4><p>Les rôles superposés du fondateur sur quatre projets doivent être résolus par la nomination d'un PDG à temps plein dédié à Pestaly, ou par la transformation de l'entreprise en une filiale majoritairement détenue, dotée de capitaux et d'une gouvernance indépendants. Un exécutif unique et clairement responsable doit également être nommé publiquement, afin que les franchisés et les grands clients B2B sachent qui est le garant de la performance du réseau et de la résolution des litiges.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>III — Évaluation</span></div><div>23</div></div>
+</section>
+
+<section class="divider" data-screen-label="24 IV Thèse sforbt">
+  <div class="roman">IV</div>
+  <div>
+    <div class="div-eyebrow">Quatrième partie</div>
+    <h2>Thèse sforbt</h2>
+    <div class="div-sub">Thèse d&#39;investissement — CONSIDER (Risk)</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="25 Résumé Type C">
+  <div class="s-head"><div class="brand">Pestaly · IV — Thèse sforbt</div><div class="meta">25&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Synergies sforbt — résumé Type B — Strategic</div>
+  <div class="s-title">Thèse d'investissement : Consolidation Tech-Enabled d'un Marché Fragmenté</div>
+  <div class="s-body">
+    <p class="lead">Pestaly représente une opportunité de transformer un marché fragmenté et traditionnel de services via un modèle de franchise capital-efficient et une intégration technologique poussée. Le pari est sur la capacité du fondateur à industrialiser ce secteur à l'échelle nationale, créant ainsi une position défendable et génératrice de valeur.</p>
+    <div class="two-col" style="margin-top:8px">
+      <div class="col-block">
+        <h4>Les leviers de synergie</h4>
+        <ul><li>Expérience avérée du fondateur dans la création et le scaling de franchises.</li><li>Modèle capital-efficient permettant une croissance rapide sans besoin de levées importantes.</li><li>Positionnement sur un marché porteur avec une demande croissante (réglementation, changement climatique).</li><li>Différenciation par la standardisation, la certification et les outils digitaux (traçabilité, reporting).</li><li>Potentiel de création d'une "data moat" unique sur les nuisibles en France.</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>Fragilités principales</h4>
+        <p>La dilution de l'attention du fondateur sur quatre projets simultanés et le manque de données financières détaillées (unit economics, NRR, churn) constituent les principales fragilités, nécessitant une diligence approfondie.</p>
+        <h4>Fenêtre d'acquisition</h4>
+        <div class="callout" style="margin-top:0">La fenêtre d'opportunité est ouverte car les réglementations (Certibiocide) catalysent la demande pour des services certifiés. Elle se fermera si les acteurs établis réagissent en consolidant ou en digitalisant, ou si Pestaly ne parvient pas à atteindre une densité suffisante dans les 3-5 ans.</div>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>IV — Thèse sforbt</span></div><div>25</div></div>
+</section>
+
+<section data-screen-label="26 Synergies détaillées">
+  <div class="s-head"><div class="brand">Pestaly · IV — Thèse sforbt</div><div class="meta">26&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Synergies sforbt — tableau détaillé</div>
+  <div class="s-title">Synergies identifiées pour la thèse</div>
+  <div class="s-body">
+    <table class="fin">
+      <thead><tr><th style="width:36px">#</th><th>Synergie</th><th>Type</th><th>Impact</th><th>Délai</th><th>Difficulté</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Économies sur les achats de produits (produits BPR)</td><td>Hard cost</td><td>High</td><td>Court terme (6-12 mois)</td><td>Medium</td></tr>
+        <tr><td>2</td><td>Ventes croisées avec services complémentaires</td><td>Revenue</td><td>Medium</td><td>Moyen terme (1-2 ans)</td><td>Medium</td></tr>
+        <tr><td>3</td><td>Consolidation des fonctions support (RH, Compta)</td><td>Hard cost</td><td>Medium</td><td>Moyen terme (1-2 ans)</td><td>Medium</td></tr>
+        <tr><td>4</td><td>Accès à un portefeuille clients B2B élargi</td><td>Revenue</td><td>High</td><td>Moyen terme (1-2 ans)</td><td>Medium</td></tr>
+        <tr><td>5</td><td>Intégration d&#39;outils technologiques avancés</td><td>Capability</td><td>High</td><td>Long terme (2-3 ans)</td><td>High</td></tr>
+        <tr><td>6</td><td>Amélioration de l&#39;efficacité opérationnelle par la data</td><td>Capability</td><td>High</td><td>Long terme (2-3 ans)</td><td>High</td></tr>
+        <tr><td>7</td><td>Augmentation du pouvoir de négociation avec les assureurs</td><td>Defensive</td><td>Medium</td><td>Moyen terme (1-2 ans)</td><td>Medium</td></tr>
+        <tr><td>8</td><td>Renforcement de la marque et de la réputation nationale</td><td>Revenue</td><td>Medium</td><td>Moyen terme (1-2 ans)</td><td>Low</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>IV — Thèse sforbt</span></div><div>26</div></div>
+</section>
+
+<section data-screen-label="27 Deal killers">
+  <div class="s-head"><div class="brand">Pestaly · IV — Thèse sforbt</div><div class="meta">27&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Deal killers identifiés</div>
+  <div class="s-title">Deal Killers – Risques majeurs et atténuations</div>
+  <div class="s-body">
+    <table class="fin">
+      <thead><tr><th>Risque</th><th>Description</th><th>Mitigation</th></tr></thead>
+      <tbody>
+        <tr><td><b>Dilution de l&#39;attention du fondateur</b></td><td>Mickael Di Luca gère quatre entreprises simultanément (Pestaly, Avenir Rénovations, ARTIBOX, Avenir-Business.fr), menaçant la concentration nécessaire sur Pestaly.</td><td>Exiger la nomination d'un CEO dédié pour Pestaly et un engagement clair du fondateur sur la priorisation des projets, avec une structure de reporting transparente.</td></tr>
+        <tr><td><b>Risque de classification de la &#34;data moat&#34;</b></td><td>L'affirmation d'une "data moat" basée sur 5000+ interventions est non validée si les données sont purement pour la conformité et non pour l'intelligence prédictive.</td><td>Vérifier la roadmap produit pour l'intégration de capacités d'analyse prédictive et de Machine Learning, et la composition de l'équipe d'ingénierie.</td></tr>
+        <tr><td><b>Opacité des unit economics</b></td><td>Absence de données sur le NRR, le burn multiple, le LTV des franchisés, le churn client, et la marge brute, rendant difficile l'évaluation de la rentabilité réelle.</td><td>Une diligence financière approfondie (audit comptable, analyse des cohortes de franchisés et des clients, benchmarking) est impérative.</td></tr>
+        <tr><td><b>Volatilité réglementaire</b></td><td>Un changement dans la réglementation européenne sur les biocides (BPR, Certibiocide) pourrait entraîner des coûts de conformité élevés et immédiats pour l'ensemble du réseau de franchises.</td><td>Évaluer la capacité de Pestaly à s'adapter rapidement aux évolutions réglementaires et la présence de réserves financières pour amortir de tels chocs.</td></tr>
+        <tr><td><b>Ambiguïté de gouvernance</b></td><td>La structure de double autorité (Mickael Di Luca vs. Joël Cortinhal) crée un risque de friction et d'incertitude dans la prise de décision stratégique et opérationnelle.</td><td>Clarifier les rôles et responsabilités, avec une ligne hiérarchique claire et un processus décisionnel bien défini et formalisé dans les statuts.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>IV — Thèse sforbt</span></div><div>27</div></div>
+</section>
+
+<section class="divider" data-screen-label="28 V Conviction">
+  <div class="roman">V</div>
+  <div>
+    <div class="div-eyebrow">Cinquième partie</div>
+    <h2>Conviction GP</h2>
+    <div class="div-sub">Conviction GP — CONSIDER (Risk)</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="29 Angle, marché, timing">
+  <div class="s-head"><div class="brand">Pestaly · V — Conviction</div><div class="meta">29&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Angle dominant · marché · timing</div>
+  <div class="s-title">Angle d&#39;investissement : Early Stage Quality Signal</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Angle dominant</h4><p>Cet investissement est évalué sous l'angle `'Early Stage Quality Signal'`, car le fondateur, Mickael Di Luca, apporte une expertise opérationnelle approfondie dans la construction de franchises et applique un cadre de standardisation technologique à un secteur de services fragmenté. Cela crée une `data moat` naissante dès le premier jour de chaque intervention. Deux autres angles ('Growth Stage Quality Signal' et 'Acquisition Quality' signalent également un fit modéré. L'angle `Early Stage Quality Signal` domine car il correspond le mieux au stade d'activité actuel et à la nature de la création de valeur.</p>
+        <h4>Marché</h4><p>Le marché français de la lutte antiparasitaire est en consolidation : un paysage fragmenté d'opérateurs locaux et non standardisés est en train d'être perturbé par la demande institutionnelle croissante et la réglementation européenne grandissante. Pestaly exploite ce changement structurel en déployant un protocole standardisé et traçable numériquement. Cette dynamique structurelle n'est pas cyclique ; elle est motivée par une demande institutionnelle durable de services conformes et auditables, ce qui soutient une croissance intrinsèque du marché.</p>
+      </div>
+      <div class="col-block">
+        <h4>Timing</h4><p>La fenêtre de tir est idéale. Le durcissement des réglementations européennes sur les produits biocides (mandat Certibiocide et examens des substances actives BPR) crée une demande structurelle immédiate pour des fournisseurs certifiés et traçables, ce que la plupart des opérateurs locaux indépendants ne peuvent pas satisfaire. Ce catalyseur réglementaire est en mouvement, créant un espace blanc pour des acteurs comme Pestaly. Le principal risque est la vitesse d'exécution : si Pestaly stagne, un concurrent mieux capitalisé pourrait répliquer le modèle avant que l'entreprise n'atteigne une couverture nationale suffisante.</p>
+        <h4>Founder &amp; thesis-fit</h4><p>Mickael Di Luca est un opérateur missionnaire dont l'expertise éprouvée provient de 13 ans chez Air France Industries et d'une décennie à construire Avenir Rénovations en partant de zéro. Son score ADN de fondateur de 90/100 est soutenu par des réalisations concrètes : un réseau de franchise national, un produit logiciel propriétaire, et maintenant une deuxième entreprise de franchise appliquant la même stratégie dans une nouvelle verticale. Le risque est qu'il opère simultanément quatre ventures, ce qui pourrait diluer son attention et sa capacité de leadership.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>V — Conviction</span></div><div>29</div></div>
+</section>
+
+<section data-screen-label="30 Verdict">
+  <div class="s-head"><div class="brand">Pestaly · V — Conviction</div><div class="meta">30&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Verdict de conviction</div>
+  <div class="s-title">Verdict final : CONSIDER (Risk)</div>
+  <div class="s-body">
+    <div style="margin-bottom:36px">
+      <div class="verdict"><span class="v-tag">Verdict GP</span><span class="v-text">Consider · 60/100</span></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Synthèse</h4><p>Pestaly présente une combinaison rare de forces qualitatives : un fondateur missionnaire avec une expérience avérée dans l'industrialisation de franchises, une "data moat" naissante bâtie à partir de plus de 5000 journaux d'intervention, une couche de conformité réglementaire (Certibiocide, BPR) qui s'élargit avec les règles européennes, et un modèle de franchise capital-efficient qui ne nécessite pas de levées de fonds importantes. Le taux de confirmation de thèse de 89 % est très solide pour une entreprise à ce stade. <br>Le risque spécifique qui bloque une pleine conviction est l'incapacité de confirmer si les données d'intervention numériques de Pestaly fonctionnent comme un actif prédictif ou s'il s'agit uniquement d'un journal de conformité opérationnel. Ce manque de données sur les "unit economics" (NRR, burn multiple, LTV franchisé ou churn) est un point critique. Le verdict est maintenu à CONSIDER car la thèse qualitative est robuste, le catalyseur de marché est confirmé, et le parcours du fondateur est documenté, justifiant une diligence plus poussée.</p>
+      </div>
+      <div class="col-block">
+        <h4>Risk register</h4>
+        <ul><li>Dilution de l'attention du fondateur sur quatre projets simultanés.</li><li>Risque de classification de la "data moat" (outil de conformité vs. intelligence prédictive).</li><li>Opacité des unit economics (aucune donnée sur NRR, burn multiple, LTV franchisés, churn).</li><li>Volatilité réglementaire (Certibiocide et BPR).</li><li>Ambiguïté de gouvernance entre les différents rôles de Mickael Di Luca et Joël Cortinhal.</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>V — Conviction</span></div><div>30</div></div>
+</section>
+
+<section class="divider" data-screen-label="31 VI Modèle financier">
+  <div class="roman">VI</div>
+  <div>
+    <div class="div-eyebrow">Sixième partie</div>
+    <h2>Modèle<br>financier</h2>
+    <div class="div-sub">Financials – BELOW HURDLE</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="32 Valorisation">
+  <div class="s-head"><div class="brand">Pestaly · VI — Modèle financier</div><div class="meta">32&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Valorisation triangulée</div>
+  <div class="s-title">Analyse de la Valorisation</div>
+  <div class="s-body">
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">ARR Y1</div><div class="kpi-value">1,0M€</div><div class="kpi-note">Construit à partir de l&#39;estimation de l&#39;ARR</div></div>
+      <div class="kpi"><div class="kpi-label">EBITDA Y1 (réel)</div><div class="kpi-value">0,05M€</div><div class="kpi-note">Marge de 5% du CA</div></div>
+      <div class="kpi"><div class="kpi-label">FCF Y5</div><div class="kpi-value">-0,2M€</div><div class="kpi-note">Alimente la Valeur Terminale du DCF</div></div>
+      <div class="kpi"><div class="kpi-label">Valeur Retenue (EV/CA)</div><div class="kpi-value">8,0M€</div><div class="kpi-note">Basée sur le multiple de revenu</div></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Comparables (multiples de transaction)</h4>
+        <table class="fin">
+          <thead><tr><th>Transaction</th><th class="num">Multiple</th></tr></thead>
+          <tbody>
+            <tr><td>Pure SaaS (Scale-up Europe)</td><td class="num">8.0x ARR</td></tr>
+            <tr><td>Entreprise de Services France</td><td class="num">5.0x EBITDA</td></tr>
+            <tr><td>Franchise B2C Tech</td><td class="num">6.0x ARR</td></tr>
+            <tr><td>Plateforme B2B Digitale</td><td class="num">10.0x ARR</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="col-block">
+        <h4>DCF — hypothèses</h4>
+        <p>Les flux de trésorerie actualisés (FCF) sont négatifs sur l'horizon de 5 ans, rendant le DCF non significatif pour la valorisation. Seules la valeur terminale (VT) et l'EBITDA normalisé sont légèrement positifs. Cela renforce notre besoin de valider les unit economics et les marges réelles des franchisés.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>VI — Modèle financier</span></div><div>32</div></div>
+</section>
+
+<section data-screen-label="33 P&L et trésorerie">
+  <div class="s-head"><div class="brand">Pestaly · VI — Modèle financier</div><div class="meta">33&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">P&amp;L sur 5 ans &amp; flux de trésorerie</div>
+  <div class="s-title">Compte de Résultat Prévisionnel (€M)</div>
+  <div class="s-body">
+    <table class="fin pnl-dense">
+      <thead>
+        <tr><th>Indicateur</th><th class="num">Y1</th><th class="num">Y2</th><th class="num">Y3</th><th class="num">Y4</th><th class="num">Y5</th></tr>
+      </thead>
+      <tbody>
+        <tr ><td>Total Revenue</td><td class="num">1,00</td><td class="num">1,15</td><td class="num">1,35</td><td class="num">1,55</td><td class="num">1,74</td></tr>
+        <tr ><td>Croissance YoY</td><td class="num">27,5%</td><td class="num">22,0%</td><td class="num">17,6%</td><td class="num">14,1%</td><td class="num">11,3%</td></tr>
+        <tr ><td>Gross Profit</td><td class="num">0,45</td><td class="num">0,52</td><td class="num">0,61</td><td class="num">0,70</td><td class="num">0,78</td></tr>
+        <tr ><td>Marge Brute</td><td class="num">45,0%</td><td class="num">45,0%</td><td class="num">45,0%</td><td class="num">45,0%</td><td class="num">45,0%</td></tr>
+        <tr ><td>Total OPEX</td><td class="num">0,40</td><td class="num">0,49</td><td class="num">0,58</td><td class="num">0,66</td><td class="num">0,74</td></tr>
+        <tr class="total"><td>EBITDA</td><td class="num">0,05</td><td class="num">0,06</td><td class="num">0,07</td><td class="num">0,08</td><td class="num">0,08</td></tr>
+        <tr ><td>EBITDA Margin</td><td class="num">4,6%</td><td class="num">4,6%</td><td class="num">4,6%</td><td class="num">4,6%</td><td class="num">4,6%</td></tr>
+        <tr ><td>Free Cash Flow Opérationnel</td><td class="num">-0,11</td><td class="num">-0,13</td><td class="num">-0,15</td><td class="num">-0,17</td><td class="num">-0,19</td></tr>
+      </tbody>
+    </table>
+<p style="font-size:16px;color:var(--muted);margin-top:14px">Les chiffres sont des projections basées sur nos hypothèses. La marge brute et les OPEX sont exprimés en pourcentage du chiffre d'affaires. Une analyse approfondie des coûts réels des franchisés sera cruciale.</p>  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>VI — Modèle financier</span></div><div>33</div></div>
+</section>
+
+<section data-screen-label="34 ROI et verdict">
+  <div class="s-head"><div class="brand">Pestaly · VI — Modèle financier</div><div class="meta">34&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">ROI et verdict quantitatif</div>
+  <div class="s-title">Analyse du Retour sur Investissement (ROI)</div>
+  <div class="s-body">
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">Investissement</div><div class="kpi-value">1,2M€</div><div class="kpi-note">Check Size</div></div>
+      <div class="kpi"><div class="kpi-label">Valeur année 5</div><div class="kpi-value">2,3M€</div><div class="kpi-note">Fund Equity at Exit</div></div>
+      <div class="kpi"><div class="kpi-label">MOIC</div><div class="kpi-value">1,96x</div><div class="kpi-note">Multiple on Invested Capital</div></div>
+      <div class="kpi"><div class="kpi-label">IRR</div><div class="kpi-value">14,4%</div><div class="kpi-note">Taux de Rentabilité Interne</div></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Lecture du retour</h4><p>Le scénario actuel de base de MOIC (1,96x) et d'IRR (14,4%) ne satisfait pas les seuils de rendement de notre fonds (MOIC ≥ 5,0x, IRR ≥ 35,0%). Cela indique que l'investissement, tel qu'il est modélisé, est actuellement en dessous de nos attentes et nécessite des ajustements majeurs pour devenir viable.</p>
+      </div>
+      <div class="col-block">
+        <h4>Verdict quantitatif</h4>
+        <div class="verdict" style="margin-bottom:18px"><span class="v-tag">Post-model</span><span class="v-text">Hurdles non atteints</span></div>
+        <p>Les hurdles de MOIC et d'IRR ne sont pas atteints. Des options sont à considérer : (1) tester un multiple de sortie plus élevé, (2) revoir la croissance de l'ARR, (3) renégocier la valorisation d'entrée à la baisse. Sans ces ajustements, le deal ne passe pas nos critères.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>VI — Modèle financier</span></div><div>34</div></div>
+</section>
+
+<section class="closing" data-screen-label="35 Fin">
+  <div>
+    <div class="closing-mark">§</div>
+    <h2>Pestaly, c'est l'opportunité d'industrialiser un service essentiel en France avec une approche tech et une vision transformatrice. <br>C'est maintenant qu'il faut agir.</h2>
+  </div>
+  <div class="closing-sig">
+    <div class="cover-tag" style="text-align:left">sforbt · M&amp;A Strategic · Investment Memo<br>Juin 2024</div>
+    <div class="cover-tag">Mémo confidentiel — Pestaly<br>Diffusion restreinte</div>
+  </div>
+</section>
+
+</deck-stage>
+</body>
+</html>
