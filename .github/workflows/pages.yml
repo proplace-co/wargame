@@ -1,0 +1,52 @@
+name: Deploy Pages (slim)
+
+# Replaces the legacy "deploy from branch" Pages build, which packaged the
+# whole repo PLUS the full .git history (1500+ commits of ~1.3 MB memo HTML)
+# into a ~3.5 GB artifact — over the 1 GB Pages limit — so the build timed out
+# and was cancelled. Here we upload ONLY the served files (~0.35 GB, no .git),
+# which keeps the artifact comfortably under the limit and never times out.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one deploy at a time; don't cancel an in-flight sync.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout (shallow — no history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Stage served files (exclude .git / .github / staging dir)
+        run: |
+          mkdir -p _pages_site
+          rsync -a --exclude='.git' --exclude='.github' --exclude='_pages_site' ./ _pages_site/
+          echo "Staged $(du -sh _pages_site | cut -f1) of served files"
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact (served files only)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _pages_site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
