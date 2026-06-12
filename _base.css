@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 :root {
   --navy:            #0f1f33;
   --navy-mid:        #1e3553;
@@ -536,4 +538,228 @@ p, li, td, th, .text-block, .text-col, .actor-body, .ws-box, .section-container 
 @media (max-width: 420px) {
   .neg-anchor { font-size: 0.46rem; max-width: 72px; }
   .neg-anchor__val { font-size: 0.62rem; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HARMONISATION ÉDITORIALE — calage typographique sur le standard /actualites
+   Appendu en FIN de fichier : la cascade fait gagner ces règles sans modifier
+   une seule règle existante. Rollback = supprimer ce bloc (et l'@import Inter
+   en ligne 1). Structure intouchée : sidebar, ancres, split/img-col sticky,
+   lightbox, filet anti-imbrication, padding des cartes (32/36/34).
+   Display = EB Garamond (signature conservée) · Corps/UI = Inter · Data = DM Mono.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --sans: 'Inter', 'Helvetica Neue', system-ui, -apple-system, sans-serif;
+  --text-body-size: 1.0625rem;     /* 17px — était 1.18rem */
+  --text-line-height: 1.65;        /* était 1.82 */
+  --text-muted: #526070;
+  --text-faint: #8898a8;
+  --measure: 720px;                /* ~72 caractères/ligne, équiv. --maxw:760px de /actualites */
+  --rhythm: 16px;
+}
+
+/* ── 1. CORPS DE TEXTE → INTER ─────────────────────────────────────────────
+   (sous-bloc identité : pour revenir au corps EB Garamond, supprimer ces
+   règles font-family — le reste du bloc reste valable) */
+:where(.content-area) p,
+:where(.content-area) li,
+.text-col, .text-block, .text-full-width,
+.source-list, .conviction-text, .quadrant-intro {
+  font-family: var(--sans);
+}
+.section-container td { font-family: var(--sans); font-variant-numeric: tabular-nums; }
+:where(.content-area) p { margin: 0 0 var(--rhythm); }
+.content-area b, .content-area strong { font-weight: 600; color: var(--text-main); }
+.content-area details summary { font-family: var(--sans) !important; }
+.actor-body, .actor-body div, .actor-body span, .actor-body li { font-family: var(--sans); }
+.scen-details-body, .scen-details-body div, .scen-details-body span, .scen-details-body li { font-family: var(--sans); }
+.scen-summary-top span, details.scenario-card summary .scen-summary-text { font-family: var(--sans); }
+.actor-name { font-family: var(--serif); } /* noms d'acteurs : signature Garamond conservée */
+
+/* Mesure : aucun bloc de prose au-delà de ~72 caractères/ligne.
+   Les conteneurs mixtes ne sont capés QUE s'ils ne portent pas de table
+   (239 tables financières vivent dans des text-block/text-full-width du
+   corpus publié — elles gardent la pleine largeur de la carte).
+   Règles séparées : un navigateur sans :has() n'invalide que la sienne. */
+.section-container > p { max-width: var(--measure); }
+.source-list, .quadrant-intro, .body-tagline, .subtitle-category { max-width: var(--measure); }
+.text-block:not(:has(table)) { max-width: var(--measure); }
+.text-full-width:not(:has(table)) { max-width: var(--measure); }
+.conviction-text:not(:has(table)) { max-width: var(--measure); }
+.angle-deep-dive:not(:has(table)) { max-width: var(--measure); }
+.text-col:not(:has(table)) { max-width: var(--measure); }
+
+/* Liens de prose : soulignés en permanence, fini les URLs cassées lettre à lettre */
+.content-area a { word-break: normal; overflow-wrap: anywhere; }
+:where(.content-area) p a, :where(.content-area) li a, .source-list a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+  text-decoration-color: rgba(30, 53, 83, 0.35);
+}
+:where(.content-area) p a:hover, :where(.content-area) li a:hover, .source-list a:hover {
+  text-decoration-color: var(--navy);
+}
+
+/* ── 2. ÉCHELLE DE TITRES (resserrée, façon /actualites 34/25/20) ─────────── */
+/* h1 : !important nécessaire pour neutraliser le style inline émis par le module 1306 */
+.content-area h1 {
+  font-family: var(--serif) !important;
+  font-size: 2.5rem !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.025em !important;
+  line-height: 1.1 !important;
+  color: var(--navy) !important;
+  margin-bottom: 8px !important;
+}
+.section-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  padding-bottom: 12px;
+  margin-bottom: 24px;
+}
+/* :where → spécificité 0,0,1 : .swot-item h3 / .section h3 (sidebar) gardent la main */
+:where(.section-container) h3 {
+  font-size: 1.3rem;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+/* h4.kicker = label éditorial émis par le pass de normalisation
+   (execution/html_normalize.py, promotion des <strong>Label :</strong>).
+   On ne style PAS le tag h4 nu : le corpus publié contient 1 588 h4
+   titres-phrases (>60 caractères, synergies numérotées…) qui doivent garder
+   l'échelle serif 1.32rem de la base. */
+.content-area h4.kicker {
+  font-family: var(--sans);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 24px 0 8px;
+  border: none;
+}
+.subtitle-category { font-family: var(--sans); font-size: 1rem; line-height: 1.55; color: var(--text-muted); }
+.body-tagline      { font-family: var(--sans); font-size: 1.05rem; line-height: 1.6; }
+
+/* ── 3. RYTHME VERTICAL ───────────────────────────────────────────────────── */
+.section-container { margin-bottom: 24px; }
+:where(.content-area) ul, :where(.content-area) ol { margin: 4px 0 var(--rhythm); padding-left: 1.25rem; }
+:where(.content-area) li { margin-bottom: 6px; }
+.content-area li::marker { color: var(--text-faint); }
+.content-area hr {
+  border: none;
+  border-top: 1px solid var(--border-light);
+  margin: 28px 0;
+  max-width: var(--measure);
+}
+
+/* ── 4. LIGNE DE SOURCE (miroir de .art-srcline des /actualites) ──────────── */
+.src-line {
+  font-family: var(--sans);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text-faint);
+  margin: -6px 0 14px;
+  max-width: var(--measure);
+}
+.src-line a { color: var(--text-muted); text-decoration: underline; text-underline-offset: 2px; }
+
+/* ── 5. GRAMMAIRE D'ENCADRÉS (4 et seulement 4) ───────────────────────────── */
+.note, .disclaimer-box, .takeaway-box, .cta-panel {
+  font-family: var(--sans);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  border-radius: 4px;
+  margin: 20px 0;
+  padding: 14px 18px;
+  max-width: var(--measure);
+}
+/* spéculatif = bordure pointillée (code visuel /actualites pour l'hypothèse) */
+.disclaimer-box { border-left: 3px dashed #f59e0b; }
+.disclaimer-subtext { font-family: var(--sans); font-size: 0.8125rem; }
+.note { font-style: normal; }
+/* à-retenir : cible d'émission pour conviction / gp_comment. NE PAS renommer
+   en « verdict-* » : memo_publish.sanitize strippe [class*='verdict'] sur les
+   fiches publiques (idem status/gate/fund/disclaimer — voir _LEAK_CLASS_RE). */
+.takeaway-box { background: var(--off-white); border-left: 3px solid var(--navy); }
+.takeaway-box .takeaway-kicker {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--navy);
+  margin-bottom: 6px;
+}
+.takeaway-box--call     { background: var(--green-bg); border-left-color: var(--green-sem); }
+.takeaway-box--consider { background: var(--amber-bg); border-left-color: var(--amber-sem); }
+.takeaway-box--monitor  { background: var(--blue-bg);  border-left-color: var(--blue-sem);  }
+.takeaway-box--pass     { background: var(--red-bg);   border-left-color: var(--red-sem);   }
+/* action (remplaçant de classe pour les CTA DD/PM inline-stylés) */
+.cta-panel { background: #f8f9ff; border: 1px solid var(--border); border-left: 3px solid #4f46e5; }
+.pm-section .cta-panel { border-left-color: #0f766e; background: #f6fbfa; }
+
+/* ── 6. TABLES FINANCIÈRES ────────────────────────────────────────────────── */
+.fin-table { width: 100%; border-collapse: collapse; font-family: var(--sans); font-size: 0.8125rem; }
+.fin-table th {
+  background: var(--navy); color: #fff;
+  font-family: var(--mono); font-size: 0.625rem; font-weight: 400;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 9px 12px; text-align: right; vertical-align: bottom;
+}
+.fin-table th:first-child, .fin-table td:first-child { text-align: left; white-space: normal; }
+.fin-table td {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border-light);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.fin-table tbody tr:nth-child(even) { background: var(--off-white); }
+/* Pont : neutralise la TYPO inline des tables build-model (font seulement —
+   padding/couleurs/horizon-mark intouchés), même technique que .art-ops */
+#financial-forecast td[style], #roi-analysis td[style], #cap-table td[style],
+#financial-forecast th[style], #roi-analysis th[style], #cap-table th[style] {
+  font-family: var(--sans) !important;
+  line-height: 1.5 !important;
+}
+#financial-forecast p[style], #roi-analysis p[style], #cap-table p[style], #conviction p[style] {
+  font-family: var(--sans) !important;
+  font-size: var(--text-body-size) !important;
+  line-height: var(--text-line-height) !important;
+  margin: 0 0 var(--rhythm) !important;
+}
+.synergies-table td, .quadrant-summary-table td { font-family: var(--sans); font-size: 0.875rem; }
+
+/* ── 7. BADGES / PILLS ────────────────────────────────────────────────────── */
+.pill, .logic-tag, .label-tier, .label-cap, .label-diff, .label-white {
+  border-radius: 3px;
+}
+
+/* ── 8. RESPONSIVE (reprend la main sur les !important existants) ─────────── */
+@media (max-width: 1000px) {
+  .section-title { font-size: 1.55rem; }
+  :where(.section-container) h3 { font-size: 1.22rem; }
+}
+@media (max-width: 640px) {
+  .content-area h1 { font-size: 1.7rem !important; }
+  .section-title { font-size: 1.4rem !important; }
+  :where(.section-container) h3 { font-size: 1.15rem !important; }
+  .content-area h4.kicker { font-size: 0.75rem !important; }
+  :where(.content-area) p, :where(.content-area) li { font-size: 1rem; }
+  /* re-céder la main aux valeurs mobiles existantes que les règles de base
+     de ce bloc (plus tardives dans le fichier) écrasaient par ordre */
+  .body-tagline { font-size: 0.95rem; }
+  .section-container { margin-bottom: 14px; }
+}
+@media (max-width: 400px) {
+  .content-area h1 { font-size: 1.5rem !important; }
+  .section-title { font-size: 1.3rem !important; }
+  :where(.section-container) h3 { font-size: 1.08rem !important; }
+  :where(.content-area) p, :where(.content-area) li { font-size: 0.96rem; }
 }
