@@ -1,0 +1,1462 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Mémo Stelogy — sforbt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+/**
+ * <deck-stage noscale> — reusable web component for HTML decks.
+ *
+ * Handles:
+ *  (a) speaker notes — reads <script type="application/json" id="speaker-notes">
+ *      and posts {slideIndexChanged: N} to the parent window on nav.
+ *  (b) keyboard navigation — ←/→, PgUp/PgDn, Space, Home/End, number keys.
+ *  (c) press R to reset to slide 0 (with a tasteful keyboard hint).
+ *  (d) bottom-center overlay showing slide count + hints, fades out on idle.
+ *  (e) auto-scaling — inner canvas is a fixed design size (default 1920×1080)
+ *      scaled with `transform: scale()` to fit the viewport, letterboxed.
+ *      Set the `noscale` attribute to render at authored size (1:1) — the
+ *      PPTX exporter sets this so its DOM capture sees unscaled geometry.
+ *  (f) print — `@media print` lays every slide out as its own page at the
+ *      design size, so the browser's Print → Save as PDF produces a clean
+ *      one-page-per-slide PDF with no extra setup.
+ *
+ * Slides are HIDDEN, not unmounted. Non-active slides stay in the DOM with
+ * `visibility: hidden` + `opacity: 0`, so their state (videos, iframes,
+ * form inputs, React trees) is preserved across navigation.
+ *
+ * Lifecycle event — the component dispatches a `slidechange` CustomEvent on
+ * itself whenever the active slide changes (including the initial mount).
+ * The event bubbles and composes out of shadow DOM, so you can listen on
+ * the <deck-stage> element or on document:
+ *
+ *   document.querySelector('deck-stage').addEventListener('slidechange', (e) => {
+ *     e.detail.index         // new 0-based index
+ *     e.detail.previousIndex // previous index, or -1 on init
+ *     e.detail.total         // total slide count
+ *     e.detail.slide         // the new active slide element
+ *     e.detail.previousSlide // the prior slide element, or null on init
+ *     e.detail.reason        // 'init' | 'keyboard' | 'click' | 'tap' | 'api'
+ *   });
+ *
+ * Persistence: none at the deck level. The host app keeps the current slide
+ * in its own URL (?slide=) and re-delivers it via location.hash on load, so a
+ * bare load with no hash always starts at slide 1.
+ *
+ * Usage:
+ *   <deck-stage width="1920" height="1080">
+ *     <section data-label="Title">...</section>
+ *     <section data-label="Agenda">...</section>
+ *   </deck-stage>
+ *
+ * Slides are the direct element children of <deck-stage>. Each slide is
+ * automatically tagged with:
+ *   - data-screen-label="NN Label"   (1-indexed, for comment flow)
+ *   - data-om-validate="no_overflowing_text,no_overlapping_text,slide_sized_text"
+ */
+
+(() => {
+  const DESIGN_W_DEFAULT = 1920;
+  const DESIGN_H_DEFAULT = 1080;
+  const OVERLAY_HIDE_MS = 1800;
+  const VALIDATE_ATTR = 'no_overflowing_text,no_overlapping_text,slide_sized_text';
+
+  const pad2 = (n) => String(n).padStart(2, '0');
+
+  const stylesheet = `
+    :host {
+      position: fixed;
+      inset: 0;
+      display: block;
+      background: #000;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+      overflow: hidden;
+    }
+
+    .stage {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .canvas {
+      position: relative;
+      transform-origin: center center;
+      flex-shrink: 0;
+      background: #fff;
+      will-change: transform;
+    }
+
+    /* Slides live in light DOM (via <slot>) so authored CSS still applies.
+       We absolutely position each slotted child to stack them. */
+    ::slotted(*) {
+      position: absolute !important;
+      inset: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      box-sizing: border-box !important;
+      overflow: hidden;
+      opacity: 0;
+      pointer-events: none;
+      visibility: hidden;
+    }
+    ::slotted([data-deck-active]) {
+      opacity: 1;
+      pointer-events: auto;
+      visibility: visible;
+    }
+
+    /* Tap zones for mobile — back/forward thirds like Stories.
+       Transparent, no visible UI, don't block the overlay. */
+    .tapzones {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      z-index: 2147482000;
+      pointer-events: none;
+    }
+    .tapzone {
+      flex: 1;
+      pointer-events: auto;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* Only activate tap zones on coarse pointers (touch devices). */
+    @media (hover: hover) and (pointer: fine) {
+      .tapzones { display: none; }
+    }
+
+    .overlay {
+      position: fixed;
+      left: 50%;
+      bottom: 22px;
+      transform: translate(-50%, 6px) scale(0.92);
+      filter: blur(6px);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      background: #000;
+      color: #fff;
+      border-radius: 999px;
+      font-size: 12px;
+      font-feature-settings: "tnum" 1;
+      letter-spacing: 0.01em;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 260ms ease, transform 260ms cubic-bezier(.2,.8,.2,1), filter 260ms ease;
+      transform-origin: center bottom;
+      z-index: 2147483000;
+      user-select: none;
+    }
+    .overlay[data-visible] {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translate(-50%, 0) scale(1);
+      filter: blur(0);
+    }
+
+    .btn {
+      appearance: none;
+      -webkit-appearance: none;
+      background: transparent;
+      border: 0;
+      margin: 0;
+      padding: 0;
+      color: inherit;
+      font: inherit;
+      cursor: default;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 28px;
+      min-width: 28px;
+      border-radius: 999px;
+      color: rgba(255,255,255,0.72);
+      transition: background 140ms ease, color 140ms ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+    .btn:active { background: rgba(255,255,255,0.18); }
+    .btn:focus { outline: none; }
+    .btn:focus-visible { outline: none; }
+    .btn::-moz-focus-inner { border: 0; }
+    .btn svg { width: 14px; height: 14px; display: block; }
+    .btn.reset {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      padding: 0 10px 0 12px;
+      gap: 6px;
+      color: rgba(255,255,255,0.72);
+    }
+    .btn.reset .kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 10px;
+      line-height: 1;
+      color: rgba(255,255,255,0.88);
+      background: rgba(255,255,255,0.12);
+      border-radius: 4px;
+    }
+
+    .count {
+      font-variant-numeric: tabular-nums;
+      color: #fff;
+      font-weight: 500;
+      padding: 0 8px;
+      min-width: 42px;
+      text-align: center;
+      font-size: 12px;
+    }
+    .count .sep { color: rgba(255,255,255,0.45); margin: 0 3px; font-weight: 400; }
+    .count .total { color: rgba(255,255,255,0.55); }
+
+    .divider {
+      width: 1px;
+      height: 14px;
+      background: rgba(255,255,255,0.18);
+      margin: 0 2px;
+    }
+
+    /* ── Print: one page per slide, no chrome ────────────────────────────
+       The screen layout stacks every slide at inset:0 inside a scaled
+       canvas; for print we want them in document flow at the authored
+       design size so the browser paginates one slide per sheet. The
+       @page size is set from the width/height attributes via the inline
+       <style id="deck-stage-print-page"> that connectedCallback injects
+       into <head> (the @page at-rule has no effect inside shadow DOM). */
+    @media print {
+      :host {
+        position: static;
+        inset: auto;
+        background: none;
+        overflow: visible;
+        color: inherit;
+      }
+      .stage { position: static; display: block; }
+      .canvas {
+        transform: none !important;
+        width: auto !important;
+        height: auto !important;
+        background: none;
+        will-change: auto;
+      }
+      ::slotted(*) {
+        position: relative !important;
+        inset: auto !important;
+        width: var(--deck-design-w) !important;
+        height: var(--deck-design-h) !important;
+        box-sizing: border-box !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        pointer-events: auto;
+        break-after: page;
+        page-break-after: always;
+        break-inside: avoid;
+        overflow: hidden;
+      }
+      ::slotted(*:last-child) {
+        break-after: auto;
+        page-break-after: auto;
+      }
+      .overlay, .tapzones { display: none !important; }
+    }
+  `;
+
+  class DeckStage extends HTMLElement {
+    static get observedAttributes() { return ['width', 'height', 'noscale']; }
+
+    constructor() {
+      super();
+      this._root = this.attachShadow({ mode: 'open' });
+      this._index = 0;
+      this._slides = [];
+      this._notes = [];
+      this._hideTimer = null;
+      this._mouseIdleTimer = null;
+
+      this._onKey = this._onKey.bind(this);
+      this._onResize = this._onResize.bind(this);
+      this._onSlotChange = this._onSlotChange.bind(this);
+      this._onMouseMove = this._onMouseMove.bind(this);
+      this._onTapBack = this._onTapBack.bind(this);
+      this._onTapForward = this._onTapForward.bind(this);
+    }
+
+    get designWidth() {
+      return parseInt(this.getAttribute('width'), 10) || DESIGN_W_DEFAULT;
+    }
+    get designHeight() {
+      return parseInt(this.getAttribute('height'), 10) || DESIGN_H_DEFAULT;
+    }
+
+    connectedCallback() {
+      this._render();
+      this._loadNotes();
+      this._syncPrintPageRule();
+      window.addEventListener('keydown', this._onKey);
+      window.addEventListener('resize', this._onResize);
+      window.addEventListener('mousemove', this._onMouseMove, { passive: true });
+      // Initial collection + layout happens via slotchange, which fires on mount.
+    }
+
+    disconnectedCallback() {
+      window.removeEventListener('keydown', this._onKey);
+      window.removeEventListener('resize', this._onResize);
+      window.removeEventListener('mousemove', this._onMouseMove);
+      if (this._hideTimer) clearTimeout(this._hideTimer);
+      if (this._mouseIdleTimer) clearTimeout(this._mouseIdleTimer);
+    }
+
+    attributeChangedCallback() {
+      if (this._canvas) {
+        this._canvas.style.width = this.designWidth + 'px';
+        this._canvas.style.height = this.designHeight + 'px';
+        this._canvas.style.setProperty('--deck-design-w', this.designWidth + 'px');
+        this._canvas.style.setProperty('--deck-design-h', this.designHeight + 'px');
+        this._fit();
+        this._syncPrintPageRule();
+      }
+    }
+
+    _render() {
+      const style = document.createElement('style');
+      style.textContent = stylesheet;
+
+      const stage = document.createElement('div');
+      stage.className = 'stage';
+
+      const canvas = document.createElement('div');
+      canvas.className = 'canvas';
+      canvas.style.width = this.designWidth + 'px';
+      canvas.style.height = this.designHeight + 'px';
+      canvas.style.setProperty('--deck-design-w', this.designWidth + 'px');
+      canvas.style.setProperty('--deck-design-h', this.designHeight + 'px');
+
+      const slot = document.createElement('slot');
+      slot.addEventListener('slotchange', this._onSlotChange);
+      canvas.appendChild(slot);
+      stage.appendChild(canvas);
+
+      // Tap zones (mobile): left third = back, right third = forward.
+      const tapzones = document.createElement('div');
+      tapzones.className = 'tapzones export-hidden';
+      tapzones.setAttribute('aria-hidden', 'true');
+      tapzones.setAttribute('data-noncommentable', '');
+      const tzBack = document.createElement('div');
+      tzBack.className = 'tapzone tapzone--back';
+      const tzMid = document.createElement('div');
+      tzMid.className = 'tapzone tapzone--mid';
+      tzMid.style.pointerEvents = 'none';
+      const tzFwd = document.createElement('div');
+      tzFwd.className = 'tapzone tapzone--fwd';
+      tzBack.addEventListener('click', this._onTapBack);
+      tzFwd.addEventListener('click', this._onTapForward);
+      tapzones.append(tzBack, tzMid, tzFwd);
+
+      // Overlay: compact, solid black, with clickable controls.
+      const overlay = document.createElement('div');
+      overlay.className = 'overlay export-hidden';
+      overlay.setAttribute('role', 'toolbar');
+      overlay.setAttribute('aria-label', 'Deck controls');
+      overlay.setAttribute('data-noncommentable', '');
+      overlay.innerHTML = `
+        <button class="btn prev" type="button" aria-label="Previous slide" title="Previous (←)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>
+        </button>
+        <span class="count" aria-live="polite"><span class="current">1</span><span class="sep">/</span><span class="total">1</span></span>
+        <button class="btn next" type="button" aria-label="Next slide" title="Next (→)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg>
+        </button>
+        <span class="divider"></span>
+        <button class="btn reset" type="button" aria-label="Reset to first slide" title="Reset (R)">Reset<span class="kbd">R</span></button>
+      `;
+
+      overlay.querySelector('.prev').addEventListener('click', () => this._go(this._index - 1, 'click'));
+      overlay.querySelector('.next').addEventListener('click', () => this._go(this._index + 1, 'click'));
+      overlay.querySelector('.reset').addEventListener('click', () => this._go(0, 'click'));
+
+      this._root.append(style, stage, tapzones, overlay);
+      this._canvas = canvas;
+      this._slot = slot;
+      this._overlay = overlay;
+      this._countEl = overlay.querySelector('.current');
+      this._totalEl = overlay.querySelector('.total');
+    }
+
+    /** @page must live in the document stylesheet — it's a no-op inside
+     *  shadow DOM. Inject/update a single <head> style tag so the print
+     *  sheet matches the design size and Save-as-PDF yields one slide per
+     *  page with no margins. */
+    _syncPrintPageRule() {
+      const id = 'deck-stage-print-page';
+      let tag = document.getElementById(id);
+      if (!tag) {
+        tag = document.createElement('style');
+        tag.id = id;
+        document.head.appendChild(tag);
+      }
+      tag.textContent =
+        '@page { size: ' + this.designWidth + 'px ' + this.designHeight + 'px; margin: 0; } ' +
+        '@media print { html, body { margin: 0 !important; padding: 0 !important; background: none !important; overflow: visible !important; height: auto !important; } ' +
+        '* { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }';
+    }
+
+    _onSlotChange() {
+      this._collectSlides();
+      this._restoreIndex();
+      this._applyIndex({ showOverlay: false, broadcast: true, reason: 'init' });
+      this._fit();
+    }
+
+    _collectSlides() {
+      const assigned = this._slot.assignedElements({ flatten: true });
+      this._slides = assigned.filter((el) => {
+        // Skip template/style/script nodes even if someone slots them.
+        const tag = el.tagName;
+        return tag !== 'TEMPLATE' && tag !== 'SCRIPT' && tag !== 'STYLE';
+      });
+
+      this._slides.forEach((slide, i) => {
+        const n = i + 1;
+        // Determine a label for comment flow: prefer explicit data-label,
+        // then an existing data-screen-label, then first heading, else "Slide".
+        let label = slide.getAttribute('data-label');
+        if (!label) {
+          const existing = slide.getAttribute('data-screen-label');
+          if (existing) {
+            // Strip any leading number the author may have included.
+            label = existing.replace(/^\s*\d+\s*/, '').trim() || existing;
+          }
+        }
+        if (!label) {
+          const h = slide.querySelector('h1, h2, h3, [data-title]');
+          if (h) label = (h.textContent || '').trim().slice(0, 40);
+        }
+        if (!label) label = 'Slide';
+        slide.setAttribute('data-screen-label', `${pad2(n)} ${label}`);
+
+        // Validation attribute for comment flow / auto-checks.
+        if (!slide.hasAttribute('data-om-validate')) {
+          slide.setAttribute('data-om-validate', VALIDATE_ATTR);
+        }
+
+        slide.setAttribute('data-deck-slide', String(i));
+      });
+
+      if (this._totalEl) this._totalEl.textContent = String(this._slides.length || 1);
+      if (this._index >= this._slides.length) this._index = Math.max(0, this._slides.length - 1);
+    }
+
+    _loadNotes() {
+      const tag = document.getElementById('speaker-notes');
+      if (!tag) { this._notes = []; return; }
+      try {
+        const parsed = JSON.parse(tag.textContent || '[]');
+        if (Array.isArray(parsed)) this._notes = parsed;
+      } catch (e) {
+        console.warn('[deck-stage] Failed to parse #speaker-notes JSON:', e);
+        this._notes = [];
+      }
+    }
+
+    _restoreIndex() {
+      // The host's ?slide= param is delivered as a #<int> hash (1-indexed) on
+      // the iframe src. No hash → slide 1; the deck itself keeps no position
+      // state across loads.
+      const h = (location.hash || '').match(/^#(\d+)$/);
+      if (h) {
+        const n = parseInt(h[1], 10) - 1;
+        if (n >= 0 && n < this._slides.length) this._index = n;
+      }
+    }
+
+    _applyIndex({ showOverlay = true, broadcast = true, reason = 'init' } = {}) {
+      if (!this._slides.length) return;
+      const prev = this._prevIndex == null ? -1 : this._prevIndex;
+      const curr = this._index;
+      // Keep the iframe's own hash in sync so an in-iframe location.reload()
+      // (reload banner path in viewer-handle.ts) lands on the current slide,
+      // not the stale deep-link hash from initial load.
+      try { history.replaceState(null, '', '#' + (curr + 1)); } catch (e) {}
+      this._slides.forEach((s, i) => {
+        if (i === curr) s.setAttribute('data-deck-active', '');
+        else s.removeAttribute('data-deck-active');
+      });
+      if (this._countEl) this._countEl.textContent = String(curr + 1);
+
+      if (broadcast) {
+        // (1) Legacy: host-window postMessage for speaker-notes renderers.
+        try { window.postMessage({ slideIndexChanged: curr }, '*'); } catch (e) {}
+
+        // (2) In-page CustomEvent on the <deck-stage> element itself.
+        //     Bubbles and composes out of shadow DOM so slide code can listen:
+        //       document.querySelector('deck-stage').addEventListener('slidechange', e => {
+        //         e.detail.index, e.detail.previousIndex, e.detail.total, e.detail.slide, e.detail.reason
+        //       });
+        const detail = {
+          index: curr,
+          previousIndex: prev,
+          total: this._slides.length,
+          slide: this._slides[curr] || null,
+          previousSlide: prev >= 0 ? (this._slides[prev] || null) : null,
+          reason: reason, // 'init' | 'keyboard' | 'click' | 'tap' | 'api'
+        };
+        this.dispatchEvent(new CustomEvent('slidechange', {
+          detail,
+          bubbles: true,
+          composed: true,
+        }));
+      }
+
+      this._prevIndex = curr;
+      if (showOverlay) this._flashOverlay();
+    }
+
+    _flashOverlay() {
+      if (!this._overlay) return;
+      this._overlay.setAttribute('data-visible', '');
+      if (this._hideTimer) clearTimeout(this._hideTimer);
+      this._hideTimer = setTimeout(() => {
+        this._overlay.removeAttribute('data-visible');
+      }, OVERLAY_HIDE_MS);
+    }
+
+    _fit() {
+      if (!this._canvas) return;
+      // PPTX export sets noscale so the DOM capture sees authored-size
+      // geometry — the scaled canvas is in shadow DOM, so the exporter's
+      // resetTransformSelector can't reach .canvas.style.transform directly.
+      if (this.hasAttribute('noscale')) {
+        this._canvas.style.transform = 'none';
+        return;
+      }
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const s = Math.min(vw / this.designWidth, vh / this.designHeight);
+      this._canvas.style.transform = `scale(${s})`;
+    }
+
+    _onResize() { this._fit(); }
+
+    _onMouseMove() {
+      // Keep overlay visible while mouse moves; hide after idle.
+      this._flashOverlay();
+    }
+
+    _onTapBack(e) {
+      e.preventDefault();
+      this._go(this._index - 1, 'tap');
+    }
+
+    _onTapForward(e) {
+      e.preventDefault();
+      this._go(this._index + 1, 'tap');
+    }
+
+    _onKey(e) {
+      // Ignore when the user is typing.
+      const t = e.target;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const key = e.key;
+      let handled = true;
+
+      if (key === 'ArrowRight' || key === 'PageDown' || key === ' ' || key === 'Spacebar') {
+        this._go(this._index + 1, 'keyboard');
+      } else if (key === 'ArrowLeft' || key === 'PageUp') {
+        this._go(this._index - 1, 'keyboard');
+      } else if (key === 'Home') {
+        this._go(0, 'keyboard');
+      } else if (key === 'End') {
+        this._go(this._slides.length - 1, 'keyboard');
+      } else if (key === 'r' || key === 'R') {
+        this._go(0, 'keyboard');
+      } else if (/^[0-9]$/.test(key)) {
+        // 1..9 jump to that slide; 0 jumps to 10.
+        const n = key === '0' ? 9 : parseInt(key, 10) - 1;
+        if (n < this._slides.length) this._go(n, 'keyboard');
+      } else {
+        handled = false;
+      }
+
+      if (handled) {
+        e.preventDefault();
+        this._flashOverlay();
+      }
+    }
+
+    _go(i, reason = 'api') {
+      if (!this._slides.length) return;
+      const clamped = Math.max(0, Math.min(this._slides.length - 1, i));
+      if (clamped === this._index) {
+        this._flashOverlay();
+        return;
+      }
+      this._index = clamped;
+      this._applyIndex({ showOverlay: true, broadcast: true, reason });
+    }
+
+    // Public API ------------------------------------------------------------
+
+    /** Current slide index (0-based). */
+    get index() { return this._index; }
+    /** Total slide count. */
+    get length() { return this._slides.length; }
+    /** Programmatically navigate. */
+    goTo(i) { this._go(i, 'api'); }
+    next() { this._go(this._index + 1, 'api'); }
+    prev() { this._go(this._index - 1, 'api'); }
+    reset() { this._go(0, 'api'); }
+  }
+
+  if (!customElements.get('deck-stage')) {
+    customElements.define('deck-stage', DeckStage);
+  }
+})();
+
+</script>
+<style>
+:root{
+  --paper:#F5F1E8;
+  --paper-2:#EFEAE0;
+  --ink:#0E1116;
+  --ink-2:#2A3038;
+  --muted:#5C6470;
+  --rule:#1A1F26;
+  --rule-soft:#C9C0AE;
+  --accent:#7A1F1F;
+  --pos:#1F4D2E;
+  --neg:#7A1F1F;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#0a0a0a;font-family:'Inter',sans-serif;color:var(--ink)}
+deck-stage{display:block}
+deck-stage > section{
+  width:1920px;height:1080px;background:var(--paper);color:var(--ink);
+  font-family:'Inter',sans-serif;font-size:22px;line-height:1.5;
+  position:relative;overflow:hidden;padding:90px 120px;
+  display:flex;flex-direction:column;
+}
+.s-head{display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:18px;border-bottom:1px solid var(--rule);margin-bottom:48px;flex-shrink:0}
+.s-head .brand{font-family:'EB Garamond',serif;font-size:24px;font-style:italic;color:var(--ink-2);letter-spacing:0.01em}
+.s-head .meta{font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted)}
+.s-title{font-family:'EB Garamond',serif;font-weight:500;font-size:60px;line-height:1.05;letter-spacing:-0.01em;color:var(--ink);margin-bottom:14px}
+.s-kicker{font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);margin-bottom:24px}
+.s-sub{font-size:24px;color:var(--ink-2);line-height:1.45;max-width:1500px;margin-bottom:40px}
+.s-body{flex:1;min-height:0;display:flex;flex-direction:column}
+.s-body p{font-size:21px;line-height:1.55;color:var(--ink-2);margin-bottom:16px;text-wrap:pretty}
+.s-body p strong, .s-body b{color:var(--ink);font-weight:600}
+.s-body ul{list-style:none;padding:0}
+.s-body ul li{position:relative;padding-left:28px;margin-bottom:12px;font-size:21px;line-height:1.5;color:var(--ink-2)}
+.s-body ul li::before{content:"";position:absolute;left:0;top:14px;width:14px;height:1px;background:var(--ink)}
+.s-body h3{font-family:'EB Garamond',serif;font-weight:500;font-size:30px;color:var(--ink);margin-bottom:16px}
+.s-body h4{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;margin-top:20px;padding-bottom:8px;border-bottom:1px solid var(--rule-soft)}
+.s-foot{position:absolute;left:120px;right:120px;bottom:42px;display:flex;justify-content:space-between;align-items:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);padding-top:18px;border-top:1px solid var(--rule-soft)}
+.s-foot .lhs{display:flex;gap:32px}
+
+/* COVER */
+.cover{padding:140px 160px;justify-content:space-between}
+.cover-top{display:flex;justify-content:space-between;align-items:flex-start}
+.cover-mark{font-family:'EB Garamond',serif;font-style:italic;font-size:28px;color:var(--ink-2)}
+.cover-mark::before{content:"§";font-style:normal;margin-right:10px;color:var(--accent);font-weight:700}
+.cover-tag{font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);text-align:right;line-height:2}
+.cover-mid{margin-top:80px}
+.cover-eyebrow{font-family:'JetBrains Mono',monospace;font-size:15px;letter-spacing:0.3em;text-transform:uppercase;color:var(--muted);margin-bottom:32px}
+.cover h1{font-family:'EB Garamond',serif;font-weight:500;font-size:240px;line-height:0.92;letter-spacing:-0.025em;color:var(--ink)}
+.cover-sub{font-family:'EB Garamond',serif;font-style:italic;font-weight:400;font-size:36px;color:var(--ink-2);line-height:1.3;margin-top:36px;max-width:1400px}
+.cover-bot{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:48px;padding-top:36px;border-top:1px solid var(--rule)}
+.cover-bot dt{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.cover-bot dd{font-family:'EB Garamond',serif;font-size:30px;color:var(--ink);font-weight:500}
+
+/* DIVIDER */
+.divider{padding:140px 160px;justify-content:flex-end}
+.divider .roman{position:absolute;top:120px;right:160px;font-family:'EB Garamond',serif;font-style:italic;font-size:96px;color:var(--rule-soft);font-weight:400;letter-spacing:0.05em}
+.divider .div-eyebrow{font-family:'JetBrains Mono',monospace;font-size:15px;letter-spacing:0.3em;text-transform:uppercase;color:var(--muted);margin-bottom:32px}
+.divider h2{font-family:'EB Garamond',serif;font-weight:500;font-size:140px;line-height:0.95;letter-spacing:-0.02em;color:var(--ink);max-width:1400px}
+.divider .div-sub{font-family:'EB Garamond',serif;font-style:italic;font-size:30px;color:var(--ink-2);margin-top:36px;max-width:1100px;line-height:1.4}
+.divider .div-rule{width:120px;height:2px;background:var(--ink);margin-top:48px}
+
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:80px;flex:1;min-height:0}
+.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:60px;flex:1;min-height:0}
+.col-block h4:first-child{margin-top:0}
+
+/* Image block — tasteful figure with caption, contained height so slides stay composed */
+.s-figure{margin-top:18px;display:flex;flex-direction:column;gap:10px;flex:0 0 auto}
+.s-figure .frame{border:1px solid var(--rule);background:var(--paper-2);border-radius:2px;overflow:hidden;display:flex;align-items:center;justify-content:center;max-height:380px}
+.s-figure .frame img{width:100%;height:auto;max-height:380px;object-fit:contain;display:block}
+.s-figure figcaption{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted)}
+.s-figure.compact .frame{max-height:280px}
+.s-figure.compact .frame img{max-height:280px}
+/* Side-by-side text + image layout */
+.text-image{display:grid;grid-template-columns:1fr 1.1fr;gap:48px;flex:1;min-height:0;align-items:start}
+.text-image > .col-block{min-width:0}
+.text-image .s-figure{margin-top:0;align-self:stretch;height:100%}
+.text-image .s-figure .frame{max-height:480px;height:100%}
+.text-image .s-figure .frame img{max-height:480px}
+
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin:24px 0 36px}
+.kpi{padding:24px 24px 24px 0;border-right:1px solid var(--rule-soft)}
+.kpi:last-child{border-right:none}
+.kpi:not(:first-child){padding-left:24px}
+.kpi-label{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+.kpi-value{font-family:'EB Garamond',serif;font-weight:500;font-size:48px;line-height:1;color:var(--ink);letter-spacing:-0.01em}
+.kpi-note{font-size:14px;color:var(--muted);margin-top:8px;line-height:1.4}
+
+table.fin{width:100%;border-collapse:collapse;font-size:17px;font-variant-numeric:tabular-nums}
+table.fin thead th{background:transparent;color:var(--ink);font-weight:600;text-align:left;padding:11px 14px;border-bottom:2px solid var(--ink);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.18em;text-transform:uppercase}
+table.fin tbody td{padding:12px 14px;border-bottom:1px solid var(--rule-soft);color:var(--ink-2);vertical-align:top}
+table.fin tbody tr:last-child td{border-bottom:none}
+table.fin tbody td.num{text-align:right;font-family:'JetBrains Mono',monospace;color:var(--ink);white-space:nowrap}
+table.fin tbody tr.total td{font-weight:600;color:var(--ink);border-top:1px solid var(--ink);border-bottom:1px solid var(--ink);background:rgba(0,0,0,0.03)}
+table.fin tbody tr.total td.num{font-weight:700}
+table.fin.pnl-dense{font-size:15px}
+table.fin.pnl-dense thead th{padding:8px 12px;font-size:11px}
+table.fin.pnl-dense tbody td{padding:7px 12px}
+
+.swot{display:grid;grid-template-columns:1fr 1fr;gap:36px;flex:1;min-height:0}
+.swot-cell{padding:28px 32px;background:rgba(255,255,255,0.4);border:1px solid var(--rule-soft);border-top:3px solid var(--ink)}
+.swot-cell h4{margin:0 0 14px 0;border:none;padding:0}
+.swot-cell ul li{font-size:18px;margin-bottom:10px;padding-left:22px}
+.swot-cell ul li::before{top:11px;width:10px}
+
+.verdict{display:inline-flex;align-items:baseline;gap:18px;padding:18px 28px;border:2px solid var(--ink);background:var(--paper-2);font-family:'EB Garamond',serif}
+.verdict .v-tag{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted)}
+.verdict .v-text{font-size:36px;font-weight:600;color:var(--ink);letter-spacing:-0.01em}
+
+.closing{padding:140px 160px;justify-content:space-between}
+.closing-mark{font-family:'EB Garamond',serif;font-style:italic;font-size:200px;color:var(--ink);line-height:1}
+.closing h2{font-family:'EB Garamond',serif;font-weight:500;font-size:96px;line-height:1.05;letter-spacing:-0.02em;color:var(--ink);max-width:1400px;margin-top:48px}
+.closing-sig{display:flex;justify-content:space-between;align-items:flex-end;padding-top:36px;border-top:1px solid var(--rule)}
+
+.lead{font-size:25px;color:var(--ink);line-height:1.45;margin-bottom:28px;max-width:1500px;font-weight:400}
+.callout{padding:22px 26px;background:var(--paper-2);border-left:3px solid var(--ink);font-size:20px;line-height:1.55;color:var(--ink-2);margin:20px 0}
+.dl-grid{display:grid;grid-template-columns:220px 1fr;gap:16px 28px;align-items:baseline}
+.dl-grid dt{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);padding-top:4px}
+.dl-grid dd{font-size:20px;color:var(--ink-2);line-height:1.5}
+.tag{display:inline-block;padding:4px 10px;border:1px solid var(--rule);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.15em;text-transform:uppercase;margin-right:6px;color:var(--ink-2)}
+</style>
+</head>
+<body>
+
+<script type="application/json" id="speaker-notes">["Bonjour à tous et bienvenue à cette présentation du mémo d'investissement pour Stelogy. Aujourd'hui, nous allons couvrir une analyse approfondie de cette entreprise et la justesse de notre thèse d'investissement. Notre objectif est de vous présenter une recommandation claire sur l'opportunité de s'engager sur ce dossier.", "Stelogy se positionne sur un marché très dynamique. Il s'agit d'un opérateur de services managés et de cloud souverain ciblant les entreprises de taille intermédiaire en France. Leur offre est complète : elle intègre connectivité, cloud privé souverain et communications unifiées, le tout via un hub numérique sécurisé. C'est un acteur essentiel pour les ETI françaises.", "Le marché du cloud souverain connaît une croissance explosive. Nous parlons d'un marché mondial des services gérés de plusieurs centaines de milliards, avec un marché européen du cloud souverain de près de 30 milliards de dollars en 2024. Stelogy se concentre sur une niche très pertinente : les ETI françaises, représentant un marché de près de 130 millions d'euros pour les services cloud souverains managés.", "Notre analyse du marché top-down montre un TAM de 338-407 milliards USD pour les services gérés, ce qui est colossal. Le SAM, filtré pour le cloud souverain européen, est de 27,14 milliards USD. Stelogy cible un SOM très précis et atteignable de 130 millions d'euros sur les ETI françaises, avec une croissance annuelle composée forte.", "En complément de l'approche top-down, notre analyse bottom-up valide ce potentiel. Nous avons identifié environ 5900 ETI en France comme clients potentiels. En multipliant ce volume par un ARPU moyen conservateur de 1840 euros par mois, nous arrivons à un marché potentiel annuel de 130 millions d'euros. Ces chiffres se recoupent et renforcent la crédibilité de notre cible.", "La triangulation des approches top-down et bottom-up confirme que le SOM de Stelogy, ciblant les ETI françaises, est une sous-catégorie cohérente du SAM européen du cloud souverain. Le défi est d'affiner l'ARPU et d'élargir la cible, mais la base est solide pour une entrée réaliste sur le marché.", "La chaîne de valeur des services managés convergeants est complexe, avec des étapes allant du développement d'infrastructure à l'optimisation client. Nous avons attribué des scores stratégiques à chaque étape, basés sur la défensibilité, le potentiel de marge et la croissance. Cela nous aide à identifier les points les plus attractifs et porteurs de valeur.", "L'étape clé est le développement et la mise à disposition d'infrastructure cloud souveraine. Elle obtient un score stratégique de 9,1 sur 10, grâce à des barrières à l'entrée massives, un potentiel de marge premium et une croissance explosive. C'est la fondation sur laquelle se bâtissent tous les autres services, justifiant des investissements et des certifications colossales.", "La conception et l'architecture des solutions client, avec un score de 6,5, est une étape forte. Elle est intensive en expertise humaine, avec des marges élevées grâce à la rareté des compétences nécessaires pour adapter le cloud souverain aux besoins spécifiques des entreprises. La croissance est tirée par la demande du marché sous-jacent, mais la défensibilité est modérée en l'absence de barrières capitalistiques.", "Le déploiement, l'intégration et la migration, noté 6,4, est une étape robuste. Sa défensibilité vient de la complexité technique des migrations sans interruption de service et des coûts de changement élevés pour le client. Bien que le potentiel de marge soit modéré en raison de la concurrence, la croissance est très forte, directement liée à la demande de l'adoption du cloud souverain par le mid-market.", "La gestion des services managés et opérations obtient un score stratégique de 7,4. Sa défensibilité est solide, grâce à des investissements modérés mais nécessaires dans les outils et les équipes 24/7, ainsi qu'à des coûts de changement élevés pour le client. Le potentiel de marge est très élevé, aidé par un pricing power premium et de fortes économies d'échelle, le tout dans un marché en forte croissance.", "Enfin, la sécurité, conformité et gouvernance des données, avec un score remarquable de 8,4, est une étape exceptionnelle. Elle bénéficie d'une très forte défensibilité grâce à sa complexité technique extrême et aux barrières réglementaires. Le potentiel de marge est très élevé, et la croissance est constante, alimentée par la complexité croissante des menaces cyber et la multiplication des réglementations. C'est un pilier stratégique indissociable du cloud souverain.", "L'optimisation, l'accompagnement client et les évolutions, noté 4,9, est une étape modérée en termes stratégiques. Sa défensibilité et son potentiel de marge sont modérés. La croissance est indirectement liée au marché MSP mais ne crée pas de nouveau marché. Bien qu'essentielle pour la fidélisation client, elle est moins créatrice de nouveau marché pur et moins différenciante intrinsèquement.", "L'analyse des étapes de la chaîne de valeur révèle trois positions stratégiques clés. La première est le développement d'infrastructures cloud souveraines, avec un score de 9,1. La deuxième est la sécurité, conformité et gouvernance des données, notée 8,4, et la troisième que nous verrons plus tard est la gestion des services managés et opérations, avec 7,4. Ces étapes sont critiques pour la création et la capture de valeur.", "Le RANG 1 est donc le développement et la mise à disposition d'infrastructures cloud souveraines. Ses attributs : des barrières à l'entrée massives, un potentiel de marge premium et une croissance explosive. C'est là que réside la fondation de la souveraineté numérique, avec des investissements colossaux et des certifications complexes qui verrouillent le marché pour les acteurs en place.", "Le RANG 2 est la sécurité, la conformité et la gouvernance des données. Son importance est capitale car elle répond aux préoccupations vitales des entreprises en matière de protection des données. La complexité technique est très élevée, les marges brutes sont élevées et les exigences réglementaires comme le GDPR ou NIS2 créent un avantage défensif significatif.", "Le RANG 3 est la gestion des services managés et opérations. Ce sont les offres qui génèrent une récurrence de revenus forte. Le niveau de défensibilité est élevé grâce aux coûts de changement importants pour les clients. Le pricing power est premium, et les économies d'échelle sont fortes, assurant des marges solides dans un marché en constante croissance.", "Le marché des services managés convergents en Europe est en pleine transformation, portée par la demande de cloud souverain. Les obligations réglementaires et les pressions géopolitiques poussent les entreprises à opter pour des infrastructures locales. C'est une dislocation rapide, ouvrant un immense potentiel d'expansion pour les acteurs comme Stelogy qui se positionnent stratégiquement.", "Le point de contrôle dans cette chaîne de valeur est le développement et la mise à disposition d'infrastructures cloud souveraines. Cette étape exige des investissements massifs et des certifications complexes, créant des barrières à l'entrée quasi-insurmontables. C'est ici que les avantages défensifs sont les plus importants et où se concentre le pouvoir de levier.", "Les hyperscalers traditionnels perdent du terrain face à cette évolution. Leurs modèles non-souverains sont remis en question par les réglementations européennes. Ils tentent de s'adapter via des partenariats, mais cela souligne leur manque de différenciation intrinsèque en matière de souveraineté native. C'est une opportunité pour les acteurs européens pure-players.", "La manne des profits se déplace vers les services à forte valeur ajoutée et en amont de la chaîne. Les infrastructures cloud souveraines, la sécurité et les services managés sont les points où la valeur est capturée. Un acteur verticalement intégré, comme Stelogy, qui contrôle ces points, est le mieux positionné pour bénéficier de cette transformation du marché.", "Cette diapositive est une illustration du paysage concurrentiel M&A, distinguant les prédateurs, les aspirants, les géants et les cibles potentielles. On y voit la position de Stelogy et des principaux acteurs européens.", "La proposition de valeur de Stelogy est claire : simplifier la vie de ses clients en leur offrant un hub numérique souverain, sécurisé et intégré. Ils ciblent les PME, ETI et collectivités territoriales françaises, répondant à un besoin crucial de conformité et de proximité.", "Stelogy propose un hub numérique complet, couvrant le cloud privé, la connectivité très haut débit, les communications unifiées, l'IoT, la cybersécurité et les services IT managés. Ils disposent de 9 data centers en France, d'une infrastructure interconnectée et de partenariats technologiques, garantissant une solution complète et sécurisée sur le territoire national.", "Le modèle économique de Stelogy est robuste, basé sur des abonnements récurrents et des prestations de services. Avec un chiffre d'affaires supérieur à 118 millions d'euros, ils offrent une grande prévisibilité financière. Leur tarification est flexible, ajustée selon les ressources consommées, ce qui fidélise les clients sur le long terme.", "L'équipe dirigeante, menée par Jean-Philippe Melet, est expérimentée dans la consolidation et l'intégration. Avec 550 collaborateurs, dont une forte expertise en ingénierie et un DPO dédié, Stelogy montre une solide capacité d'exécution et une culture d'entreprise axée sur l'innovation, la transparence et la RSE.", "En résumé, Stelogy obtient un score de 84,6 sur 100 au pré-screening, un signal fort. Ils résolvent un problème majeur pour le mid-market français : la fragmentation des services IT et les risques de conformité. Leur solution est unifiée, souveraine et locale, déployée via un modèle GTM puissant basé sur un réseau de partenaires.", "Le cœur de l'excellence de l'équipe réside dans le leadership expérimenté de Jean-Philippe Melet, qui a piloté de nombreuses acquisitions. L'équipe de 550 collaborateurs est structurée avec 95 talents en ingénierie, démontrant une profondeur technique nécessaire pour l'intégration de services complexes.", "L'opportunité de marché pour Stelogy est exceptionnelle, avec un score de 88/100. Le SAM pour les ETI françaises est de 130 millions d'euros par an. Le timing est idéal, poussé par les réglementations et la modernisation des IT. La demande de proximité et de souveraineté crée un espace pour les acteurs agiles comme Stelogy.", "L'innovation produit, notée 75/100, se base sur l'intégration transparente des couches télécoms et cloud privé souverain. Leurs 9 data centers interconnectés en France garantissent une résilience élevée. La valeur vient du savoir-faire en intégration, des certifications de sécurité et des partenariats solides, plutôt que sur des technologies de rupture pure en propre.", "Le modèle d'affaires, avec un score de 85/100, est caractérisé par une excellente prévisibilité financière. Les revenus sont majoritairement récurrents via des contrats pluriannuels. Les opportunités d'up-selling, comme la cybersécurité managée, augmentent la LTV des clients. Le groupe s'auto-finance avec un chiffre d'affaires consolidé de plus de 118 millions d'euros.", "La traction et la croissance sont exceptionnelles, avec un score de 90/100. Le chiffre d'affaires de plus de 118 millions d'euros et les 30 000 clients B2B témoignent d'une position forte. Le déploiement du hub Elo pour les revendeurs et les agences territoriales assure une forte pénétration du marché et une croissance soutenue, tant organique qu'externe.", "En conclusion, le verdict du deal est un CALL. Stelogy est un consolidateur indépendant du cloud souverain et des télécoms mid-market français, avec une stratégie de build-up agressive. Ils ont une plateforme de revenus récurrents de 118 M€+, ancrée par des contrats pluriannuels et des coûts de changement structurellement élevés. C'est exactement le profil d'une entreprise dont le fossé concurrentiel s'approfondit avec chaque souscription, validant notre thèse d'investissement.", "Le facteur souvent sous-estimé est la dépendance aux infrastructures héritées, qui paradoxalement amplifie le coût de remplacement pour le client. Chaque service managé ou option de sécurité supplémentaire intégré dans l'infrastructure de Stelogy augmente les coûts et complexes d'une migration future. Cela transforme la dette technique héritée en une barrière de sortie active, renforçant le fossé défensif de Stelogy.", "Cependant, des risques subsistent. L'intégration rapide d'acquisitions peut entraîner des frictions opérationnelles et des coûts inattendus. La dépendance aux licences VMware, notamment après l'acquisition par Broadcom, représente un risque sur les marges. Enfin, une défection massive des revendeurs ou un incident de sécurité majeur pourrait nuire à la crédibilité et à la pérennité de l'entreprise. Ces points nécessitent une diligence accrue.", "Pour conclure, l'opportunité d'investissement dans Stelogy est forte et alignée avec notre thèse. Nous recommandons de poursuivre la diligence approfondie. Les prochaines étapes consisteront à vérifier la granularité des données financières, notamment la rentabilité par ligne de service et l'impact réel des coûts VMware/Broadcom, ainsi que les taux d'attrition clients. Une analyse plus fine par notre CTO sur l'intégration technique est également cruciale pour verrouiller ce momentum.", "Merci de votre attention. Nous passons maintenant à la session de questions-réponses. N'hésitez pas si vous avez des interrogations sur cette présentation ou sur le dossier Stelogy en particulier."]</script>
+
+<deck-stage>
+
+<section class="cover" data-screen-label="01 Couverture">
+  <div class="cover-top">
+    <div class="cover-mark">Mémo d'investissement confidentiel</div>
+    <div class="cover-tag">sforbt · M&amp;A Strategic &nbsp;·&nbsp; M&amp;A<br>Juin 2026</div>
+  </div>
+  <div class="cover-mid">
+    <div class="cover-eyebrow">Cible — MSP &amp; Cloud Souverain Mid-Market</div>
+    <h1>Stelogy</h1>
+    <div class="cover-sub">Services managés convergents (connectivité, cloud privé souverain et communications unifiées) pour les entreprises de 50 à 5000 salariés en France.</div>
+  </div>
+  <dl class="cover-bot">
+    <div><dt>Siège</dt><dd>France</dd></div>
+    <div><dt>Stade</dt><dd>Mid-Market</dd></div>
+    <div><dt>Score</dt><dd>84&thinsp;/&thinsp;100</dd></div>
+    <div><dt>Verdict</dt><dd>Call</dd></div>
+  </dl>
+</section>
+
+<section data-screen-label="02 Sommaire">
+  <div class="s-head"><div class="brand">Stelogy · Mémo d'investissement</div><div class="meta">Sommaire</div></div>
+  <div class="s-title">Sommaire</div>
+  <div class="s-body" style="margin-top:24px">
+    <div class="three-col" style="gap:80px">
+      <div class="col-block">
+        <h4>I — Marché</h4>
+        <ul><li>Sizing top-down &amp; bottom-up</li><li>Chaîne de valeur</li><li>Tendances et acteurs</li><li>Quadrants concurrence et M&amp;A</li><li>Scénarios stratégiques</li></ul>
+        <h4>II — Société</h4>
+        <ul><li>Proposition de valeur</li><li>Produit et modèle</li><li>Équipe et fondateur</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>III — Évaluation stratégique</h4>
+        <ul><li>Résumé et scores</li><li>Analyse SWOT</li><li>Plan d'action</li></ul>
+        <h4>IV — Thèse sforbt</h4>
+        <ul><li>Synergies — Type C Hybride</li><li>Tableau des synergies</li><li>Deal killers</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>V — Conviction GP</h4>
+        <ul><li>Angle, marché, timing</li><li>Verdict et risk register</li></ul>
+        <h4>VI — Modèle financier</h4>
+        <ul><li>Valorisation triangulée</li><li>P&amp;L et flux de trésorerie</li><li>ROI et verdict quantitatif</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>sforbt · M&amp;A Strategic</span></div><div>02</div></div>
+</section>
+
+<section class="divider" data-screen-label="03 I Marché">
+  <div class="roman">I</div>
+  <div>
+    <div class="div-eyebrow">Première partie</div>
+    <h2>Marché</h2>
+    <div class="div-sub">Marché · Note de pré-sélection : 84</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="04 Sizing top-down">
+  <div class="s-head"><div class="brand">Stelogy · I — Marché</div><div class="meta">04&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Market sizing — top-down</div>
+  <div class="s-title">Analyse Top-Down Market (Approche Funnel)</div>
+  <div class="kpi-row">
+    <div class="kpi"><div class="kpi-label">TAM mondial</div><div class="kpi-value">338-407 Md$</div><div class="kpi-note">Marché mondial des services gérés (MSP) incluant la gestion du cloud, la sécurité et les services de centre de données pour 2025.</div></div>
+    <div class="kpi"><div class="kpi-label">SAM Europe</div><div class="kpi-value">27,14 Md$</div><div class="kpi-note">Marché du Cloud Souverain Européen pour 2024.</div></div>
+    <div class="kpi"><div class="kpi-label">SOM réaliste</div><div class="kpi-value">130 M€</div><div class="kpi-note">Estimation conservatrice du marché des ETI françaises pour les services Cloud Souverain managés pour 2024-2025.</div></div>
+    <div class="kpi"><div class="kpi-label">CAGR</div><div class="kpi-value">20-25 %</div><div class="kpi-note">Taux de croissance annuel du marché Cloud Souverain Européen (TCAC).</div></div>
+  </div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <h4>Approche top-down (en entonnoir)</h4>
+        <p>Le Total Addressable Market (TAM) pour les services managés est estimé entre 338 et 407 milliards USD à l'échelle mondiale d'ici 2025. Le Serviceable Available Market (SAM), ciblant le cloud souverain européen, atteint 27,14 milliards USD pour 2024. Le Serviceable Obtainable Market (SOM) pour les ETI françaises est une estimation conservatrice de 130 millions EUR pour 2024-2025, un objectif réaliste basé sur le paysage concurrentiel et les dynamiques locales du marché.</p>
+        <p style="font-size:17px;color:var(--muted)">Sources : </p>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-cba97cf8fee85124e03e1bfc11f555dc-ejn3px49.jpg" alt="Sizing top-down"></div>
+        <figcaption>Fig. 04 — Entonnoir top-down TAM → SAM → SOM</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>04</div></div>
+</section>
+
+<section data-screen-label="05 Sizing bottom-up">
+  <div class="s-head"><div class="brand">Stelogy · I — Marché</div><div class="meta">05&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Market sizing — bottom-up &amp; triangulation</div>
+  <div class="s-title">Analyse Bottom-Up Market (Approche Calculée)</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Approche bottom-up (calculée)</h4>
+        <p>L'approche bottom-up valide un marché adressable de 130 millions EUR par an. Elle se base sur 5900 Entreprises de Taille Intermédiaire (ETI) en France, ayant entre 250 et 4999 salariés, car ce segment a des besoins complexes et réglementaires. L'ARPU (revenu moyen par client) est estimé à 1840 EUR/mois par client pour les services managés et le Cloud Souverain, reflétant des tarifs personnalisés et un bon positionnement prix.</p>
+        <p style="font-size:17px;color:var(--muted)">Sources : </p>
+        <h4>Triangulation</h4>
+        <p>Le SAM calculé via l'approche bottom-up pour les ETI françaises (130 millions EUR) est une sous-catégorie du SAM top-down européen (27,14 milliards USD). Le chiffre top-down fournit une échelle globale du marché du cloud souverain tandis que le bottom-up affine une cible de marché initiale et réalisable pour les ETI en France, le rendant plus proche d'un SOM initial. Pour aligner davantage, une estimation plus complète de l'ARPU et l'inclusion des PME supérieures serait nécessaire.</p>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-30877802317d9891b9442f05b1a4083d-0gmm97ug.jpg" alt="Sizing bottom-up"></div>
+        <figcaption>Fig. 05 — Calcul bottom-up &amp; triangulation</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>05</div></div>
+</section>
+
+<section data-screen-label="06 Chaîne de valeur">
+  <div class="s-head"><div class="brand">Stelogy · I — Marché</div><div class="meta">06&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Analyse de la chaîne de valeur</div>
+  <div class="s-title">Chaîne de valeur des services managés convergents</div>
+  <div class="s-body">
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>06</div></div>
+</section>
+
+<section data-screen-label="07 Top 3 positions">
+  <div class="s-head"><div class="brand">Stelogy · I — Marché</div><div class="meta">07&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Top 3 positions stratégiques</div>
+  <div class="s-title">Top 3 Positions Stratégiques dans la chaîne de valeur</div>
+  <div class="s-body">
+    <div class="three-col">
+      <div class="col-block">
+        <h4>#1 — STAGE 1 — DÉVELOPPEMENT ET MISE À DISPOSITION D&#39;INFRASTRUCTURE CLOUD SOUVERAINE</h4>
+        <div style="font-family:'EB Garamond',serif;font-size:42px;font-weight:500;margin-bottom:12px">9/10</div>
+        <p>Cette étape occupe la première place grâce à des barrières à l&#39;entrée quasi insurmontables, un potentiel de marge exceptionnel et une croissance explosive. La nécessité d&#39;investissements massifs en data centers et d&#39;obtention de certifications complexes comme SecNumCloud crée un verrou concurrentiel. Le positionnement &#39;Premium&#39; des services souverains, combiné à des &#39;Fortes Économies d&#39;Échelle&#39; sur des coûts majoritairement fixes, assure une rentabilité supérieure. Enfin, le marché européen du cloud souverain, avec un &#39;TCAC de 20-25%+&#39;, est en pleine expansion, garantissant une forte demande.</p>
+      </div>
+      <div class="col-block">
+        <h4>#2 — STAGE 5 — SÉCURITÉ, CONFORMITÉ ET GOUVERNANCE DES DONNÉES</h4>
+        <div style="font-family:'EB Garamond',serif;font-size:42px;font-weight:500;margin-bottom:12px">8/10</div>
+        <p>Ce segment est hautement stratégique car il répond à une préoccupation majeure des entreprises : la protection des données et la conformité réglementaire. La complexité technique est &#39;Très élevée&#39;, nécessitant une expertise rare et continuellement mise à jour en cybersécurité pour gérer l&#39;évolution constante des menaces. Les &#39;Marges brutes élevées&#39;, souvent supérieures à la moyenne des MSPs, sont obtenues grâce au &#39;Pouvoir de Fixation des Prix Premium&#39; pour des services jugés essentiels. Les exigences réglementaires &#39;GDPR, ANSSI, NIS2&#39; constituent des barrières défensives significatives.</p>
+      </div>
+      <div class="col-block">
+        <h4>#3 — STAGE 4 — GESTION DES SERVICES MANAGÉS ET OPÉRATIONS</h4>
+        <div style="font-family:'EB Garamond',serif;font-size:42px;font-weight:500;margin-bottom:12px">7/10</div>
+        <p>Les services managés sont un pilier fondamental de la chaîne de valeur, offrant une forte récurrence de revenus et un potentiel d&#39;optimisation élevé. Une solide défensibilité vient des &#39;Coûts de Changement Élevés&#39; pour les clients, qui hésitent à migrer des systèmes critiques et leurs processus de support. Avec un &#39;Pouvoir de Fixation des Prix Premium&#39; (le &#39;prix moyen du marché pour les services managés + sécurité est d&#39;environ 300 USD par utilisateur par mois&#39;) et les &#39;Fortes Économies d&#39;Échelle&#39; réalisables par l&#39;automatisation, cette étape génère des marges saines. Le &#39;TCAC ~20-25%+&#39; du cloud souverain tire la croissance de cette étape, assurant une demande robuste.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>07</div></div>
+</section>
+
+<section data-screen-label="08 Tendances">
+  <div class="s-head"><div class="brand">Stelogy · I — Marché</div><div class="meta">08&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Tendances de marché</div>
+  <div class="s-title">Tendances du marché</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Catalyseur &amp; trajectoire</h4>
+        <p>Le marché européen des services managés convergents pour les ETI connaît une transformation structurelle majeure, portée par la demande croissante de cloud souverain due aux impératifs de conformité réglementaire (ANSSI, HDS, GDPR, NIS2) et à la nécessité de localisation des données. Ce basculement est également alimenté par la pression des lois extraterritoriales comme le CLOUD Act américain, renforçant le besoin d'infrastructures cloud opérées localement. Le marché européen du cloud souverain devrait croître de 27,14 milliards USD en 2024 à 321,5 milliards USD en 2035, affichant un TCAC à deux chiffres sur cette période.</p>
+        <h4>Chaîne de valeur &amp; points de contrôle</h4>
+        <p>L'étape qui est devenue le point de contrôle critique dans cette chaîne de valeur est le <b>Développement et Mise à Disposition d'Infrastructure Cloud Souveraine</b>. Cette étape détient un pouvoir de levier disproportionné car elle exige des investissements massifs dans les data centers et une R&D coûteuse pour les plateformes IaaS/PaaS, ainsi que l'obtention et le maintien de certifications onéreuses comme SecNumCloud, Agence nationale de la sécurité des systèmes d'information Sécurité (ANSSI) et Hébergement de Données de Santé (HDS). Ces barrières de capitaux et réglementaires sont 'Élevé' et 'Forte', ce qui rend l'entrée extrêmement difficile pour de nouveaux acteurs et confère un avantage défensif significatif aux opérateurs en place.</p>
+      </div>
+      <div class="col-block">
+        <h4>Déplacement concurrentiel</h4>
+        <p>Les fournisseurs de cloud hyperscalers non souverains, tels que Microsoft, Amazon Web Services (AWS), Google Cloud et Oracle, sont en train de perdre du terrain en raison du changement structurel. La pression des réglementations européennes strictes (GDPR, NIS2) et des préoccupations de souveraineté des données, en particulier face à des lois extraterritoriales comme le CLOUD Act américain, limite la capacité des hyperscalers américains à offrir des garanties de confiance suffisantes sans des adaptations coûteuses via des partenariats locaux. Leur approche via des co-entreprises ou des régions indépendantes démontre leur tentative de s'adapter, mais souligne leur différenciation intrinsèque faible en matière de souveraineté native. Cette adaptation reste une réponse à une dislocation plutôt qu'un avantage structurel préexistant.</p>
+        <h4>Économie unitaire &amp; captation</h4>
+        <p>La manne des profits se déplace vers l'amont de la chaîne de valeur et vers les services à forte valeur ajoutée. L'étape de <b>Développement et Mise à Disposition d'Infrastructure Cloud Souveraine</b> bénéficie d'un pouvoir de fixation des prix 'Premium' et de 'Fortes 'Économies d'Échelle', avec une structure de coûts principalement fixe, lui conférant un potentiel de marge 'Élevée'. De même, l'étape de <b>Sécurité, Conformité et Gouvernance des Données</b>, avec un pouvoir de fixation des Prix 'Premium' et des 'Fortes Économies d'Échelle', génère des marges 'Élevée', les services de sécurité managés (MSSP) étant les plus rentables pour les MSPs. En revanche, l'étape de <b>Déploiement, Intégration et Migration</b>, bien que cruciale, présente un pouvoir de fixation des prix lié au 'Marché' et une structure de coûts 'Principalement Variable', entraînant un potentiel de marge 'Modérée'. La configuration de modèle d'affaires la mieux positionnée pour capturer cette valeur est un acteur pleinement intégré verticalement, qui contrôle le Développement et Mise à Disposition d'Infrastructure Cloud Souveraine et étend son offre aux services de Sécurité, Conformité et Gouvernance des Données ainsi qu'à la Gestion des Services Managés et Opérations. Ce modèle permet de capter la valeur aux points de contrôle les plus stratégiques de la chaîne, bénéficiant des barrières à l'entrée massives (capital, légal, technique) de l'infrastructure sous-jacente. L'intégration de la sécurité et des opérations managées offre ensuite des marges élevées soutenues par la criticité de ces services et les économies d'échelle de l'automatisation. Cela crée un écosystème fermé, sécurisé et conforme, difficile à répliquer et offrant des coûts de changement élevés pour le client.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>08</div></div>
+</section>
+
+<section data-screen-label="09 Acteurs">
+  <div class="s-head"><div class="brand">Stelogy · I — Marché</div><div class="meta">09&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Acteurs de la chaîne de valeur</div>
+  <div class="s-title">Acteurs de la chaîne de valeur</div>
+  <div class="s-body">
+    <table class="fin">
+      <thead><tr><th>Étape</th><th>Acteurs principaux</th><th>Position de Stelogy</th></tr></thead>
+      <tbody>
+        <tr><td><b>S1: Développement et Mise à Disposition d&#39;Infrastructure Cloud Souveraine</b></td><td>OVHcloud, Microsoft, Google Cloud, AWS, Oracle, T-Systems, Vultr, Sipartech, Tietoevry, Scaleway, STACKIT, IONOS, NumSpot, Scalingo, Blue (Orange &amp; Capgemini JV), Hetzner, CloudFerro, OpenNebula, PoliCloud, Delos Cloud, Schwarz Digits, cloud (partenariat DEEP)</td><td>Divers acteurs allant des géants mondiaux aux niche players, avec un fort accent sur l&#39;infrastructure locale et les partenariats stratégiques pour répondre aux exigences de souveraineté.</td></tr>
+        <tr><td><b>S2: Conception et Architecture des Solutions Client</b></td><td>Sopra Steria</td><td>Acteurs clés du conseil et de l&#39;ingénierie, avec une forte expertise en architecture cloud et conformité réglementaire.</td></tr>
+        <tr><td><b>S3: Déploiement, Intégration et Migration</b></td><td>Cloud Temple, WhiteSky Cloud, ImsCloud, Clever Cloud</td><td>Spécialistes de la transformation des plans architecturaux en réalité opérationnelle, avec une focalisation sur la migration sécurisée et la conformité.</td></tr>
+        <tr><td><b>S4: Gestion des Services Managés et Opérations</b></td><td>Stelogy, Adista, Cheops Technology, Claranet, Sewan, Orange Business Services, Bouygues Telecom Entreprises, SFR Business</td><td>Fournisseurs de services gérés continus, garantissant la performance, la sécurité et la disponibilité des infrastructures cloud souveraines.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>09</div></div>
+</section>
+
+<section data-screen-label="10 Magic Quadrant">
+  <div class="s-head"><div class="brand">Stelogy · I — Marché</div><div class="meta">10&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Magic Quadrant — concurrence</div>
+  <div class="s-title">Quadrant Magique de la concurrence</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <h4>Leaders</h4><p>Stelogy, OVHcloud, Scaleway, T-Systems, IONOS, Sigma</p>
+        <h4>Challengers</h4><p>Cloud Temple, Sigma (NeoOne Expert), Scalingo, PoliCloud, Blue (Orange &amp; Capgemini JV)</p>
+        <h4>Visionnaires</h4><p>À compléter — non couvert dans le mémo source.</p>
+        <h4>Niche players</h4><p>ImsCloud, Delos Cloud, Schwarz Digits, Vultr</p>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-f8594b48a2691f41d867b9a5cab85122-wviz3qnt.jpg" alt="Magic Quadrant"></div>
+        <figcaption>Fig. 10 — Magic Quadrant — vision × exécution</figcaption>
+      </figure>
+    </div>
+    <div class="callout" style="margin-top:18px">Cette analyse positionne les principaux acteurs du marché des services managés convergents pour les ETI en France, en fonction de leur maturité et de leur différenciation. Stelogy se trouve parmi les Leaders Établis, tandis que Cloud Temple et Scalingo sont des Innovateurs Émergents. Les acteurs américains se retrouvent généralement dans le quadrant des Acteurs Mature Commoditisé, malgré des investissements significatifs, en raison de leur différenciation intrinsèque faible en souveraineté native. Ce quadrant permet de visualiser les dynamiques de marché et d'identifier les opportunités et les menaces pour Stelogy.</div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>10</div></div>
+</section>
+
+<section data-screen-label="11 M&A Quadrant">
+  <div class="s-head"><div class="brand">Stelogy · I — Marché</div><div class="meta">11&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">M&amp;A Quadrant — 4 archétypes</div>
+  <div class="s-title">Quadrant M&amp;A de la concurrence — Stelogy: Prédateur</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <h4>1. Les Prédateurs</h4><p>Stelogy, Adista, Cheops Technology, Claranet, Sewan, Sopra Steria, OVHcloud, Orange Business Services, Bouygues Telecom Entreprises, Microsoft, Google Cloud, AWS, Oracle</p>
+        <h4>2. Les Aspirants</h4><p>Sigma Computing, Sigma AI, T-Systems, Vultr</p>
+        <h4>3. Les Géants</h4><p>Celeste, Sipartech, SFR Business, Tietoevry, Scaleway, STACKIT, IONOS, NumSpot, CloudFerro, OpenNebula, PoliCloud, Delos Cloud, Schwarz Digits, cloud (partenariat DEEP), Clever Cloud, Cloud Temple, WhiteSky Cloud, ImsCloud, Scalingo</p>
+        <h4>4. Les Cibles potentielles</h4><p>Cloud Temple, NumSpot, Scalingo, Blue (Orange & Capgemini JV), Sigma (NeoOne Expert), Hetzner, CloudFerro, OpenNebula, PoliCloud, Delos Cloud, Schwarz Digits, cloud (partenariat DEEP), Clever Cloud, ImsCloud, WhiteSky Cloud</p>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-aa618889d65ef6bcc52f6a3fcb9ef199-jbby5rfy.jpg" alt="M&A Quadrant"></div>
+        <figcaption>Fig. 11 — M&amp;A Quadrant — 4 archétypes</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>11</div></div>
+</section>
+
+<section data-screen-label="12 Scénarios stratégiques">
+  <div class="s-head"><div class="brand">Stelogy · I — Marché</div><div class="meta">12&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Scénarios stratégiques</div>
+  <div class="s-title">Scénarios de transactions M&amp;A simulés</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <table class="fin pnl-dense">
+          <thead><tr><th>Scénario</th><th>Acteurs</th><th>Mécanique</th></tr></thead>
+          <tbody>
+            <tr><td><b>OPPORTUNITÉS MANQUÉES (LACUNES)</b></td><td>Sopra Steria</td><td>Impératif stratégique d&#39;acquérir Cloud Temple pour transformer son offre en un acteur intégré verticalement sur le cloud souverain certifié. L&#39;acquisition vise à combler un développement d&#39;infrastructure et une différenciation réglementaire.</td></tr>
+            <tr><td><b>CIBLES PIVOTALES (ACQUISITIONS DÉCISIVES)</b></td><td>Celeste</td><td>En position de roi à vendre, avec une compétition intense entre CVC DIF, Orange Business Services et Bouygues Telecom Entreprises pour le contrôle de cet actif fibre-cloud convergé. Les acquéreurs cherchent à renforcer leur offre d&#39;infrastructure et leur connectivité entreprise.</td></tr>
+            <tr><td><b>ALLIANCES INÉVITABLES (SYNERGIE ÉLEVÉE)</b></td><td>Cloud Temple, Stelogy</td><td>L&#39;alliance vise à combiner la seule qualification PaaS souveraine française avec le premier réseau de distribution MSP mid-market, créant ainsi une offre cloud souverain de référence pour les PME, ETI et collectivités. Cette alliance permet à chaque acteur de renforcer sa position défensive dans la gestion de services managés.</td></tr>
+            <tr><td><b>BATAILLES D&#39;ACQUISITION (CONFLIT ÉLEVÉ)</b></td><td>Stelogy, OVHcloud, Adista</td><td>En compétition pour l&#39;acquisition de Scalingo, la seule plateforme PaaS souveraine française indépendante, afin d&#39;intégrer cet actif stratégique avant que la fenêtre d&#39;opportunité ne se referme, comblant ainsi leur propre développement d&#39;infrastructure documenté comme une faiblesse ou une menace.</td></tr>
+            <tr><td><b>CONSOLIDATION DU MARCHÉ (ACHAT DE PETITS ACTEURS)</b></td><td>Cheops Technology</td><td>Poursuit une stratégie de build-up en cherchant à absorber Sewan (pour sa plateforme Sophia) et WhiteSky Cloud (pour son offre de marque blanche), afin de créer l&#39;écosystème de distribution MSP cloud souverain le plus complet du mid-market français, renforçant ainsi ses capacités de gestion de services et de sécurité.</td></tr>
+            <tr><td><b>LUTTES DÉFENSIVES (SOUS ATTAQUE)</b></td><td>Cloud Temple</td><td>Sous la pression d&#39;Adista et OVHcloud qui convergent vers la qualification PaaS, menaçant de réduire l&#39;avantage réglementaire unique de Cloud Temple dans les 18 prochains mois.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-2f9daf15d737d9d6c6c75701c54d471c-mdwygcex.jpg" alt="Scénarios stratégiques"></div>
+        <figcaption>Fig. 12 — Scénarios stratégiques M&amp;A</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>12</div></div>
+</section>
+
+<section data-screen-label="13 Synergies acteurs">
+  <div class="s-head"><div class="brand">Stelogy · I — Marché</div><div class="meta">13&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Synergies entre les acteurs — synthèse M&amp;A</div>
+  <div class="s-title">Synergies entre les acteurs</div>
+  <div class="s-body">
+    <table class="fin" style="margin-bottom:24px">
+      <thead><tr><th style="width:32%">Scénario</th><th>Acteurs</th><th class="num">Revenus soft</th><th class="num">Coûts évités</th><th class="num">Synergie totale</th></tr></thead>
+      <tbody>
+        <tr><td>OPPORTUNITÉS MANQUÉES (LACUNES)</td><td>Sopra Steria</td><td class="num">10000000</td><td class="num">20000000</td><td class="num"><b>30000000</b></td></tr>
+        <tr><td>CIBLES PIVOTALES (ACQUISITIONS DÉCISIVES)</td><td>Celeste</td><td class="num">10000000</td><td class="num">15000000</td><td class="num"><b>25000000</b></td></tr>
+        <tr><td>ALLIANCES INÉVITABLES (SYNERGIE ÉLEVÉE)</td><td>Cloud Temple, Stelogy</td><td class="num">10000000</td><td class="num">8000000</td><td class="num"><b>18000000</b></td></tr>
+        <tr><td>BATAILLES D&#39;ACQUISITION (CONFLIT ÉLEVÉ)</td><td>Stelogy, OVHcloud, Adista</td><td class="num">5000000</td><td class="num">10000000</td><td class="num"><b>15000000</b></td></tr>
+        <tr><td>CONSOLIDATION DU MARCHÉ (ACHAT DE PETITS ACTEURS)</td><td>Cheops Technology</td><td class="num">7000000</td><td class="num">4000000</td><td class="num"><b>11000000</b></td></tr>
+        <tr><td>BATAILLES D&#39;ACQUISITION (CONFLIT ÉLEVÉ)</td><td>Cheops Technology, Claranet</td><td class="num">4000000</td><td class="num">3000000</td><td class="num"><b>7000000</b></td></tr>
+        <tr><td>LUTTES DÉFENSIVES (SOUS ATTAQUE)</td><td>Cloud Temple</td><td class="num">2000000</td><td class="num">-1000000</td><td class="num"><b>1000000</b></td></tr>
+      </tbody>
+    </table>
+    <div class="callout"><b>Lecture.</b> Le tableau ci-dessus présente une analyse des scénarios stratégiques potentiels, classés par des en-têtes de groupe thématiques et priorisés par le total des synergies financières. Chaque scénario détaille les acteurs impliqués, les cibles, les attaquants ou les solutions, ainsi qu'une quantification pessimiste des synergies en termes de revenus additionnels (Soft Revenue) et de réductions de coûts (Hard Costs).<br>Le diagramme visuel sépare les acteurs du marché en menaces potentielles pour Stelogy vs. cibles d'acquisition potentielles pour Stelogy, afin de fournir une vue d'ensemble claire de la position de Stelogy dans le paysage des fusions et acquisitions.</div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>13</div></div>
+</section>
+
+<section class="divider" data-screen-label="14 II Société">
+  <div class="roman">II</div>
+  <div>
+    <div class="div-eyebrow">Deuxième partie</div>
+    <h2>Société</h2>
+    <div class="div-sub">Business · Note de pré-sélection : 85</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="15 Proposition de valeur">
+  <div class="s-head"><div class="brand">Stelogy · II — Société</div><div class="meta">15&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Proposition de valeur</div>
+  <div class="s-title">Proposition de valeur</div>
+  <div class="s-body">
+    <p class="lead">Simplifier la vie des clients en offrant plus de technologies, d'innovation et de proximité via un hub numérique sécurisé.</p>
+    <div class="two-col" style="margin-top:16px">
+      <div class="col-block">
+        <h4>Profil client idéal (ICP)</h4>
+        <ul><li>PME (10-250 salariés)</li><li>ETI (250-5000 salariés)</li><li>Collectivités territoriales</li><li>Organisations de services à la personne</li></ul>
+        <h4>Modèle</h4>
+        <p>B2B - Accompagnement des professionnels et des collectivités dans leur transformation numérique.</p>
+      </div>
+      <div class="col-block">
+        <h4>Industrie</h4>
+        <p>Télécoms, Cloud Services et Cybersécurité</p>
+        <h4>Clients clés</h4>
+        <ul><li>Plus de 30 000 clients B2B</li><li>Partenariats avec Microsoft</li><li>Certifications EcoVadis Bronze</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>15</div></div>
+</section>
+
+<section data-screen-label="16 Produit">
+  <div class="s-head"><div class="brand">Stelogy · II — Société</div><div class="meta">16&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Produit</div>
+  <div class="s-title">Produit</div>
+  <div class="s-body">
+    <p class="lead">Hub numérique complet combinant connectivité, cloud, communications et sécurité.</p>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Capacités produit</h4>
+        <ul><li>Cloud privé (hébergement dédié, baies, machines virtuelles)</li><li>Connectivité Très Haut Débit (Fibre optique, WiFi)</li><li>Communications unifiées</li><li>IoT (Internet des Objets)</li><li>Cybersécurité</li><li>Services IT managés</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>Capacités techniques</h4>
+        <ul><li>9 Data Centers en France</li><li>Infrastructure interconnectée avec les grands opérateurs</li><li>Partenaire Microsoft Modern Work</li><li>Solution VMware (VMware Cloud Director)</li><li>Plan de Continuité d'Activité (PCA) et Plan de Reprise d'Activité (PRA)</li></ul>
+        <h4>Cas d'usage</h4>
+        <ul><li>Hébergement de serveurs critiques</li><li>Mise en place de télétravail via communications unifiées</li><li>Sécurisation des données d'entreprise</li><li>Lutte contre la fracture numérique en zone rurale</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>16</div></div>
+</section>
+
+<section data-screen-label="17 Modèle économique">
+  <div class="s-head"><div class="brand">Stelogy · II — Société</div><div class="meta">17&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Modèle économique</div>
+  <div class="s-title">Modèle économique</div>
+  <div class="s-body">
+    <p class="lead">Opérateur de services télécoms et fournisseur de services cloud (SaaS/IaaS) reposant sur un modèle d'abonnement et de prestation de services.</p>
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">Chiffre d&#39;affaires</div><div class="kpi-value">&gt; 118 M€</div><div class="kpi-note"></div></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Flux de revenus</h4>
+        <ul><li>Offres de location d'espace (baie complète, 1/2 baie, 1/4 baie, U) et machines virtuelles (vCPU, RAM, Disque, OS)</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>Caractéristiques des plans</h4>
+        <ul><li>Offre Cloud Privé avec location de volume managé ou non ; tarification ajustée selon les ressources réellement consommées (vCPU, RAM)</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>17</div></div>
+</section>
+
+<section data-screen-label="18 Équipe">
+  <div class="s-head"><div class="brand">Stelogy · II — Société</div><div class="meta">18&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Équipe</div>
+  <div class="s-title">Équipe</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Direction</h4>
+        <dl class="dl-grid">
+          <dt>CEO</dt><dd>Jean-Philippe Melet</dd>
+          <dt>CDirecteur du Comité Stratégique</dt><dd>Jean-Philippe Melet</dd>
+          <dt>Délégué à la Protection des Données (DPO)</dt><dd>Mention d'un DPO</dd>
+        </dl>
+      </div>
+      <div class="col-block">
+        <h4>Effectifs</h4>
+        <table class="fin">
+          <tbody>
+            <tr class="total"><td>Total</td><td class="num">550</td></tr>
+            <tr ><td>Product &amp; Engineering</td><td class="num">95</td></tr>
+          </tbody>
+        </table>
+<p style="font-size:17px;color:var(--muted);margin-top:14px">La culture d&#39;entreprise est basée sur l&#39;innovation, la transparence, l&#39;engagement et la RSE. L&#39;expertise inclut des experts VMware.</p>      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>18</div></div>
+</section>
+
+<section data-screen-label="19 Fondateur">
+  <div class="s-head"><div class="brand">Stelogy · II — Société</div><div class="meta">19&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Fondateur — Jean-Philippe Melet</div>
+  <div class="s-title">CEO</div>
+  <div class="s-body">
+    <p class="lead">Jean-Philippe Melet est le CEO et figure centrale de la stratégie de build-up.</p>
+    <div class="two-col" style="margin-top:8px">
+      <div class="col-block">
+        <h4>Parcours</h4>
+        <dl class="dl-grid">
+          <dt>Avant 2011</dt><dd>Expérience approfondie du secteur ICT en France à la suite de la fusion de structures d'envergure telles que Nomotech et VoIP Telecom.</dd>
+          <dt>2023</dt><dd>A piloté l'acquisition d'Ordago.</dd>
+          <dt>Novembre 2024</dt><dd>Lancement d'Elo.</dd>
+          <dt>Juin 2025</dt><dd>Nommé président du Comité Stratégique, Jean-Philippe Poirault nommé PDG.</dd>
+        </dl>
+      </div>
+      <div class="col-block">
+        <h4>Founder DNA &amp; assessment</h4>
+        <table class="fin">
+          <tbody>
+            <tr ><td>Grit</td><td class="num">4&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Execution</td><td class="num">5&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Discipline</td><td class="num">4&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Vision &amp; Purpose</td><td class="num">4&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Self-Belief</td><td class="num">4&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Leadership</td><td class="num">4&thinsp;/&thinsp;100</td></tr>
+            <tr class="total"><td>Total</td><td class="num">25&thinsp;/&thinsp;100</td></tr>
+          </tbody>
+        </table>
+<p style="font-size:17px;color:var(--muted);margin-top:14px"><b>Point aveugle.</b> La dépendance au fondateur est réelle : la vision de consolidation régionale, la négociation des acquisitions et la relation avec les partenaires indirects reposent fortement sur sa crédibilité personnelle dans l'écosystème télécom français.</p>      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>19</div></div>
+</section>
+
+<section class="divider" data-screen-label="20 III Évaluation">
+  <div class="roman">III</div>
+  <div>
+    <div class="div-eyebrow">Troisième partie</div>
+    <h2>Évaluation<br>stratégique</h2>
+    <div class="div-sub">Assessment · Note de pré-sélection : 85</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="21 Résumé entreprise">
+  <div class="s-head"><div class="brand">Stelogy · III — Évaluation</div><div class="meta">21&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Résumé de l'entreprise — scores</div>
+  <div class="s-title">Résumé de l&#39;entreprise</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <div class="kpi-row" style="grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:18px">
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Excellence équipe</div><div class="kpi-value" style="font-size:32px">85</div></div>
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Opportunité marché</div><div class="kpi-value" style="font-size:32px">88</div></div>
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Innovation produit</div><div class="kpi-value" style="font-size:32px">75</div></div>
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Modèle économique</div><div class="kpi-value" style="font-size:32px">85</div></div>
+        </div>
+        <h4>En bref</h4><p style="font-size:18px">Stelogy est une entreprise de MSP & Cloud Souverain Mid-Market qui permet aux ETI, PME, collectivités territoriales et services à la personne de simplifier et sécuriser leur infrastructure informatique en unifiant la connectivité, le cloud privé et les télécoms à travers un hub numérique sécurisé unique.</p>
+        <h4>Problème &amp; solution</h4><p style="font-size:18px">Stelogy fournit son infrastructure d'hébergement privée souveraine interconnectée avec ses propres capacités télécoms multi-opérateurs afin de gérer de bout en bout l'activité numérique du client avec les garanties réglementaires françaises d'un point de contact unique.</p>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-edadd1d482f2aaea152092ba3c8f9df6-jcgo3czr.jpg" alt="Résumé de l'entreprise"></div>
+        <figcaption>Fig. 21 — Synthèse visuelle de l'entreprise</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>III — Évaluation</span></div><div>21</div></div>
+</section>
+
+<section data-screen-label="22 SWOT">
+  <div class="s-head"><div class="brand">Stelogy · III — Évaluation</div><div class="meta">22&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Analyse SWOT</div>
+  <div class="s-title">Forces · Faiblesses · Opportunités · Menaces</div>
+  <div class="s-body">
+    <div class="swot">
+      <div class="swot-cell"><h4>Forces</h4><ul><li>Stelogy détient plus de 30 000 clients B2B et un chiffre d'affaires supérieur à 118 M euros grâce à une base consolidée par acquisitions successives.</li><li>Ses neuf data centers interconnectés sur le territoire français constituent une infrastructure souveraine différenciante pour les collectivités et entreprises réglementées.</li><li>Le partenariat Microsoft et les certifications EcoVadis Bronze renforcent sa crédibilité auprès des ETI et collectivités territoriales.</li><li>Le lancement de la plateforme Elo en 2024 structure son écosystème de revendeurs et accélère la distribution de services managés.</li><li>La fusion de Nomotech et VoIP Telecom lui a permis d'intégrer rapidement connectivité Très Haut Débit, communications unifiées et IoT au sein d'une offre convergente.</li></ul></div>
+      <div class="swot-cell"><h4>Faiblesses</h4><ul><li>Aucun tour de financement public n'est visible depuis 2023, limitant la capacité à financer une accélération organique ou internationale.</li><li>L'intégration de multiples acquisitions (Nomotech, VoIP Telecom, Ordago, MIE) crée des frictions opérationnelles et un manque de cohérence produit visible.</li><li>L'absence de données financières détaillées publiées empêche une évaluation précise de la rentabilité récurrente et des marges par ligne de service.</li><li>Les changements répétés de gouvernance signalent une instabilité stratégique qui ralentit l'exécution des plans de croissance.</li><li>Stelogy dépend fortement des prestations d'infogérance et de la location d'espace en baie, activités à plus faible valeur ajoutée que les plateformes logicielles natives.</li></ul></div>
+      <div class="swot-cell"><h4>Opportunités</h4><ul><li>La croissance du marché européen du cloud souverain (TCAC supérieur à 20 %) offre à Stelogy une fenêtre pour convertir ses clients existants en contrats de cloud privé managé.</li><li>L'extension aux PME de 50 à 250 salariés via la plateforme Elo peut démultiplier le volume sans augmenter proportionnellement les coûts de vente directe.</li><li>Les exigences réglementaires ANSSI et HDS poussent les collectivités et secteurs sensibles à préférer des opérateurs français disposant déjà de data centers locaux.</li><li>L'acquisition supplémentaire d'un éditeur de logiciels de supervision ou de cybersécurité permettrait d'augmenter significativement la marge récurrente.</li><li>La demande de continuité d'activité (PCA/PRA) chez les ETI représente un complément de revenus à fort taux d'attachement sur la base client installée.</li></ul></div>
+      <div class="swot-cell"><h4>Menaces</h4><ul><li>Les hyperscalers et les acteurs qualifiés SecNumCloud (OVHcloud, Outscale, Bleu Cloud) captent une part croissante des budgets cloud souverains des ETI françaises.</li><li>Une consolidation rapide du marché MSP français pourrait marginaliser Stelogy si elle ne parvient pas à atteindre la taille critique des leaders régionaux.</li><li>La dépendance aux partenariats revendeurs expose à une défection simultanée de plusieurs canaux en cas de meilleure commission chez un concurrent.</li><li>Le durcissement des exigences de certification ou une baisse des subventions publiques à la fibre rurale pourrait réduire la demande de connectivité Très Haut Débit.</li><li>Une cyberattaque réussie touchant un client gouverné ou une collectivité entraînerait une perte immédiate de confiance et de contrats.</li></ul></div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>III — Évaluation</span></div><div>22</div></div>
+</section>
+
+<section data-screen-label="23 Plan d'action">
+  <div class="s-head"><div class="brand">Stelogy · III — Évaluation</div><div class="meta">23&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Plan d'action</div>
+  <div class="s-title">Défense, offensive, kill shot, remédiation.</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Défense</h4><p>La combinaison d'infrastructure physique locale, d'un réseau de partenaires structuré et d'une offre convergente constitue un rempart réel contre les hyperscalers non souverains. Stelogy doit verrouiller ses clients existants via des contrats pluriannuels incluant PCA/PRA et gouvernance de données pour rendre tout changement de fournisseur prohibitif. Cette inertie, combinée à la certification continue des data centers, protège les revenus récurrents même face à une intensification concurrentielle.</p>
+        <h4>Offensive</h4><p>Stelogy doit transformer sa base installée de 30 000 clients en contrats cloud privé managé à forte récurrence en exploitant ses neuf data centers et la plateforme Elo. La prochaine acquisition ciblée devrait porter sur un éditeur de logiciels de supervision ou de sécurité afin d'augmenter la part de revenus logiciels. Cette trajectoire permettrait de passer du statut d'opérateur régional à celui d'acteur national crédible du cloud souverain mid-market avant que les leaders actuels ne verrouillent les ETI.</p>
+      </div>
+      <div class="col-block">
+        <h4>Kill shot</h4><p>Une défection massive de revendeurs vers un concurrent doté d'une meilleure commission, conjuguée à la perte d'un client public sensible suite à un incident de sécurité, détruirait simultanément son canal de distribution et sa crédibilité souveraine. Dans ce scénario, l'absence de réserves de trésorerie et d'alternative produit rendrait toute riposte trop lente pour préserver la valorisation.</p>
+        <h4>Remédiation</h4><p>L'absence de visibilité financière et les frictions post-acquisition freinent toute opération de croissance externe ou de levée de fonds significative. Stelogy doit publier des indicateurs clés de rentabilité par ligne de service et stabiliser sa gouvernance pour redonner confiance aux partenaires financiers. Sans ces deux corrections, elle restera prisonnière d'un modèle de consolidation faiblement différencié et vulnérable à un rachat à bas prix.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>III — Évaluation</span></div><div>23</div></div>
+</section>
+
+<section class="divider" data-screen-label="24 IV Thèse sforbt">
+  <div class="roman">IV</div>
+  <div>
+    <div class="div-eyebrow">Quatrième partie</div>
+    <h2>Thèse sforbt</h2>
+    <div class="div-sub">Thèse · Note de pré-sélection : 84</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="25 Résumé Type C">
+  <div class="s-head"><div class="brand">Stelogy · IV — Thèse sforbt</div><div class="meta">25&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Synergies sforbt — résumé Type C Hybride</div>
+  <div class="s-title">Conviction du Synthetic GP</div>
+  <div class="s-body">
+    <p class="lead">Cette cible s'inscrit dans trois angles simultanément actifs de la thèse OMNISCIENT, et la Matrice de Fit Stratégique a été appliquée pour déterminer l'angle dominant. L'angle 'Signal Qualité Croissance — Série A à Série B' s'impose comme dominant, car Stelogy affiche un chiffre d'affaires consolidé supérieur à 118 M€, une base de 30 000 clients professionnels, un modèle d'abonnement récurrent pluriannuel avec des coûts de changement structurellement élevés, et un NRR estimé supérieur à 95 % sur les clients historiques — tous des marqueurs caractéristiques d'une plateforme de croissance en phase d'expansion.</p>
+    <div class="two-col" style="margin-top:8px">
+      <div class="col-block">
+        <h4>Les leviers de synergie</h4>
+        <ul><li>Un marché français du MSP et du cloud souverain pour le mid-market (SAM estimé à 130 M€ par an) avec une dynamique de consolidation active.</li><li>Le timing est favorable et structurel, avec des obligations réglementaires (RGPD, HDS) poussant les ETI à abandonner les clouds transatlantiques.</li><li>Stelogy est le seul acteur indépendant français avec une infrastructure souveraine multi-datacenter propriétaire, un modèle de distribution indirecte via hub numérique (Elo), une base de 30 000 clients B2B et un chiffre d'affaires consolidé supérieur à 118 M€.</li><li>Jean-Philippe Melet, le fondateur, a démontré une expertise et une capacité d'exécution dans la consolidation M&A et le développement de plateforme.</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>Fragilités principales</h4>
+        <p>Le risque principal est l'harmonisation technique des systèmes d'information post-acquisition : si la centralisation de l'ingénierie réseaux via le hub Elo ne suffit pas à absorber la dette technique héritée, la marge opérationnelle pourrait se dégrader durablement.</p>
+        <h4>Fenêtre d'acquisition</h4>
+        <div class="callout" style="margin-top:0">La fenêtre pour s'imposer comme consolidateur dominant avant que les géants télécoms (Orange Business Services, Bouygues Telecom Entreprises) ne réorientent leurs capacités commerciales vers le mid-market est estimée à 18 à 36 mois.</div>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>IV — Thèse sforbt</span></div><div>25</div></div>
+</section>
+
+<section data-screen-label="26 Synergies détaillées">
+  <div class="s-head"><div class="brand">Stelogy · IV — Thèse sforbt</div><div class="meta">26&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Synergies sforbt — tableau détaillé</div>
+  <div class="s-title">Scénarios M&amp;A et Synergies Stratégiques</div>
+  <div class="s-body">
+    <table class="fin">
+      <thead><tr><th style="width:36px">#</th><th>Synergie</th><th>Type</th><th>Impact</th><th>Délai</th><th>Difficulté</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Acquisition de Scalingo</td><td>Capability</td><td>High</td><td>0-12 mois</td><td>Medium</td></tr>
+        <tr><td>2</td><td>Acquisition de NumSpot</td><td>Capability</td><td>Medium</td><td>12-24 mois</td><td>Medium</td></tr>
+        <tr><td>3</td><td>Alliance avec Cloud Temple</td><td>Revenue</td><td>High</td><td>3-6 mois</td><td>Low</td></tr>
+        <tr><td>4</td><td>Acquisition de Sewan (Cheops Technology)</td><td>Hard cost</td><td>High</td><td>6-18 mois</td><td>Medium</td></tr>
+        <tr><td>5</td><td>Acquisition de WhiteSky Cloud (Cheops Technology)</td><td>Capability</td><td>Medium</td><td>Anytime</td><td>Low</td></tr>
+        <tr><td>6</td><td>Acquisition de Celeste (Orange Business Services ou Bouygues Telecom Entreprises)</td><td>Revenue</td><td>High</td><td>0-12 mois</td><td>High</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>IV — Thèse sforbt</span></div><div>26</div></div>
+</section>
+
+<section data-screen-label="27 Deal killers">
+  <div class="s-head"><div class="brand">Stelogy · IV — Thèse sforbt</div><div class="meta">27&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Deal killers identifiés</div>
+  <div class="s-title">Deal Killers</div>
+  <div class="s-body">
+    <table class="fin">
+      <thead><tr><th>Risque</th><th>Description</th><th>Mitigation</th></tr></thead>
+      <tbody>
+        <tr><td><b>Risque d&#39;intégration technique post-M&amp;A</b></td><td>L'harmonisation des systèmes d'information de Nomotech, VoIP Telecom et Ordago sous une architecture unifiée est le risque d'exécution principal ; une dérive budgétaire non documentée sur ces intégrations pourrait éroder durablement l'EBITDA et transformer le hub Elo en gouffre financier plutôt qu'en levier de marge.</td><td>Audit approfondi des hypothèses d'intégration, examen du rapport d'intégration opérationnelle post-M&A, entretien avec le CTO.</td></tr>
+        <tr><td><b>Risque VMware/Broadcom</b></td><td>La dépendance aux licences VMware Cloud Director expose Stelogy à des hausses de coûts structurelles post-acquisition par Broadcom ; l'absence de feuille de route documentée vers des alternatives (OpenStack, Proxmox) constitue un risque de marge directe sur les 9 datacenters estimé à un impact potentiel sur les coûts opérationnels du cloud privé.</td><td>Analyse du contrat de licence et des projections de coûts d'infrastructure, évaluation du plan de migration vers des alternatives à VMware.</td></tr>
+        <tr><td><b>Risque de cycle M&amp;A</b></td><td>Une partie du multiple de valorisation pourrait être attribuable à la surchauffe transactionnelle du segment (Celeste/CVC DIF, Cheops) plutôt qu'à une différenciation technologique organique ; un retournement du marché Private Equity rendrait les conditions de sortie défavorables.</td><td>Comparer les multiples de valorisation aux fondamentaux d'EBITDA et de flux de trésorerie, vérifier la rationalité des acquisitions passées par les acquéreurs et la création de valeur générée.</td></tr>
+        <tr><td><b>Risque de dilution de marque commerciale</b></td><td>L'unification des forces commerciales locales historiques (Nomotech, Ordago) sous la marque Stelogy peut provoquer une attrition client si la relation de proximité régionale est perçue comme dégradée par les PME et collectivités clientes.</td><td>Analyse fine du churn par segment et par marque historique, enquêtes de satisfaction clients et suivi de la rétention nette.</td></tr>
+        <tr><td><b>Risque de substitution par les hyperscalers souverains</b></td><td>AWS (7,8 Md€ investis), Microsoft (partenariat Bleu/Orange), Google (S3NS/Thales) déploient des alternatives souveraines certifiées ; à horizon 3-5 ans, si ces offres atteignent les certifications françaises requises, la barrière réglementaire actuelle de Stelogy s'affaiblit.</td><td>Suivi des certifications des hyperscalers et renforcement continu des certifications souveraines propres de Stelogy, développement d'offres à très haute valeur ajoutée.</td></tr>
+        <tr><td><b>Concentration géographique France</b></td><td>Le modèle est entièrement dépendant du marché réglementaire français ; toute modification substantielle du cadre RGPD/HDS ou une accélération de la certification des hyperscalers étrangers réduirait l'avantage souverain différençiant.</td><td>Élargir l'offre de services pour capturer d'autres marchés européens, diversifier les certifications et développer des partenariats internationaux.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>IV — Thèse sforbt</span></div><div>27</div></div>
+</section>
+
+<section class="divider" data-screen-label="28 V Conviction">
+  <div class="roman">V</div>
+  <div>
+    <div class="div-eyebrow">Cinquième partie</div>
+    <h2>Conviction GP</h2>
+    <div class="div-sub">Conviction · Note de pré-sélection : 84</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="29 Angle, marché, timing">
+  <div class="s-head"><div class="brand">Stelogy · V — Conviction</div><div class="meta">29&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Angle dominant · marché · timing</div>
+  <div class="s-title">Angle d&#39;investissement OMNISCIENT, basé sur la matrice de Strategic Fit</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Angle dominant</h4><p>Stelogy correspond à l'angle 'Signal Qualité Croissance — Série A à Série B' sur quatre des cinq critères clés : chiffre d'affaires récurrent supérieur à 2 M€ (confirmé à 118 M€+), NRR estimé supérieur à 110 % via le cross-selling de services managés, fossé défensif basé sur les coûts de changement et l'infrastructure propriétaire, et trajectoire vers le statut de référence de marché sur son segment. Le seul point de friction par rapport à la définition canonique de l'angle est la taille : Stelogy dépasse le profil Série A/B classique et opère davantage comme une plateforme de croissance avancée ou une cible de buyout partiel — ce qui renforce simultanément le fit avec l'angle 'Signal Qualité Acquisition'.</p>
+        <h4>Marché</h4><p>Le marché français du MSP et du cloud souverain pour le mid-market (ETI de 250 à 4 999 salariés, PME, collectivités) représente un SAM estimé à 130 M€ par an, avec une dynamique de consolidation active : Celeste est en cours d'acquisition par CVC DIF, Cheops Technology accélère son programme M&A soutenu par du capital-investissement, et les hyperscalers américains investissent massivement en infrastructure propre en Europe (AWS : 7,8 Md€).</p>
+      </div>
+      <div class="col-block">
+        <h4>Timing</h4><p>Le timing est favorable et structurel. L'obligation réglementaire RGPD, les certifications HDS et la pression de souveraineté opérationnelle forcent les ETI françaises à abandonner les clouds transatlantiques au profit d'alternatives locales conformes — ce mouvement est irréversible à court terme. Simultanément, la hausse des tarifs de licences VMware post-acquisition par Broadcom crée une pression sur les marges des MSP qui n'ont pas planifié leur migration technique, ouvrant un avantage concurrentiel pour les acteurs intégrés capables d'absorber ou de répercuter ce coût. La fenêtre pour s'imposer comme consolidateur dominant avant que les géants télécoms (Orange Business Services, Bouygues Telecom Entreprises) ne réorientent leurs capacités commerciales vers le mid-market est estimée à 18 à 36 mois.</p>
+        <h4>Founder &amp; thesis-fit</h4><p>Jean-Philippe Melet est le CEO et figure centrale de la stratégie de build-up. Son expérience de direction a été forgée directement dans les fusions de structures d'envergure — notamment la fusion Nomotech / VoIP Telecom qui a donné naissance à Stelogy — ce qui constitue une connaissance acquise opérationnelle rare dans un secteur où l'intégration technique est le principal risque d'exécution.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>V — Conviction</span></div><div>29</div></div>
+</section>
+
+<section data-screen-label="30 Verdict">
+  <div class="s-head"><div class="brand">Stelogy · V — Conviction</div><div class="meta">30&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Verdict de conviction</div>
+  <div class="s-title">Verdict — CALL (Match): Investissement Recommandé</div>
+  <div class="s-body">
+    <div style="margin-bottom:36px">
+      <div class="verdict"><span class="v-tag">Verdict GP</span><span class="v-text">Call · 84/100</span></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Synthèse</h4><p>Stelogy est un consolidateur indépendant du cloud souverain et des télécoms mid-market français qui a transformé une stratégie de build-up agressive en une plateforme de revenus récurrents de 118 M€+, ancrée dans des contrats pluriannuels avec 30 000 clients professionnels et des coûts de changement structurellement prohibitifs — exactement le profil d'une entreprise dont le fossé s'approfondit avec chaque nouvelle souscription de service managé. Le lancement du hub numérique Elo en novembre 2024 représente le passage d'une logique de consolidation pure à une logique de plateforme de distribution à marge élevée : en transformant les intégrateurs locaux en forces de vente indirectes, Stelogy crée un mécanisme de croissance organique qui peut s'exécuter sans augmentation proportionnelle du coût d'acquisition client — c'est le signal d'efficacité capital que la thèse exige. Le principal risque identifié par l'avocat du diable — la dette technique héritée des acquisitions (Nomotech, VoIP Telecom, Ordago) et la dépendance aux licences VMware post-Broadcom — est réel mais gérable : il ne remet pas en cause la viabilité du modèle, il conditionne le niveau de marge opérationnelle future.</p>
+      </div>
+      <div class="col-block">
+        <h4>Risk register</h4>
+        <ul><li>Risque d'intégration technique post-M&A : l'harmonisation des systèmes d'information de Nomotech, VoIP Telecom et Ordago sous une architecture unifiée est le risque d'exécution principal ; une dérive budgétaire non documentée sur ces intégrations pourrait éroder durablement l'EBITDA et transformer le hub Elo en gouffre financier plutôt qu'en levier de marge.</li><li>Risque VMware/Broadcom : la dépendance aux licences VMware Cloud Director expose Stelogy à des hausses de coûts structurelles post-acquisition par Broadcom ; l'absence de feuille de route documentée vers des alternatives (OpenStack, Proxmox) constitue un risque de marge directe sur les 9 datacenters estimé à un impact potentiel sur les coûts opérationnels de l'infrastructure cloud privé.</li><li>Risque de cycle M&A : une partie du multiple de valorisation pourrait être attribuable à la surchauffe transactionnelle du segment (Celeste/CVC DIF, Cheops) plutôt qu'à une différenciation technologique organique ; un retournement du marché Private Equity rendrait les conditions de sortie défavorables.</li><li>Risque de dilution de marque commerciale : l'unification des forces commerciales locales historiques (Nomotech, Ordago) sous la marque Stelogy peut provoquer une attrition client si la relation de proximité régionale est perçue comme dégradée par les PME et collectivités clientes.</li><li>Risque de substitution par les hyperscalers souverains : AWS (7,8 Md€ investis), Microsoft (partenariat Bleu/Orange), Google (S3NS/Thales) déploient des alternatives souveraines certifiées ; à horizon 3-5 ans, si ces offres atteignent les certifications françaises requises, la barrière réglementaire actuelle de Stelogy s'affaiblit.</li><li>Concentration géographique France : le modèle est entièrement dépendant du marché réglementaire français ; toute modification substantielle du cadre RGPD/HDS ou une accélération de la certification des hyperscalers étrangers réduirait l'avantage souverain différençiant.</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>V — Conviction</span></div><div>30</div></div>
+</section>
+
+<section class="divider" data-screen-label="31 VI Modèle financier">
+  <div class="roman">VI</div>
+  <div>
+    <div class="div-eyebrow">Sixième partie</div>
+    <h2>Modèle<br>financier</h2>
+    <div class="div-sub">Financial · Note de pré-sélection : 85</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="32 Valorisation">
+  <div class="s-head"><div class="brand">Stelogy · VI — Modèle financier</div><div class="meta">32&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Valorisation triangulée</div>
+  <div class="s-title">Analyse de la Valorisation</div>
+  <div class="s-body">
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">ARR Y1</div><div class="kpi-value">111,4 M€</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">EBITDA Y1 (réel)</div><div class="kpi-value">-2,79 M€</div><div class="kpi-note">Marge -2.5%</div></div>
+      <div class="kpi"><div class="kpi-label">EBITDA normalisé (régime sectoriel)</div><div class="kpi-value">20,62 M€</div><div class="kpi-note">Revenu × marge de régime 18%</div></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Comparables (multiples de transaction)</h4>
+        <table class="fin">
+          <thead><tr><th>Transaction</th><th class="num">Multiple</th></tr></thead>
+          <tbody>
+            <tr><td>Aucune transaction comparable extraite par Web search</td><td class="num">n.d.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="col-block">
+        <h4>DCF — hypothèses</h4>
+        <p>€-100,4 M€ (exclue: FCF cumulés ≤ 0 ou TV-dominante)</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>VI — Modèle financier</span></div><div>32</div></div>
+</section>
+
+<section data-screen-label="33 P&L et trésorerie">
+  <div class="s-head"><div class="brand">Stelogy · VI — Modèle financier</div><div class="meta">33&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">P&amp;L sur 5 ans &amp; flux de trésorerie</div>
+  <div class="s-title">Compte de Résultat Prévisionnel (€M)</div>
+  <div class="s-body">
+    <table class="fin pnl-dense">
+      <thead>
+        <tr><th>Indicateur</th><th class="num">Y1</th><th class="num">Y2</th><th class="num">Y3</th><th class="num">Y4</th><th class="num">Y5</th></tr>
+      </thead>
+      <tbody>
+        <tr ><td>Total Revenue</td><td class="num">111,44</td><td class="num">126,48</td><td class="num">141,85</td><td class="num">157,36</td><td class="num">172,85</td></tr>
+        <tr ><td>Gross Profit</td><td class="num">50,15</td><td class="num">56,92</td><td class="num">63,83</td><td class="num">70,81</td><td class="num">77,78</td></tr>
+        <tr ><td>Total OPEX</td><td class="num">52,93</td><td class="num">60,08</td><td class="num">67,38</td><td class="num">74,75</td><td class="num">82,10</td></tr>
+        <tr class="total"><td>EBITDA</td><td class="num">-2,79</td><td class="num">-3,16</td><td class="num">-3,55</td><td class="num">-3,93</td><td class="num">-4,32</td></tr>
+        <tr ><td>Free Cash Flow Opérationnel</td><td class="num">-20,06</td><td class="num">-22,77</td><td class="num">-25,53</td><td class="num">-28,33</td><td class="num">-31,11</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>VI — Modèle financier</span></div><div>33</div></div>
+</section>
+
+<section data-screen-label="34 ROI et verdict">
+  <div class="s-head"><div class="brand">Stelogy · VI — Modèle financier</div><div class="meta">34&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">ROI et verdict quantitatif</div>
+  <div class="s-title">ROI et Verdict du Deal</div>
+  <div class="s-body">
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">Investissement</div><div class="kpi-value">133,7 M€</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">Valeur année 5</div><div class="kpi-value">2 074,2 M€</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">MOIC</div><div class="kpi-value">1,74x</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">IRR</div><div class="kpi-value">11,8%</div><div class="kpi-note"></div></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Lecture du retour</h4><p>Le fonds investit 133,7 M€ pour acquérir 15,0% du capital. Après 5 ans de détention et une dilution à 11,2% (tours suivants), l'entreprise est revendue à un multiple de 12x de l'ARR. La part du fonds dans cette vente (Fund Equity at Exit) divisée par la mise initiale donne le MOIC (Multiple on Invested Capital). L'IRR (Internal Rate of Return) annualise ce rendement sur la durée de détention.</p>
+      </div>
+      <div class="col-block">
+        <h4>Verdict quantitatif</h4>
+        <div class="verdict" style="margin-bottom:18px"><span class="v-tag">Post-model</span><span class="v-text">Hurdles non atteints</span></div>
+        <p>Le MOIC (1,74x) est en dessous du hurdle thesis (5,0x) de 3,3x. L'IRR (11,8%) ne franchit pas le hurdle thesis (35%). Les options possibles sont : (1) tester un multiple de sortie plus élevé dans la matrice de sensibilité, (2) revoir l'hypothèse de croissance ARR Y1→Y5, (3) renégocier la valuation d'entrée à la baisse.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>VI — Modèle financier</span></div><div>34</div></div>
+</section>
+
+<section class="closing" data-screen-label="35 Fin">
+  <div>
+    <div class="closing-mark">§</div>
+    <h2>Stelogy, un consolidateur stratégique à fort potentiel dans l'écosystème numérique souverain français, mérite une <br>attention particulière pour son modèle intégré et son positionnement unique sur le marché du mid-market.</h2>
+  </div>
+  <div class="closing-sig">
+    <div class="cover-tag" style="text-align:left">sforbt · M&amp;A Strategic · M&amp;A<br>Juin 2026</div>
+    <div class="cover-tag">Mémo confidentiel — Stelogy<br>Diffusion restreinte</div>
+  </div>
+</section>
+
+</deck-stage>
+</body>
+</html>
