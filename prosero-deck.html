@@ -1,0 +1,1474 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Mémo Prosero — sforbt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+/**
+ * <deck-stage noscale> — reusable web component for HTML decks.
+ *
+ * Handles:
+ *  (a) speaker notes — reads <script type="application/json" id="speaker-notes">
+ *      and posts {slideIndexChanged: N} to the parent window on nav.
+ *  (b) keyboard navigation — ←/→, PgUp/PgDn, Space, Home/End, number keys.
+ *  (c) press R to reset to slide 0 (with a tasteful keyboard hint).
+ *  (d) bottom-center overlay showing slide count + hints, fades out on idle.
+ *  (e) auto-scaling — inner canvas is a fixed design size (default 1920×1080)
+ *      scaled with `transform: scale()` to fit the viewport, letterboxed.
+ *      Set the `noscale` attribute to render at authored size (1:1) — the
+ *      PPTX exporter sets this so its DOM capture sees unscaled geometry.
+ *  (f) print — `@media print` lays every slide out as its own page at the
+ *      design size, so the browser's Print → Save as PDF produces a clean
+ *      one-page-per-slide PDF with no extra setup.
+ *
+ * Slides are HIDDEN, not unmounted. Non-active slides stay in the DOM with
+ * `visibility: hidden` + `opacity: 0`, so their state (videos, iframes,
+ * form inputs, React trees) is preserved across navigation.
+ *
+ * Lifecycle event — the component dispatches a `slidechange` CustomEvent on
+ * itself whenever the active slide changes (including the initial mount).
+ * The event bubbles and composes out of shadow DOM, so you can listen on
+ * the <deck-stage> element or on document:
+ *
+ *   document.querySelector('deck-stage').addEventListener('slidechange', (e) => {
+ *     e.detail.index         // new 0-based index
+ *     e.detail.previousIndex // previous index, or -1 on init
+ *     e.detail.total         // total slide count
+ *     e.detail.slide         // the new active slide element
+ *     e.detail.previousSlide // the prior slide element, or null on init
+ *     e.detail.reason        // 'init' | 'keyboard' | 'click' | 'tap' | 'api'
+ *   });
+ *
+ * Persistence: none at the deck level. The host app keeps the current slide
+ * in its own URL (?slide=) and re-delivers it via location.hash on load, so a
+ * bare load with no hash always starts at slide 1.
+ *
+ * Usage:
+ *   <deck-stage width="1920" height="1080">
+ *     <section data-label="Title">...</section>
+ *     <section data-label="Agenda">...</section>
+ *   </deck-stage>
+ *
+ * Slides are the direct element children of <deck-stage>. Each slide is
+ * automatically tagged with:
+ *   - data-screen-label="NN Label"   (1-indexed, for comment flow)
+ *   - data-om-validate="no_overflowing_text,no_overlapping_text,slide_sized_text"
+ */
+
+(() => {
+  const DESIGN_W_DEFAULT = 1920;
+  const DESIGN_H_DEFAULT = 1080;
+  const OVERLAY_HIDE_MS = 1800;
+  const VALIDATE_ATTR = 'no_overflowing_text,no_overlapping_text,slide_sized_text';
+
+  const pad2 = (n) => String(n).padStart(2, '0');
+
+  const stylesheet = `
+    :host {
+      position: fixed;
+      inset: 0;
+      display: block;
+      background: #000;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+      overflow: hidden;
+    }
+
+    .stage {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .canvas {
+      position: relative;
+      transform-origin: center center;
+      flex-shrink: 0;
+      background: #fff;
+      will-change: transform;
+    }
+
+    /* Slides live in light DOM (via <slot>) so authored CSS still applies.
+       We absolutely position each slotted child to stack them. */
+    ::slotted(*) {
+      position: absolute !important;
+      inset: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      box-sizing: border-box !important;
+      overflow: hidden;
+      opacity: 0;
+      pointer-events: none;
+      visibility: hidden;
+    }
+    ::slotted([data-deck-active]) {
+      opacity: 1;
+      pointer-events: auto;
+      visibility: visible;
+    }
+
+    /* Tap zones for mobile — back/forward thirds like Stories.
+       Transparent, no visible UI, don't block the overlay. */
+    .tapzones {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      z-index: 2147482000;
+      pointer-events: none;
+    }
+    .tapzone {
+      flex: 1;
+      pointer-events: auto;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* Only activate tap zones on coarse pointers (touch devices). */
+    @media (hover: hover) and (pointer: fine) {
+      .tapzones { display: none; }
+    }
+
+    .overlay {
+      position: fixed;
+      left: 50%;
+      bottom: 22px;
+      transform: translate(-50%, 6px) scale(0.92);
+      filter: blur(6px);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      background: #000;
+      color: #fff;
+      border-radius: 999px;
+      font-size: 12px;
+      font-feature-settings: "tnum" 1;
+      letter-spacing: 0.01em;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 260ms ease, transform 260ms cubic-bezier(.2,.8,.2,1), filter 260ms ease;
+      transform-origin: center bottom;
+      z-index: 2147483000;
+      user-select: none;
+    }
+    .overlay[data-visible] {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translate(-50%, 0) scale(1);
+      filter: blur(0);
+    }
+
+    .btn {
+      appearance: none;
+      -webkit-appearance: none;
+      background: transparent;
+      border: 0;
+      margin: 0;
+      padding: 0;
+      color: inherit;
+      font: inherit;
+      cursor: default;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 28px;
+      min-width: 28px;
+      border-radius: 999px;
+      color: rgba(255,255,255,0.72);
+      transition: background 140ms ease, color 140ms ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+    .btn:active { background: rgba(255,255,255,0.18); }
+    .btn:focus { outline: none; }
+    .btn:focus-visible { outline: none; }
+    .btn::-moz-focus-inner { border: 0; }
+    .btn svg { width: 14px; height: 14px; display: block; }
+    .btn.reset {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      padding: 0 10px 0 12px;
+      gap: 6px;
+      color: rgba(255,255,255,0.72);
+    }
+    .btn.reset .kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 10px;
+      line-height: 1;
+      color: rgba(255,255,255,0.88);
+      background: rgba(255,255,255,0.12);
+      border-radius: 4px;
+    }
+
+    .count {
+      font-variant-numeric: tabular-nums;
+      color: #fff;
+      font-weight: 500;
+      padding: 0 8px;
+      min-width: 42px;
+      text-align: center;
+      font-size: 12px;
+    }
+    .count .sep { color: rgba(255,255,255,0.45); margin: 0 3px; font-weight: 400; }
+    .count .total { color: rgba(255,255,255,0.55); }
+
+    .divider {
+      width: 1px;
+      height: 14px;
+      background: rgba(255,255,255,0.18);
+      margin: 0 2px;
+    }
+
+    /* ── Print: one page per slide, no chrome ────────────────────────────
+       The screen layout stacks every slide at inset:0 inside a scaled
+       canvas; for print we want them in document flow at the authored
+       design size so the browser paginates one slide per sheet. The
+       @page size is set from the width/height attributes via the inline
+       <style id="deck-stage-print-page"> that connectedCallback injects
+       into <head> (the @page at-rule has no effect inside shadow DOM). */
+    @media print {
+      :host {
+        position: static;
+        inset: auto;
+        background: none;
+        overflow: visible;
+        color: inherit;
+      }
+      .stage { position: static; display: block; }
+      .canvas {
+        transform: none !important;
+        width: auto !important;
+        height: auto !important;
+        background: none;
+        will-change: auto;
+      }
+      ::slotted(*) {
+        position: relative !important;
+        inset: auto !important;
+        width: var(--deck-design-w) !important;
+        height: var(--deck-design-h) !important;
+        box-sizing: border-box !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        pointer-events: auto;
+        break-after: page;
+        page-break-after: always;
+        break-inside: avoid;
+        overflow: hidden;
+      }
+      ::slotted(*:last-child) {
+        break-after: auto;
+        page-break-after: auto;
+      }
+      .overlay, .tapzones { display: none !important; }
+    }
+  `;
+
+  class DeckStage extends HTMLElement {
+    static get observedAttributes() { return ['width', 'height', 'noscale']; }
+
+    constructor() {
+      super();
+      this._root = this.attachShadow({ mode: 'open' });
+      this._index = 0;
+      this._slides = [];
+      this._notes = [];
+      this._hideTimer = null;
+      this._mouseIdleTimer = null;
+
+      this._onKey = this._onKey.bind(this);
+      this._onResize = this._onResize.bind(this);
+      this._onSlotChange = this._onSlotChange.bind(this);
+      this._onMouseMove = this._onMouseMove.bind(this);
+      this._onTapBack = this._onTapBack.bind(this);
+      this._onTapForward = this._onTapForward.bind(this);
+    }
+
+    get designWidth() {
+      return parseInt(this.getAttribute('width'), 10) || DESIGN_W_DEFAULT;
+    }
+    get designHeight() {
+      return parseInt(this.getAttribute('height'), 10) || DESIGN_H_DEFAULT;
+    }
+
+    connectedCallback() {
+      this._render();
+      this._loadNotes();
+      this._syncPrintPageRule();
+      window.addEventListener('keydown', this._onKey);
+      window.addEventListener('resize', this._onResize);
+      window.addEventListener('mousemove', this._onMouseMove, { passive: true });
+      // Initial collection + layout happens via slotchange, which fires on mount.
+    }
+
+    disconnectedCallback() {
+      window.removeEventListener('keydown', this._onKey);
+      window.removeEventListener('resize', this._onResize);
+      window.removeEventListener('mousemove', this._onMouseMove);
+      if (this._hideTimer) clearTimeout(this._hideTimer);
+      if (this._mouseIdleTimer) clearTimeout(this._mouseIdleTimer);
+    }
+
+    attributeChangedCallback() {
+      if (this._canvas) {
+        this._canvas.style.width = this.designWidth + 'px';
+        this._canvas.style.height = this.designHeight + 'px';
+        this._canvas.style.setProperty('--deck-design-w', this.designWidth + 'px');
+        this._canvas.style.setProperty('--deck-design-h', this.designHeight + 'px');
+        this._fit();
+        this._syncPrintPageRule();
+      }
+    }
+
+    _render() {
+      const style = document.createElement('style');
+      style.textContent = stylesheet;
+
+      const stage = document.createElement('div');
+      stage.className = 'stage';
+
+      const canvas = document.createElement('div');
+      canvas.className = 'canvas';
+      canvas.style.width = this.designWidth + 'px';
+      canvas.style.height = this.designHeight + 'px';
+      canvas.style.setProperty('--deck-design-w', this.designWidth + 'px');
+      canvas.style.setProperty('--deck-design-h', this.designHeight + 'px');
+
+      const slot = document.createElement('slot');
+      slot.addEventListener('slotchange', this._onSlotChange);
+      canvas.appendChild(slot);
+      stage.appendChild(canvas);
+
+      // Tap zones (mobile): left third = back, right third = forward.
+      const tapzones = document.createElement('div');
+      tapzones.className = 'tapzones export-hidden';
+      tapzones.setAttribute('aria-hidden', 'true');
+      tapzones.setAttribute('data-noncommentable', '');
+      const tzBack = document.createElement('div');
+      tzBack.className = 'tapzone tapzone--back';
+      const tzMid = document.createElement('div');
+      tzMid.className = 'tapzone tapzone--mid';
+      tzMid.style.pointerEvents = 'none';
+      const tzFwd = document.createElement('div');
+      tzFwd.className = 'tapzone tapzone--fwd';
+      tzBack.addEventListener('click', this._onTapBack);
+      tzFwd.addEventListener('click', this._onTapForward);
+      tapzones.append(tzBack, tzMid, tzFwd);
+
+      // Overlay: compact, solid black, with clickable controls.
+      const overlay = document.createElement('div');
+      overlay.className = 'overlay export-hidden';
+      overlay.setAttribute('role', 'toolbar');
+      overlay.setAttribute('aria-label', 'Deck controls');
+      overlay.setAttribute('data-noncommentable', '');
+      overlay.innerHTML = `
+        <button class="btn prev" type="button" aria-label="Previous slide" title="Previous (←)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>
+        </button>
+        <span class="count" aria-live="polite"><span class="current">1</span><span class="sep">/</span><span class="total">1</span></span>
+        <button class="btn next" type="button" aria-label="Next slide" title="Next (→)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg>
+        </button>
+        <span class="divider"></span>
+        <button class="btn reset" type="button" aria-label="Reset to first slide" title="Reset (R)">Reset<span class="kbd">R</span></button>
+      `;
+
+      overlay.querySelector('.prev').addEventListener('click', () => this._go(this._index - 1, 'click'));
+      overlay.querySelector('.next').addEventListener('click', () => this._go(this._index + 1, 'click'));
+      overlay.querySelector('.reset').addEventListener('click', () => this._go(0, 'click'));
+
+      this._root.append(style, stage, tapzones, overlay);
+      this._canvas = canvas;
+      this._slot = slot;
+      this._overlay = overlay;
+      this._countEl = overlay.querySelector('.current');
+      this._totalEl = overlay.querySelector('.total');
+    }
+
+    /** @page must live in the document stylesheet — it's a no-op inside
+     *  shadow DOM. Inject/update a single <head> style tag so the print
+     *  sheet matches the design size and Save-as-PDF yields one slide per
+     *  page with no margins. */
+    _syncPrintPageRule() {
+      const id = 'deck-stage-print-page';
+      let tag = document.getElementById(id);
+      if (!tag) {
+        tag = document.createElement('style');
+        tag.id = id;
+        document.head.appendChild(tag);
+      }
+      tag.textContent =
+        '@page { size: ' + this.designWidth + 'px ' + this.designHeight + 'px; margin: 0; } ' +
+        '@media print { html, body { margin: 0 !important; padding: 0 !important; background: none !important; overflow: visible !important; height: auto !important; } ' +
+        '* { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }';
+    }
+
+    _onSlotChange() {
+      this._collectSlides();
+      this._restoreIndex();
+      this._applyIndex({ showOverlay: false, broadcast: true, reason: 'init' });
+      this._fit();
+    }
+
+    _collectSlides() {
+      const assigned = this._slot.assignedElements({ flatten: true });
+      this._slides = assigned.filter((el) => {
+        // Skip template/style/script nodes even if someone slots them.
+        const tag = el.tagName;
+        return tag !== 'TEMPLATE' && tag !== 'SCRIPT' && tag !== 'STYLE';
+      });
+
+      this._slides.forEach((slide, i) => {
+        const n = i + 1;
+        // Determine a label for comment flow: prefer explicit data-label,
+        // then an existing data-screen-label, then first heading, else "Slide".
+        let label = slide.getAttribute('data-label');
+        if (!label) {
+          const existing = slide.getAttribute('data-screen-label');
+          if (existing) {
+            // Strip any leading number the author may have included.
+            label = existing.replace(/^\s*\d+\s*/, '').trim() || existing;
+          }
+        }
+        if (!label) {
+          const h = slide.querySelector('h1, h2, h3, [data-title]');
+          if (h) label = (h.textContent || '').trim().slice(0, 40);
+        }
+        if (!label) label = 'Slide';
+        slide.setAttribute('data-screen-label', `${pad2(n)} ${label}`);
+
+        // Validation attribute for comment flow / auto-checks.
+        if (!slide.hasAttribute('data-om-validate')) {
+          slide.setAttribute('data-om-validate', VALIDATE_ATTR);
+        }
+
+        slide.setAttribute('data-deck-slide', String(i));
+      });
+
+      if (this._totalEl) this._totalEl.textContent = String(this._slides.length || 1);
+      if (this._index >= this._slides.length) this._index = Math.max(0, this._slides.length - 1);
+    }
+
+    _loadNotes() {
+      const tag = document.getElementById('speaker-notes');
+      if (!tag) { this._notes = []; return; }
+      try {
+        const parsed = JSON.parse(tag.textContent || '[]');
+        if (Array.isArray(parsed)) this._notes = parsed;
+      } catch (e) {
+        console.warn('[deck-stage] Failed to parse #speaker-notes JSON:', e);
+        this._notes = [];
+      }
+    }
+
+    _restoreIndex() {
+      // The host's ?slide= param is delivered as a #<int> hash (1-indexed) on
+      // the iframe src. No hash → slide 1; the deck itself keeps no position
+      // state across loads.
+      const h = (location.hash || '').match(/^#(\d+)$/);
+      if (h) {
+        const n = parseInt(h[1], 10) - 1;
+        if (n >= 0 && n < this._slides.length) this._index = n;
+      }
+    }
+
+    _applyIndex({ showOverlay = true, broadcast = true, reason = 'init' } = {}) {
+      if (!this._slides.length) return;
+      const prev = this._prevIndex == null ? -1 : this._prevIndex;
+      const curr = this._index;
+      // Keep the iframe's own hash in sync so an in-iframe location.reload()
+      // (reload banner path in viewer-handle.ts) lands on the current slide,
+      // not the stale deep-link hash from initial load.
+      try { history.replaceState(null, '', '#' + (curr + 1)); } catch (e) {}
+      this._slides.forEach((s, i) => {
+        if (i === curr) s.setAttribute('data-deck-active', '');
+        else s.removeAttribute('data-deck-active');
+      });
+      if (this._countEl) this._countEl.textContent = String(curr + 1);
+
+      if (broadcast) {
+        // (1) Legacy: host-window postMessage for speaker-notes renderers.
+        try { window.postMessage({ slideIndexChanged: curr }, '*'); } catch (e) {}
+
+        // (2) In-page CustomEvent on the <deck-stage> element itself.
+        //     Bubbles and composes out of shadow DOM so slide code can listen:
+        //       document.querySelector('deck-stage').addEventListener('slidechange', e => {
+        //         e.detail.index, e.detail.previousIndex, e.detail.total, e.detail.slide, e.detail.reason
+        //       });
+        const detail = {
+          index: curr,
+          previousIndex: prev,
+          total: this._slides.length,
+          slide: this._slides[curr] || null,
+          previousSlide: prev >= 0 ? (this._slides[prev] || null) : null,
+          reason: reason, // 'init' | 'keyboard' | 'click' | 'tap' | 'api'
+        };
+        this.dispatchEvent(new CustomEvent('slidechange', {
+          detail,
+          bubbles: true,
+          composed: true,
+        }));
+      }
+
+      this._prevIndex = curr;
+      if (showOverlay) this._flashOverlay();
+    }
+
+    _flashOverlay() {
+      if (!this._overlay) return;
+      this._overlay.setAttribute('data-visible', '');
+      if (this._hideTimer) clearTimeout(this._hideTimer);
+      this._hideTimer = setTimeout(() => {
+        this._overlay.removeAttribute('data-visible');
+      }, OVERLAY_HIDE_MS);
+    }
+
+    _fit() {
+      if (!this._canvas) return;
+      // PPTX export sets noscale so the DOM capture sees authored-size
+      // geometry — the scaled canvas is in shadow DOM, so the exporter's
+      // resetTransformSelector can't reach .canvas.style.transform directly.
+      if (this.hasAttribute('noscale')) {
+        this._canvas.style.transform = 'none';
+        return;
+      }
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const s = Math.min(vw / this.designWidth, vh / this.designHeight);
+      this._canvas.style.transform = `scale(${s})`;
+    }
+
+    _onResize() { this._fit(); }
+
+    _onMouseMove() {
+      // Keep overlay visible while mouse moves; hide after idle.
+      this._flashOverlay();
+    }
+
+    _onTapBack(e) {
+      e.preventDefault();
+      this._go(this._index - 1, 'tap');
+    }
+
+    _onTapForward(e) {
+      e.preventDefault();
+      this._go(this._index + 1, 'tap');
+    }
+
+    _onKey(e) {
+      // Ignore when the user is typing.
+      const t = e.target;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const key = e.key;
+      let handled = true;
+
+      if (key === 'ArrowRight' || key === 'PageDown' || key === ' ' || key === 'Spacebar') {
+        this._go(this._index + 1, 'keyboard');
+      } else if (key === 'ArrowLeft' || key === 'PageUp') {
+        this._go(this._index - 1, 'keyboard');
+      } else if (key === 'Home') {
+        this._go(0, 'keyboard');
+      } else if (key === 'End') {
+        this._go(this._slides.length - 1, 'keyboard');
+      } else if (key === 'r' || key === 'R') {
+        this._go(0, 'keyboard');
+      } else if (/^[0-9]$/.test(key)) {
+        // 1..9 jump to that slide; 0 jumps to 10.
+        const n = key === '0' ? 9 : parseInt(key, 10) - 1;
+        if (n < this._slides.length) this._go(n, 'keyboard');
+      } else {
+        handled = false;
+      }
+
+      if (handled) {
+        e.preventDefault();
+        this._flashOverlay();
+      }
+    }
+
+    _go(i, reason = 'api') {
+      if (!this._slides.length) return;
+      const clamped = Math.max(0, Math.min(this._slides.length - 1, i));
+      if (clamped === this._index) {
+        this._flashOverlay();
+        return;
+      }
+      this._index = clamped;
+      this._applyIndex({ showOverlay: true, broadcast: true, reason });
+    }
+
+    // Public API ------------------------------------------------------------
+
+    /** Current slide index (0-based). */
+    get index() { return this._index; }
+    /** Total slide count. */
+    get length() { return this._slides.length; }
+    /** Programmatically navigate. */
+    goTo(i) { this._go(i, 'api'); }
+    next() { this._go(this._index + 1, 'api'); }
+    prev() { this._go(this._index - 1, 'api'); }
+    reset() { this._go(0, 'api'); }
+  }
+
+  if (!customElements.get('deck-stage')) {
+    customElements.define('deck-stage', DeckStage);
+  }
+})();
+
+</script>
+<style>
+:root{
+  --paper:#F5F1E8;
+  --paper-2:#EFEAE0;
+  --ink:#0E1116;
+  --ink-2:#2A3038;
+  --muted:#5C6470;
+  --rule:#1A1F26;
+  --rule-soft:#C9C0AE;
+  --accent:#7A1F1F;
+  --pos:#1F4D2E;
+  --neg:#7A1F1F;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#0a0a0a;font-family:'Inter',sans-serif;color:var(--ink)}
+deck-stage{display:block}
+deck-stage > section{
+  width:1920px;height:1080px;background:var(--paper);color:var(--ink);
+  font-family:'Inter',sans-serif;font-size:22px;line-height:1.5;
+  position:relative;overflow:hidden;padding:90px 120px;
+  display:flex;flex-direction:column;
+}
+.s-head{display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:18px;border-bottom:1px solid var(--rule);margin-bottom:48px;flex-shrink:0}
+.s-head .brand{font-family:'EB Garamond',serif;font-size:24px;font-style:italic;color:var(--ink-2);letter-spacing:0.01em}
+.s-head .meta{font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted)}
+.s-title{font-family:'EB Garamond',serif;font-weight:500;font-size:60px;line-height:1.05;letter-spacing:-0.01em;color:var(--ink);margin-bottom:14px}
+.s-kicker{font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);margin-bottom:24px}
+.s-sub{font-size:24px;color:var(--ink-2);line-height:1.45;max-width:1500px;margin-bottom:40px}
+.s-body{flex:1;min-height:0;display:flex;flex-direction:column}
+.s-body p{font-size:21px;line-height:1.55;color:var(--ink-2);margin-bottom:16px;text-wrap:pretty}
+.s-body p strong, .s-body b{color:var(--ink);font-weight:600}
+.s-body ul{list-style:none;padding:0}
+.s-body ul li{position:relative;padding-left:28px;margin-bottom:12px;font-size:21px;line-height:1.5;color:var(--ink-2)}
+.s-body ul li::before{content:"";position:absolute;left:0;top:14px;width:14px;height:1px;background:var(--ink)}
+.s-body h3{font-family:'EB Garamond',serif;font-weight:500;font-size:30px;color:var(--ink);margin-bottom:16px}
+.s-body h4{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;margin-top:20px;padding-bottom:8px;border-bottom:1px solid var(--rule-soft)}
+.s-foot{position:absolute;left:120px;right:120px;bottom:42px;display:flex;justify-content:space-between;align-items:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);padding-top:18px;border-top:1px solid var(--rule-soft)}
+.s-foot .lhs{display:flex;gap:32px}
+
+/* COVER */
+.cover{padding:140px 160px;justify-content:space-between}
+.cover-top{display:flex;justify-content:space-between;align-items:flex-start}
+.cover-mark{font-family:'EB Garamond',serif;font-style:italic;font-size:28px;color:var(--ink-2)}
+.cover-mark::before{content:"§";font-style:normal;margin-right:10px;color:var(--accent);font-weight:700}
+.cover-tag{font-family:'JetBrains Mono',monospace;font-size:14px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);text-align:right;line-height:2}
+.cover-mid{margin-top:80px}
+.cover-eyebrow{font-family:'JetBrains Mono',monospace;font-size:15px;letter-spacing:0.3em;text-transform:uppercase;color:var(--muted);margin-bottom:32px}
+.cover h1{font-family:'EB Garamond',serif;font-weight:500;font-size:240px;line-height:0.92;letter-spacing:-0.025em;color:var(--ink)}
+.cover-sub{font-family:'EB Garamond',serif;font-style:italic;font-weight:400;font-size:36px;color:var(--ink-2);line-height:1.3;margin-top:36px;max-width:1400px}
+.cover-bot{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:48px;padding-top:36px;border-top:1px solid var(--rule)}
+.cover-bot dt{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.cover-bot dd{font-family:'EB Garamond',serif;font-size:30px;color:var(--ink);font-weight:500}
+
+/* DIVIDER */
+.divider{padding:140px 160px;justify-content:flex-end}
+.divider .roman{position:absolute;top:120px;right:160px;font-family:'EB Garamond',serif;font-style:italic;font-size:96px;color:var(--rule-soft);font-weight:400;letter-spacing:0.05em}
+.divider .div-eyebrow{font-family:'JetBrains Mono',monospace;font-size:15px;letter-spacing:0.3em;text-transform:uppercase;color:var(--muted);margin-bottom:32px}
+.divider h2{font-family:'EB Garamond',serif;font-weight:500;font-size:140px;line-height:0.95;letter-spacing:-0.02em;color:var(--ink);max-width:1400px}
+.divider .div-sub{font-family:'EB Garamond',serif;font-style:italic;font-size:30px;color:var(--ink-2);margin-top:36px;max-width:1100px;line-height:1.4}
+.divider .div-rule{width:120px;height:2px;background:var(--ink);margin-top:48px}
+
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:80px;flex:1;min-height:0}
+.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:60px;flex:1;min-height:0}
+.col-block h4:first-child{margin-top:0}
+
+/* Image block — tasteful figure with caption, contained height so slides stay composed */
+.s-figure{margin-top:18px;display:flex;flex-direction:column;gap:10px;flex:0 0 auto}
+.s-figure .frame{border:1px solid var(--rule);background:var(--paper-2);border-radius:2px;overflow:hidden;display:flex;align-items:center;justify-content:center;max-height:380px}
+.s-figure .frame img{width:100%;height:auto;max-height:380px;object-fit:contain;display:block}
+.s-figure figcaption{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted)}
+.s-figure.compact .frame{max-height:280px}
+.s-figure.compact .frame img{max-height:280px}
+/* Side-by-side text + image layout */
+.text-image{display:grid;grid-template-columns:1fr 1.1fr;gap:48px;flex:1;min-height:0;align-items:start}
+.text-image > .col-block{min-width:0}
+.text-image .s-figure{margin-top:0;align-self:stretch;height:100%}
+.text-image .s-figure .frame{max-height:480px;height:100%}
+.text-image .s-figure .frame img{max-height:480px}
+
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin:24px 0 36px}
+.kpi{padding:24px 24px 24px 0;border-right:1px solid var(--rule-soft)}
+.kpi:last-child{border-right:none}
+.kpi:not(:first-child){padding-left:24px}
+.kpi-label{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+.kpi-value{font-family:'EB Garamond',serif;font-weight:500;font-size:48px;line-height:1;color:var(--ink);letter-spacing:-0.01em}
+.kpi-note{font-size:14px;color:var(--muted);margin-top:8px;line-height:1.4}
+
+table.fin{width:100%;border-collapse:collapse;font-size:17px;font-variant-numeric:tabular-nums}
+table.fin thead th{background:transparent;color:var(--ink);font-weight:600;text-align:left;padding:11px 14px;border-bottom:2px solid var(--ink);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.18em;text-transform:uppercase}
+table.fin tbody td{padding:12px 14px;border-bottom:1px solid var(--rule-soft);color:var(--ink-2);vertical-align:top}
+table.fin tbody tr:last-child td{border-bottom:none}
+table.fin tbody td.num{text-align:right;font-family:'JetBrains Mono',monospace;color:var(--ink);white-space:nowrap}
+table.fin tbody tr.total td{font-weight:600;color:var(--ink);border-top:1px solid var(--ink);border-bottom:1px solid var(--ink);background:rgba(0,0,0,0.03)}
+table.fin tbody tr.total td.num{font-weight:700}
+table.fin.pnl-dense{font-size:15px}
+table.fin.pnl-dense thead th{padding:8px 12px;font-size:11px}
+table.fin.pnl-dense tbody td{padding:7px 12px}
+
+.swot{display:grid;grid-template-columns:1fr 1fr;gap:36px;flex:1;min-height:0}
+.swot-cell{padding:28px 32px;background:rgba(255,255,255,0.4);border:1px solid var(--rule-soft);border-top:3px solid var(--ink)}
+.swot-cell h4{margin:0 0 14px 0;border:none;padding:0}
+.swot-cell ul li{font-size:18px;margin-bottom:10px;padding-left:22px}
+.swot-cell ul li::before{top:11px;width:10px}
+
+.verdict{display:inline-flex;align-items:baseline;gap:18px;padding:18px 28px;border:2px solid var(--ink);background:var(--paper-2);font-family:'EB Garamond',serif}
+.verdict .v-tag{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted)}
+.verdict .v-text{font-size:36px;font-weight:600;color:var(--ink);letter-spacing:-0.01em}
+
+.closing{padding:140px 160px;justify-content:space-between}
+.closing-mark{font-family:'EB Garamond',serif;font-style:italic;font-size:200px;color:var(--ink);line-height:1}
+.closing h2{font-family:'EB Garamond',serif;font-weight:500;font-size:96px;line-height:1.05;letter-spacing:-0.02em;color:var(--ink);max-width:1400px;margin-top:48px}
+.closing-sig{display:flex;justify-content:space-between;align-items:flex-end;padding-top:36px;border-top:1px solid var(--rule)}
+
+.lead{font-size:25px;color:var(--ink);line-height:1.45;margin-bottom:28px;max-width:1500px;font-weight:400}
+.callout{padding:22px 26px;background:var(--paper-2);border-left:3px solid var(--ink);font-size:20px;line-height:1.55;color:var(--ink-2);margin:20px 0}
+.dl-grid{display:grid;grid-template-columns:220px 1fr;gap:16px 28px;align-items:baseline}
+.dl-grid dt{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:0.18em;text-transform:uppercase;color:var(--muted);padding-top:4px}
+.dl-grid dd{font-size:20px;color:var(--ink-2);line-height:1.5}
+.tag{display:inline-block;padding:4px 10px;border:1px solid var(--rule);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.15em;text-transform:uppercase;margin-right:6px;color:var(--ink-2)}
+</style>
+</head>
+<body>
+
+<script type="application/json" id="speaker-notes">["Bonjour à tous et bienvenue à ce comité d'investissement. Aujourd'hui, nous allons parler de Prosero, un acteur clé dans la sécurité technique intégrée en Europe du Nord. Notre objectif est d'analyser la pertinence d'un investissement dans cette entreprise, en se basant sur une évaluation approfondie de son marché, de son modèle d'affaires, de ses performances et de son potentiel stratégique. Nous examinerons les forces, les faiblesses, ainsi que les opportunités et menaces qui pourraient influencer sa trajectoire future. L'enjeu est de déterminer si Prosero représente une opportunité alignée avec notre thèse d'investissement. Nous commencerons par une présentation générale de l'entreprise et de l'opportunité de marché.", "Notre objectif est de comprendre le paysage du marché des services de sécurité technique intégrée. Ce segment est en pleine mutation, porté par des facteurs macroéconomiques et réglementaires significatifs. Nous allons explorer la taille totale du marché, sa segmentation en services d'installation, maintenance ou surveillance, et ses dynamiques de croissance. Nous identifierons les acteurs majeurs, les points de friction et les opportunités inexploitées. L'objectif est de situer Prosero dans cet écosystème et d'évaluer l'attractivité globale du segment dans lequel il opère. Le marché de la sécurité physique B2B est traditionnellement fragmenté mais connaît une consolidation accélérée.", "Prosero opère au sein d'un marché dynamique de la sécurité technique intégrée. Le marché total adressable (TAM) global est estimé à 45,7 milliards de dollars en 2024. Sur le plan européen, le marché adressable de la sécurité périmétrique (SAM) s'élève à 21-22 milliards de dollars en 2025, avec une croissance annuelle composée (TCAC) de 9-10 % d'ici 2034. Cette croissance est tirée par plusieurs facteurs, dont le besoin croissant de protection des infrastructures critiques et la digitalisation des systèmes de sécurité. La Convergence OT/IT et l'impératif NIS2 sont des catalyseurs majeurs. Prosero se positionne donc sur un marché à forte croissance et à fort potentiel. Nous détaillerons ces chiffres et leurs implications pour l'entreprise.", "La chaîne de valeur des services de sécurité technique intégrée est composée de six étapes distinctes, allant de la R&D à l'optimisation continue. Chaque étape possède ses propres caractéristiques en termes de défensibilité, de potentiel de marge et de croissance. Notre analyse a permis d'attribuer un score stratégique à chacune de ces étapes. L'objectif est d'identifier où se situe la création de valeur la plus significative et comment Prosero se positionne par rapport à ces segments stratégiques. Nous verrons que Prosero a fait le choix de se positionner sur les étapes à la fois rentables et défensives. Nous allons nous concentrer sur les trois étapes les plus stratégiques.", "La première étape, la R&D et le développement technologique de composants, occupe une position forte. Elle se caractérise par des investissements lourds en R&D et une complexité technique élevée, nécessitant une expertise pointue. Les brevets et les coûts de commutation élevés renforcent sa défensibilité. Le potentiel de marge est modéré, mais les économies d'échelle sont fortes. La croissance est soutenue par l'expansion du marché global de la sécurité intégrée, avec un TCAC d'environ 8,5%. Cette étape est essentielle car elle constitue la base technologique de toutes les solutions de sécurité. Les acteurs ici sont des fabricants spécialisés en capteurs, caméras ou solutions d’IAM. L'investissement continu est crucial ici.", "La conception architecturale et l'ingénierie des systèmes est une étape cruciale où l'architecture globale des solutions de sécurité est élaborée. Elle se distingue par une forte défensibilité, notamment grâce à sa complexité technique et aux barrières réglementaires. Le potentiel de marge est élevé, car l'expertise spécialisée permet des tarifs premium. La croissance est robuste, directement liée à la demande croissante d'expertise en architecture sécurisée. Cette étape est très attractive en raison de son potentiel de marge et de son pouvoir de fixation des prix. Les cabinets de conseil et les intégrateurs systèmes sont des acteurs clés. La pénurie de talents est un risque majeur ici.", "L'acquisition, la logistique et la sécurisation de la supply chain est une étape critique, mais avec une défensibilité et un potentiel de marge modérés. Les barrières à l'entrée sont relativement faibles, et la concurrence est intense. La structure des coûts est principalement variable, limitant le pouvoir de fixation des prix. Cependant, la croissance est élevée, tirée par la demande accrue pour les services logistiques de composants de sécurité. La conformité et la traçabilité des matériels et logiciels sont des enjeux majeurs. Les distributeurs B2B et les grossistes logiciels sont les principaux acteurs. L'efficacité logistique et l'optimisation des coûts sont essentielles pour réussir.", "Le déploiement et l'intégration multi-sites est une étape caractérisée par une forte défensibilité, principalement due à la complexité technique inhérente à l'intégration de systèmes hétérogènes sur de multiples sites. Le potentiel de marge est modéré, malgré une forte intensité concurrentielle, la rareté de l'expertise pour les grands déploiements complexes peut permettre des tarifs premium. La croissance est élevée, stimulée par l'augmentation de la demande pour des solutions complexes et la convergence OT/IT. Cette étape est stratégique pour des intégrateurs comme Prosero grâce à l'effet de verrouillage des clients. Le savoir-faire est un atout défensif majeur. Prosero opère dans cette étape.", "L'exploitation, la surveillance et la maintenance préventive et corrective est une des étapes les plus stratégiques. Elle offre une forte défensibilité grâce à des barrières à l'entrée élevées, nécessitant des infrastructures spécialisées et des compétences très qualifiées. Le potentiel de marge est élevé, car les services managés sont essentiels pour les entreprises et justifient des prix premium. La croissance est très dynamique, tirée par la complexification des systèmes de sécurité et la pénurie de compétences internes. Cette étape génère des revenus récurrents et une forte fidélisation client. C'est ici que Prosero trouve son principal avantage stratégique. C'est sur cette étape qu'on construit les revenus récurrents.", "Enfin, la gestion de la conformité, l'audit et l'optimisation continue est également une étape très stratégique. Elle présente une forte défensibilité grâce à la complexité technique et aux barrières réglementaires (NIS2 par exemple). Le potentiel de marge est très élevé, car l'expertise en conformité et audit est hautement spécialisée et recherchée. La croissance est soutenue par l'augmentation des réglementations et l'évolution constante des menaces. Cette étape est indispensable et hautement valorisée par les entreprises. Les cabinets d'audit et les organismes de certification sont les acteurs clés. La capacité à anticiper les évolutions légales est un facteur de succès. Cette étape est une excellente source de revenus à haute valeur ajoutée. C'est un point clé pour la rétention client.", "Notre analyse des six étapes de la chaîne de valeur a permis d'identifier les trois positions les plus stratégiques et attractives pour la création de valeur durable. Nous avons pondéré les critères de défensibilité, de potentiel de marge et de croissance pour obtenir un score stratégique pour chaque étape. Ces étapes se distinguent par leur capacité à monétiser une expertise rare et complexe, à établir des coûts de commutation élevés pour les clients, et à capitaliser sur les impératifs réglementaires croissants. Ces positions sont cruciales pour l'investissement et la croissance à long terme. C'est là que réside la 'moat' concurrentielle du marché, à saisir sans délai. Nous avons ciblé les étapes où la création de valeur est la plus forte.", "La première position stratégique est l'exploitation, la surveillance et la maintenance préventive et corrective, avec un score de 6.8/10. Cette étape se distingue par un excellent équilibre entre défensibilité (7.0), potentiel de marge (6.5) et croissance (7.0). La criticité des services managés pour la sécurité et la capacité à mutualiser les infrastructures et équipes pour des économies d'échelle créent des barrières à l'entrée robustes. La croissance est exponentielle, portée par la complexification des systèmes et le besoin d'externalisation. Cela représente un segment très rentable avec une forte rétention client. C'est le cœur de métier de Prosero qui génère l'ARR. C'est l'étape la plus intéressante pour l'investissement.", "En deuxième position, la conception architecturale et l'ingénierie des systèmes obtient un score de 6.6/10. Cette étape est très attractive grâce à son fort potentiel de marge (7.0) et sa croissance robuste (7.0), malgré une défensibilité légèrement inférieure. L'expertise spécifique en convergence OT/IT et conformité réglementaire permet de commander des prix premium. La structure de coûts, dominée par les salaires des experts, assure des marges élevées. La complexification des menaces et réglementations stimule une forte demande. C'est une étape à forte valeur ajoutée intellectuelle. Elle est indispensable pour des solutions sur mesure. C'est l'un des piliers des services B2B.", "Enfin, la gestion de la conformité, l'audit et l'optimisation continue est la troisième position stratégique avec un score de 6.6/10. Elle se caractérise par un potentiel de marge très élevé (7.0) et une croissance dynamique (7.0). La complexité inhérente à la gestion de la conformité et la nécessité d'audits spécialisés confèrent aux experts un puissant pouvoir de fixation des prix. La structure de coûts fixe assure des marges saines, et l'augmentation des exigences réglementaires stimule l'expansion du marché. Cette étape est indispensable et très valorisée par les entreprises soucieuses de leur résilience. C'est une source de revenus très stable et prévisible. C'est un facteur différenciant pour Prosero. NIS2 est un driver clé.", "Le marché de la sécurité intégrée multi-sites est en pleine mutation structurelle, propulsé par la convergence OT/IT et la digitalisation des infrastructures physiques. Cette transformation est amplifiée par l'augmentation des menaces cyber-physiques et l'impératif de conformité réglementaire, notamment la directive NIS2, ce qui crée de nouvelles opportunités pour les acteurs du marché. La croissance du marché est robuste, avec un TCAC de 8,5% pour le marché global des services de sécurité intégrée. Les solutions intégrées et les services managés sont en forte demande. Il y a un profond changement vers des solutions intégrées.", "L'étape de l'exploitation, surveillance et maintenance préventive et corrective est devenue le point de contrôle stratégique de cette chaîne de valeur. Notre analyse lui attribue le score stratégique le plus élevé (6.8), soulignant la criticité et la complexité de la supervision continue. Les investissements requis et les coûts de commutation élevés créent des barrières solides et une forte rétention client. Cette étape bénéficie d'un pouvoir de fixation des prix \"Premium\" et d'économies d'échelle \"Fortes\", assurant un potentiel de marge élevé (score de 6.5). La demande pour ces services est directement liée à la croissance du marché, ce qui assure une forte croissance pour cette étape. La nature récurrente de ces services génère des revenus stables et prévisibles.", "Les distributeurs B2B, les grossistes logiciels et les sociétés de logistique spécialisées, opérant principalement à l'étape d'acquisition, logistique et sécurisation de la supply chain, se trouvent en position défavorable. Cette étape a un potentiel de marge \"Faible\" (score de 2.0) et une défensibilité \"Faible\" (score de 3.0), principalement en raison du caractère \"Commoditisé\" du pouvoir de fixation des prix et d'une structure de coûts \"Principalement variable\". L'intensité concurrentielle élevée pousse à une différenciation par le prix et le volume. Cela force ces acteurs à opérer avec une faible valeur ajoutée intrinsèque par rapport aux autres étapes de la chaîne. C'est la partie la moins stratégique du marché pour l'investissement. C’est un segment à éviter.", "Le pool de profits se déplace des étapes amont et intermédiaires à faible différenciation vers les étapes aval de service, d'expertise et de maintenance. Les marges sont particulièrement compressées dans la supply chain, et s'étendent considérablement pour l'exploitation et la conformité, grâce à un pouvoir de fixation des prix \"Premium\" et des économies d'échelle. Le modèle d'affaires le mieux positionné est celui d'un intégrateur de solutions spécialisé, verticalement intégré dans les services d'exploitation et de maintenance et offrant une expertise pointue en matière de conformité. Prosero, notre cible, correspond à cette configuration, avec un focus sur le déploiement et la maintenance. Prosero bénéficie des économies d'échelle propres aux services managés.", "Ce quadrant M&A nous aide à visualiser les dynamiques de fusion-acquisition entre les acteurs du marché. Il catégorise les entreprises en fonction de leur capacité d'acquisition et de leur posture stratégique. Cela permet d'identifier les prédateurs, les aspirants, les géants et les cibles potentielles. Les flèches entre les entreprises ne sont pas des acquisitions actées, mais des scénarios hypothétiques basés sur leurs forces et faiblesses. Prosero est positionné comme un prédateur, ce qui est cohérent avec sa stratégie d'expansion. C'est une carte qui permet de comprendre les stratégies d'intégration. Elle est cruciale pour anticiper les mouvements de consolidation.", "Voici les scénarios stratégiques qu'une analyse approfondie a permis d'identifier. Ce ne sont pas des faits, mais des pistes de réflexion basées sur des signaux faibles et les positionnements des entreprises. Nous classons ces scénarios en deux types : les lacunes stratégiques, qui représentent des opportunités manquées ou des besoins de consolidation, et les alliances inévitables, qui sont des partenariats à forte synergie. Chaque scénario est détaillé avec son rationale, ses synergies potentielles, un deal breaker et une évaluation de confiance. Ces scénarios sont cruciaux pour anticiper les évolutions du marché. Ce sont des hypothèses éclairées uniquement par l'IA.", "Le premier scénario de lacune stratégique concerne Prosero et Goldfunk. Prosero cherche à se développer au-delà des pays nordiques, et l'acquisition de Goldfunk, un acteur allemand, est une voie stratégique pour pénétrer ce marché. L'intégration industrielle de Goldfunk est prévue pour 2026. L'objectif est d'appliquer le modèle décentralisé de Prosero sur le marché allemand de la sécurité périmétrique, qui est en forte croissance. Les synergies incluent des réductions de coûts et des opportunités de revenus additionnels grâce à la solution Prosero Outdoor Surveillance. Le risque majeur est la transition managériale chez Prosero. La confiance est à 75/100, ce qui la rend crédible. C'est une opportunité à ne pas manquer pour Prosero.", "Un autre scénario de lacune stratégique est l'acquisition de CERTEGO par ASSA ABLOY. ASSA ABLOY cherche à sécuriser des canaux de distribution exclusifs pour ses systèmes mécatroniques complexes, et CERTEGO, avec sa forte couverture nordique, est une cible idéale. ASSA ABLOY, avec une capacité d'acquisition de 2 milliards USD, peut facilement absorber CERTEGO (100 millions USD). Cette opération créerait un canal de déploiement exclusif pour les solutions brevetées d'ASSA ABLOY. Pour CERTEGO, cela offrirait un accès direct à un catalogue d'innovation mondial. Le risque réside dans la complexité de l'intégration technologique d'un réseau aussi vaste. La confiance est à 60/100. C'est une acquisition stratégique importante pour verrouiller le marché.", "Le dernier scénario de lacune stratégique envisage la consolidation majeure du secteur de la télésurveillance par Verisure, qui pourrait acquérir son concurrent Sector Alarm. Verisure, après son IPO à 3,2 milliards d'euros en 2025, a les ressources pour absorber Sector Alarm, qui opère sur le même segment. L'objectif est d'éliminer une concurrence frontale en Europe du Nord et de mutualiser les coûts d'exploitation des centres de contrôle. Les synergies seraient significatives en termes de réduction des coûts via la rationalisation des centres de télésurveillance et l'amélioration des algorithmes IA. Le principal écueil est le contrôle antitrust de la part des régulateurs. La confiance est à 50/100. Cela représente une opportunité de consolidation majeure.", "Le premier scénario d'alliance inévitable est la convergence opérationnelle entre Securitas et Prosero. Securitas cherche à déléguer les interventions physiques d'installation et d'entretien pour se recentrer sur la télésurveillance de haute technologie. Prosero, avec son vaste réseau d'intégration multi-sites en Europe du Nord, est le partenaire idéal pour cette sous-traitance. Cette alliance permettrait à Securitas de réduire ses coûts fixes d'exploitation et à Prosero de saturer la capacité opérationnelle de son réseau avec des flux de maintenance prévisibles. Le risque réside dans le maintien de la qualité de service d'intervention. La confiance est à 70/100. C'est une alliance gagnant-gagnant pour les deux parties.", "Le deuxième scénario d'alliance inévitable est la synergie IoT et vidéosurveillance IA entre Prosero et Axis Communications. Prosero souhaite intégrer les algorithmes d'analyse d'images par IA d'Axis dans sa plateforme KameraPortalen pour améliorer son offre de télésurveillance et fidéliser ses clients. Cet accord offre à Axis un canal de diffusion de masse pour ses technologies auprès des 100 000 clients de Prosero. Le risque majeur est l'alignement des protocoles de cybersécurité entre les deux entités. La confiance est à 70/100, ce qui la rend crédible. Cette alliance renforce la valeur ajoutée de Prosero et offre de nouvelles opportunités de monétisation pour Axis. C'est un partenariat technologique stratégique. Il conforte l'excellence de l'offre.", "Le dernier scénario d'alliance inévitable concerne la modernisation des équipements de détection résidentiels via une alliance technologique entre Sector Alarm et Ajax Systems. Sector Alarm, qui manque de technologies propriétaires, vise à intégrer les alarmes radio bidirectionnelles brevetées d'Ajax Systems pour moderniser ses systèmes de télésurveillance. Ajax Systems, une forteresse technologique, y voit un déploiement massif de ses produits via le réseau de Sector Alarm. Le risque stratégique principal porte sur les complications géopolitiques d'approvisionnement des composants d'Ajax. La confiance est à 55/100, ce qui la rend possible. Cette alliance vise à améliorer la fiabilité technique de détection. C'est un moyen de contrer les offres de Verisure en termes de technologie.", "Cette diapositive est une synthèse des synergies entre les acteurs, classées par ordre décroissant de synergie totale. Les scenarios sont groupés par type:  lacunes stratégiques ou alliances inévitables. Cette table met en lumière la nature des synergies financières, qu'elles soient en réduction de coûts (Hard Cost) ou en augmentation de revenus (Soft Revenue).  Elle identifie les acteurs impliqués et leurs rôles dans chaque scénario. Les synergies les plus importantes concernent la consolidation du secteur de la télésurveillance par Verisure et la convergence opérationnelle entre Securitas et Prosero. Cette vue d'ensemble permet de prioriser les opportunités et menaces. C'est un outil essentiel pour la prise de décision stratégique.", "Prosero est le leader en Europe du Nord en sécurité technique, spécialisé dans les solutions sur mesure pour la protection des personnes et des biens. L'entreprise se distingue par son expertise locale combinée à la force d'un grand groupe, ce qui lui permet d'offrir des services de conception, déploiement, et gestion réglementaire pour les parcs immobiliers multi-sites. Prosero s'adresse principalement à une clientèle B2B, incluant propriétaires immobiliers et gestionnaires d'infrastructures. Son chiffre d'affaires dépasse les 4 800 MSEK consolidés annuellement, avec plus de 180 sites en Europe du Nord et 100 000 clients récurrents. C'est une entreprise robuste, avec un modèle prouvé.", "Les produits et services de Prosero sont diversifiés et complets. La solution principale est un système de sécurité intégré, incluant verrouillage, alarmes et surveillance. L'entreprise propose une large gamme de fonctionnalités, allant des systèmes de verrouillage mécanique et électromécanique au contrôle d'accès, en passant par la vidéosurveillance et la télésurveillance. Prosero développe également des capacités techniques propriétaires, comme le Prosero Outdoor Surveillance avec analyse vidéo IA, l'application KameraPortalen, et l'outil CEUPP pour les certifications. Ces solutions répondent à des cas d'utilisation variés, comme la sécurisation de chantiers ou la gestion des accès immobiliers. Le levier technologie est important. Ce sont des actifs différenciants.", "Le modèle économique de Prosero est basé sur une combinaison de services, d'installation et d'abonnements. L'entreprise génère des revenus à travers la vente d'équipements, des contrats de maintenance récurrents et des abonnements à ses centres d'alarme et solutions logicielles. Les solutions sont sur mesure, avec des devis personnalisés intégrant la planification, l'installation et le service après-vente. Les tarifs sont sur demande selon les besoins spécifiques du client. Ce modèle assure une bonne visibilité sur les revenus et une forte récurrence. La vente d'équipement contribue au chiffre d’affaires, mais les abonnements sont le cœur de la trésorerie. C'est un modèle hybride services/produits.", "L'équipe de Prosero est un pilier de son succès, avec plus de 2 000 collaborateurs qualifiés répartis sur 180 sites. La culture d'entreprise est marquée par un modèle décentralisé, favorisant l'autonomie et le leadership local des filiales, tout en mutualisant les ressources du groupe. La direction inclut Anders Uddfors, ancien CEO, et Henrik Norrbom, le nouveau CEO à partir de mai 2026, assurant une gouvernance structurée. Bien que la répartition exacte des effectifs par fonction ne soit pas publiquement détaillée, l'entreprise se distingue par son expertise technique et une forte légitimité technique. La décentralisation est leur marque de fabrique. C'est un modèle qui a été prouvé efficace avec des acquisitions.", "Prosero est classée comme \"Analyse à poursuivre - Signal très fort\" avec un score de pré-sélection de 86/100. Cette évaluation repose sur l'excellence de l'équipe (85/100), l'opportunité de marché (85/100), l'innovation produit (75/100), le modèle d'affaires (90/100) et la traction & croissance (95/100). Le marché de l'intégration et des services de maintenance de sécurité physique pour les parcs multi-sites est fragmenté, et Prosero unifie ces services via un réseau décentralisé, ce qui est une solution efficace. La stratégie inorganique agressive cible les leaders locaux. C'est un score élevé qui indique une très forte opportunité. C'est un signe encourageant.", "La force de Prosero réside dans son modèle décentralisé unique en Europe du Nord, qui préserve l'autonomie locale des filiales tout en mutualisant les ressources. L'entreprise dispose d'un maillage géographique exceptionnel avec plus de 180 implantations et 2 000 collaborateurs, servant plus de 100 000 clients récurrents, ce qui assure des revenus prévisibles. Sa position stratégique dans l'exploitation, la surveillance et la maintenance entraîne des marges élevées et des coûts de commutation importants. La stratégie d'acquisitions ciblées renforce son leadership sans diluer le contrôle. C'est un actif fort qui génère des revenus stables. La décentralisation est une force pour la rétention des talents.", "Cependant, Prosero présente quelques faiblesses. L'absence de levées de fonds publiques récentes pourrait limiter l'expansion accélérée hors des pays nordiques, obligeant l'entreprise à dépendre de sa propre génération de flux de trésorerie. Les marges de l'étape de déploiement et intégration restent modérées, confrontées à une forte concurrence. L'entreprise dépend fortement du savoir-faire local, la rendant vulnérable à la pénurie de techniciens qualifiés. La transition de direction en mai 2026 introduit un risque temporaire de perturbation. Enfin, le modèle décentralisé peut ralentir le déploiement de technologies communes à l'échelle du groupe. Il faut être vigilant sur ces points.", "Les opportunités pour Prosero sont nombreuses. La croissance du marché européen de la sécurité périmétrique, avec un TCAC de 9-10 %, alimente une demande constante pour ses services. Des réglementations comme NIS2 et ISO 27001 intensifient le besoin d'audits et de services managés récurrents. L'intégration verticale dans l'étape 5 permet de capturer des marges supérieures et de fidéliser les clients. L'expansion continue en Allemagne, via des acquisitions comme Goldfunk, ouvre un marché plus vaste et rentable. Enfin, le développement de solutions logicielles SaaS (KameraPortalen, CEUPP) offre un levier additionnel de revenus récurrents à forte marge. Ces leviers sont clés pour la croissance future. L'Allemagne est un marché stratégique.", "Prosero fait face à des menaces significatives. Une compression des budgets immobiliers en cas de ralentissement économique pourrait réduire les contrats d'installation et de maintenance. Les grands intégrateurs systèmes et les opérateurs SOC généralistes peuvent éroder les prix sur les projets de déploiement multi-sites. L'évolution rapide des technologies, notamment l'IA et l'edge computing, exige des investissements continus que Prosero pourrait avoir du mal à financer sans levées de fonds. Une défaillance de fournisseur critique ou un concurrent mieux capitalisé reproduisant le modèle décentralisé pourraient également freiner sa croissance. La concurrence des géants est une menace constante. Il faut suivre ces points de près.", "Pour se défendre, le modèle décentralisé de Prosero crée un coût de commutation élevé pour les clients multi-sites. Le maintien d'une autonomie locale suffisante permet de préserver la qualité et la réactivité, éléments clés des contrats de maintenance. En offensive, Prosero doit poursuivre son rythme d'acquisition de leaders locaux, tout en renforçant son offre de maintenance pour convertir chaque déploiement en contrat récurrent, à forte marge. Cette combinaison de croissance inorganique et de revenus récurrents est le chemin le plus sûr vers la domination du marché. La menace fatale serait une combinaison de budgets immobiliers réduits et une intégration réussie par un concurrent. La pénurie de techniciens est un goulot d'étranglement qui doit être adressé par des programmes de formation. Le modèle décentralisé est le point fort de la stratégie. La maintenance est la clé.", "Notre conviction est que Prosero incarne parfaitement l'angle \"Signal Qualité Acquisition — M&A et Entreprises Rentables\". C'est une entreprise autofinancée, à EBITDA positif, avec une base client à forte rétention et des barrières à l'entrée non réplicables. Le marché est en consolidation active, fragmenté par des PME locales, ce qui offre à Prosero une rente d'agrégation. Le timing est idéal avec la directive NIS2 et la transition vers le cloud. Prosero, avec ses 180 sites et 100 000 clients récurrents, a une densité opérationnelle inégalable. Le fondateur, Anders Uddfors, a construit un modèle de rétention des talents unique, ce qui est un actif organisationnel précieux. Le modèle de build-up décentralisé est le différenciateur clé. Le droit d'accès physique aux infrastructures de ses clients est un facteur de rétention. Le seul risque est la corrélation revenus-effectifs techniques. Le verdict est un CALL fort.", "La valorisation de l'entreprise s'appuie sur un multiple de revenu, car Prosero est dans un profil de forte croissance. Nous estimons une valeur d'entrée de 34,9 Md€ aujourd'hui, basée sur un ARR de 4,36 Md€ et un multiple de 8x. Cependant, le MOIC de 1.51x et l'IRR de 8.6% se situent en dessous de nos seuils fixés à 5.0x et 35% respectivement. Cette sous-performance, malgré une valorisation élevée, indique que le prix d'entrée est trop élevé par rapport à nos objectifs de rendement. Il y a une nette tension entre l'évaluation de marché et nos critères d'investissement. Des ajustements sont nécessaires pour aligner le deal avec nos hurdles. Nous devrons revoir la croissance ou renégocier le prix d'entrée. C'est un deal qui ne passe pas les hurdles actuels.", "Pour conclure, Prosero représente une opportunité rare, alliant la récurrence financière d'un opérateur d'infrastructure critique à la granularité de risque d'un portefeuille de 100 000 clients indépendants. Son modèle de build-up décentralisé, où les fondateurs acquis conservent une participation au capital du groupe, crée un alignement d'intérêts qui favorise la rétention des dirigeants et assure une croissance stable. La régulation NIS2 et le mouvement des systèmes vers le cloud amplifie la demande, validant la pertinence de l'offre de Prosero. La valeur de Prosero ne réside pas seulement dans sa technologie, mais dans son droit d'accès physique récurrent aux infrastructures de ses clients, ce qui en fait un partenaire indispensable et difficilement remplaçable. Avant de prendre une décision, nous devons approfondir la due diligence sur trois points : l'érosion des marges nettes sur les acquisitions de plus de 3 ans, la flexibilité contractuelle face à l'inflation des coûts, et la corrélation entre les techniciens locaux et la satisfaction client. Ce sont les éléments clés pour valider notre thèse. Merci pour votre attention."]</script>
+
+<deck-stage>
+
+<section class="cover" data-screen-label="01 Couverture">
+  <div class="cover-top">
+    <div class="cover-mark">Mémo d'investissement confidentiel</div>
+    <div class="cover-tag">sforbt · M&amp;A Strategic &nbsp;·&nbsp; investment memo<br>Janvier 2025</div>
+  </div>
+  <div class="cover-mid">
+    <div class="cover-eyebrow">Cible — Sécurité technique, alarmes et contrôle d&#39;accès</div>
+    <h1>Prosero</h1>
+    <div class="cover-sub">Réseau leader en Sécurité Technique Intégrée en Europe du Nord</div>
+  </div>
+  <dl class="cover-bot">
+    <div><dt>Siège</dt><dd>Suède (Plus de 180 sites en Europe du Nord)</dd></div>
+    <div><dt>Stade</dt><dd>PME rentable</dd></div>
+    <div><dt>Score</dt><dd>86&thinsp;/&thinsp;100</dd></div>
+    <div><dt>Verdict</dt><dd>Conviction</dd></div>
+  </dl>
+</section>
+
+<section data-screen-label="02 Sommaire">
+  <div class="s-head"><div class="brand">Prosero · Mémo d'investissement</div><div class="meta">Sommaire</div></div>
+  <div class="s-title">Sommaire</div>
+  <div class="s-body" style="margin-top:24px">
+    <div class="three-col" style="gap:80px">
+      <div class="col-block">
+        <h4>I — Marché</h4>
+        <ul><li>Sizing top-down &amp; bottom-up</li><li>Chaîne de valeur</li><li>Tendances et acteurs</li><li>Quadrants concurrence et M&amp;A</li><li>Scénarios stratégiques</li></ul>
+        <h4>II — Société</h4>
+        <ul><li>Proposition de valeur</li><li>Produit et modèle</li><li>Équipe et fondateur</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>III — Évaluation stratégique</h4>
+        <ul><li>Résumé et scores</li><li>Analyse SWOT</li><li>Plan d'action</li></ul>
+        <h4>IV — Thèse sforbt</h4>
+        <ul><li>Synergies — Type C Hybride</li><li>Tableau des synergies</li><li>Deal killers</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>V — Conviction GP</h4>
+        <ul><li>Angle, marché, timing</li><li>Verdict et risk register</li></ul>
+        <h4>VI — Modèle financier</h4>
+        <ul><li>Valorisation triangulée</li><li>P&amp;L et flux de trésorerie</li><li>ROI et verdict quantitatif</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>sforbt · M&amp;A Strategic</span></div><div>02</div></div>
+</section>
+
+<section class="divider" data-screen-label="03 I Marché">
+  <div class="roman">I</div>
+  <div>
+    <div class="div-eyebrow">Première partie</div>
+    <h2>Marché</h2>
+    <div class="div-sub">I — LE MARCHÉ DE LA SÉCURITÉ INTÉGRÉE</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="04 Sizing top-down">
+  <div class="s-head"><div class="brand">Prosero · I — Marché</div><div class="meta">04&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Market sizing — top-down</div>
+  <div class="s-title">Top-down — Opportunité de marché</div>
+  <div class="kpi-row">
+    <div class="kpi"><div class="kpi-label">TAM mondial</div><div class="kpi-value">45,7 Md$</div><div class="kpi-note">Global, en 2024</div></div>
+    <div class="kpi"><div class="kpi-label">SAM Europe</div><div class="kpi-value">21-22 Md$</div><div class="kpi-note">Europe, en 2025</div></div>
+    <div class="kpi"><div class="kpi-label">SOM réaliste</div><div class="kpi-value">34-35 Md$</div><div class="kpi-note">Systèmes mondiaux intégrateurs 2024</div></div>
+    <div class="kpi"><div class="kpi-label">CAGR</div><div class="kpi-value">8,5%</div><div class="kpi-note">Global, 2024-2034</div></div>
+  </div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <h4>Approche top-down (en entonnoir)</h4>
+        <p>Le marché de l'intégration et des services de maintenance de sécurité physique pour les parcs immobiliers multi-sites en Europe du Nord regroupe la conception, le déploiement et la gestion réglementaire d'installations complexes de contrôle d'accès, d'alarmes intrusion, de télésurveillance et de portes de sécurité. L'industrie souffre actuellement d'une fragmentation structurelle majeure où les grands parcs immobiliers peinent à coordonner une multitude de prestataires locaux indépendants de tailles diverses, sans standardisation de reporting ni de garantie de maintenance unifiée. La valeur économique de cette chaîne de valeur se concentre fortement dans les services d'exploitation continue (surveillance, maintenance préventive et corrective) et dans la gestion de la conformité réglementaire de ces actifs, plutôt que dans la pure fourniture de composants matériels en amont.</p>
+        <p style="font-size:17px;color:var(--muted)">Sources : reportsanddata.com; marketdataforecast.com; market.us</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>04</div></div>
+</section>
+
+<section data-screen-label="05 Sizing bottom-up">
+  <div class="s-head"><div class="brand">Prosero · I — Marché</div><div class="meta">05&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Market sizing — bottom-up &amp; triangulation</div>
+  <div class="s-title">Bottom-up — Thèse de marché</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Approche bottom-up (calculée)</h4>
+        <p>Le secteur de la sécurité technique subit actuellement un bouleversement critique provoqué par l'obligation de conformité réglementaire accrue liée à l'implémentation de la directive cyber-physique NIS2 et la transition d'installations autonomes vers des architectures d'accès IP cloudifiées. Les géants traditionnels de la sécurité, entravés par des structures de coûts lourdes et un modèle de vente directe ultra-hiérarchisé, ne peuvent pas répondre à la demande locale de flexibilité et de proximité requise sans sacrifier leurs processus globaux centralisés et rigides. Pour capter cette opportunité, le vecteur d'attaque de choix consiste à consolider rapidement les leaders techniques indépendants de chaque région en leur offrant une plateforme de consolidation administrative tout en préservant l'autonomie et l'autorité de leur marque de proximité. La fenêtre d'opportunité restera ouverte au cours des trois à cinq prochaines années sous l'impulsion de l'accélération réglementaire de mise aux normes, avant qu'un petit nombre de plateformes de consolidation n'atteigne une taille critique verrouillant l'ensemble des parcs multi-sites d'Europe du Nord.</p>
+        <p style="font-size:17px;color:var(--muted)">Sources : microsoft.com; centraleyezer.io; owlcub.com</p>
+        <h4>Triangulation</h4>
+        <p>La combinaison du marché d'intégration physique très attractif de la sécurité technique, avec une stratégie d'agrégation inorganique efficace, met en évidence la nécessité d'un leadership d'élite avec des compétences en M&A et une discipline d'intégration post-fusion décentralisée pour soutenir la croissance de Prosero.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>05</div></div>
+</section>
+
+<section data-screen-label="06 Chaîne de valeur">
+  <div class="s-head"><div class="brand">Prosero · I — Marché</div><div class="meta">06&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Analyse de la chaîne de valeur</div>
+  <div class="s-title">Analyse de la chaîne de valeur du marché</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <table class="fin">
+          <thead><tr><th style="width:36px">#</th><th>Étape</th><th>Description</th><th class="num">Score</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td><b>R&amp;D ET DÉVELOPPEMENT TECHNOLOGIQUE DE COMPOSANTS</b></td><td>Cette étape consiste à concevoir, développer et fabriquer les composants technologiques fondamentaux (matériels et logiciels embarqués) qui serviront de briques aux systèmes de sécurité intégrée. Il s&#39;agit des capteurs, caméras, contrôleurs d&#39;accès, systèmes de détection d&#39;intrusion, et logiciels qui alimentent ces dispositifs, constituant la fondation technologique pour les solutions en aval.</td><td class="num">6.3/10</td></tr>
+            <tr><td>2</td><td><b>CONCEPTION ARCHITECTURALE ET INGÉNIERIE DES SYSTÈMES</b></td><td>Cette étape cruciale élabore l&#39;architecture globale de la solution de sécurité pour les parcs multi-sites, en intégrant les composants développés en amont et en définissant leurs interactions. Elle inclut la planification technique, la sélection des technologies et la conception des interfaces pour assurer l&#39;interopérabilité et la conformité aux exigences du client.</td><td class="num">6.6/10</td></tr>
+            <tr><td>3</td><td><b>ACQUISITION, LOGISTIQUE ET SÉCURISATION DE LA SUPPLY CHAIN</b></td><td>Cette étape concerne l&#39;approvisionnement des composants matériels et logiciels nécessaires à la solution, ainsi que leur gestion logistique pour les livrer sur les sites multi-sites. Elle inclut également la sécurisation de la chaîne d&#39;approvisionnement pour garantir l&#39;authenticité et l&#39;intégrité des produits, un aspect crucial dans la sécurité technique.</td><td class="num">3.4/10</td></tr>
+            <tr><td>4</td><td><b>DÉPLOIEMENT ET INTÉGRATION MULTI-SITES</b></td><td>Cette étape consiste en l&#39;installation physique, la configuration et l&#39;intégration des équipements et logiciels de sécurité sur les différents sites immobiliers. C&#39;est le moment de la mise en œuvre concrète de l&#39;architecture définie précédemment, avec un besoin de coordination logistique important pour les parcs multi-sites.</td><td class="num">5.6/10</td></tr>
+            <tr><td>5</td><td><b>EXPLOITATION, SURVEILLANCE ET MAINTENANCE PRÉVENTIVE &amp; CORRECTIVE</b></td><td>Cette étape cruciale garantit le fonctionnement continu, la performance et la sécurité des systèmes déployés. Elle comprend la surveillance en temps réel des événements de sécurité, la détection des incidents, la maintenance préventive pour éviter les pannes et la maintenance corrective pour résoudre les problèmes. Pour les parcs multi-sites, cela implique une coordination complexe des interventions.</td><td class="num">6.8/10</td></tr>
+            <tr><td>6</td><td><b>GESTION DE LA CONFORMITÉ, AUDIT ET OPTIMISATION CONTINUE</b></td><td>Cette dernière étape assure que les solutions de sécurité physique intégrée restent conformes aux réglementations et normes en vigueur, qu&#39;elles sont auditées régulièrement pour leur efficacité, et qu&#39;elles évoluent pour faire face aux nouvelles menaces. L&#39;analyse continue et les boucles de rétroaction permettent une amélioration constante de la posture de sécurité sur l&#39;ensemble des sites.</td><td class="num">6.6/10</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-6ddedac333fad407dc248a162b6749d4-z6fug3ce.jpg" alt="Chaîne de valeur"></div>
+        <figcaption>Fig. 06 — Chaîne de valeur de l'orchestration paiements hôtellerie</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>06</div></div>
+</section>
+
+<section data-screen-label="07 Top 3 positions">
+  <div class="s-head"><div class="brand">Prosero · I — Marché</div><div class="meta">07&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Top 3 positions stratégiques</div>
+  <div class="s-title">Top 3 positions stratégiques de la chaîne de valeur du marché</div>
+  <div class="s-body">
+    <div class="three-col">
+      <div class="col-block">
+        <h4>#1 — EXPLOITATION, SURVEILLANCE ET MAINTENANCE PRÉVENTIVE &amp; CORRECTIVE</h4>
+        <div style="font-family:'EB Garamond',serif;font-size:42px;font-weight:500;margin-bottom:12px">6.8/10</div>
+        <p>Cette étape se positionne comme la plus stratégique en raison de son excellent équilibre entre défensibilité (7.0), potentiel de marge (6.5) et croissance (7.0). La criticité des services managés pour la sécurité des actifs des entreprises confère aux acteurs un fort pouvoir de fixation des prix, combiné à des économies d&#39;échelle substantielles grâce à la mutualisation des infrastructures et des équipes. Les investissements initiaux élevés en technologie et personnel, couplés aux coûts de commutation importants pour le client, créent des barrières à l&#39;entrée robustes. La croissance est exponentielle, portée par la complexification des systèmes et le besoin croissant d&#39;externalisation dû à la pénurie de compétences internes.</p>
+      </div>
+      <div class="col-block">
+        <h4>#2 — CONCEPTION ARCHITECTURALE ET INGÉNIERIE DES SYSTÈMES</h4>
+        <div style="font-family:'EB Garamond',serif;font-size:42px;font-weight:500;margin-bottom:12px">6.6/10</div>
+        <p>Cette étape est hautement attractive en raison de son fort potentiel de marge (7.0) et de sa croissance robuste (7.0), malgré une défensibilité (6.0) légèrement inférieure à l&#39;étape 5. La spécificité de l&#39;expertise requise pour la conception architecturale, notamment en convergence OT/IT et en conformité réglementaire (NIS2, ISO 27001), permet aux acteurs de commander des prix premium. La structure de coûts est dominée par les salaires des experts, ce qui, combiné à de faibles coûts variables, assure des marges élevées. La complexification des menaces et des réglementations stimule une demande croissante pour des services de conception spécialisés.</p>
+      </div>
+      <div class="col-block">
+        <h4>#3 — GESTION DE LA CONFORMITÉ, AUDIT ET OPTIMISATION CONTINUE</h4>
+        <div style="font-family:'EB Garamond',serif;font-size:42px;font-weight:500;margin-bottom:12px">6.6/10</div>
+        <p>Cette étape est classée troisième en raison de son potentiel de marge très élevé (7.0) et de sa croissance dynamique (7.0), des facteurs essentiels dans un environnement réglementaire en constante évolution. La complexité inhérente à la gestion de la conformité (RGPD, NIS2, ISO 27001) et la nécessité d&#39;audits spécialisés confèrent aux experts un puissant pouvoir de fixation des prix. La structure de coûts fixe, dominée par la main-d&#39;œuvre qualifiée, assure des marges saines. L&#39;augmentation des exigences réglementaires stimule l&#39;expansion du marché, rendant cette étape indispensable et hautement valorisée par les entreprises soucieuses de leur résilience et de leur réputation.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>07</div></div>
+</section>
+
+<section data-screen-label="08 Tendances">
+  <div class="s-head"><div class="brand">Prosero · I — Marché</div><div class="meta">08&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Tendances de marché</div>
+  <div class="s-title">Market Intelligence - Rupture de la sécurité intégrée multi-sites</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Catalyseur &amp; trajectoire</h4>
+        <p>Le marché est en pleine mutation structurelle, propulsé par la convergence des technologies opérationnelles (OT) et de l'information (IT), la digitalisation croissante des infrastructures physiques, et l'impératif de conformité réglementaire, notamment la directive NIS2 (lien). Cette évolution est accentuée par l'augmentation des menaces cyber-physiques et le besoin de gestion unifiée via des solutions telles que le Physical Security Information Management (PSIM). Cette profonde transformation se reflète dans une croissance robuste : le marché global des services de sécurité intégrée est évalué à 45,7 milliards USD en 2024 et prévoit d'atteindre 102,3 milliards USD d'ici 2034, affichant un TCAC d'environ 8,5 % (lien). Le marché européen des systèmes de sécurité périmétrique, une composante clé, suit une trajectoire similaire avec un TCAC estimé entre 9 % et 10 % pour atteindre environ 50 milliards USD entre 2026 et 2034 (lien). Ces chiffres révèlent un changement rapide et à grande échelle vers des solutions intégrées et des services managés.</p>
+        <h4>Chaîne de valeur &amp; points de contrôle</h4>
+        <p>L'étape « Exploitation, Surveillance et Maintenance Préventive & Corrective » est devenue le point de contrôle stratégique dans cette chaîne de valeur émergente, avec le score stratégique le plus élevé à 6.8. Cela s'explique par la criticité et la complexité de la supervision et de la gestion continue des systèmes de sécurité intégrés sur des parcs immobiliers multi-sites. Les investissements requis pour établir un Security Operations Center (SOC) et les coûts de commutation élevés pour les clients qui dépendent de ces services créent des barrières à l'entrée substantielles et une forte rétention client. La donnée révèle que cette étape bénéficie d'un pouvoir de fixation des prix « Premium » et d'économies d'échelle « Fortes », lui conférant un potentiel de marge élevé (score de 6.5). La demande pour les services de surveillance et de maintenance est directement liée à la croissance du marché des solutions intégrées, assurant une croissance forte pour cette étape. La nature récurrente de ces services génère des revenus stables et prévisibles, ce qui lui confère un levier financier considérable sur les étapes amont (R&D et Développement Technologique de Composants, Conception Architecturale et Ingénierie des Systèmes, Acquisition, Logistique et Sécurisation de la Supply Chain) et aval (Déploiement et Intégration Multi-Sites, Gestion de la Conformité, Audit et Optimisation Continue), les rendant dépendantes de la bonne exécution et de la valeur ajoutée de la supervision continue.</p>
+      </div>
+      <div class="col-block">
+        <h4>Déplacement concurrentiel</h4>
+        <p>Le type d'acteur « Distributeurs B2B de matériel de sécurité » et « Grossistes/revendeurs de logiciels de sécurité », ainsi que les « Sociétés de logistique spécialisées », qui opèrent principalement à l'étape « Acquisition, Logistique et Sécurisation de la Supply Chain », se trouvent en position défavorable. Cette étape présente un potentiel de marge « Faible » (score de 2.0) et une défensibilité « Faible » (score de 3.0), principalement en raison du caractère « Commoditisé » du pouvoir de fixation des prix et d'une structure de coûts « Principalement variable ». L'intensité concurrentielle élevée dans ce segment pousse à une différenciation par le prix et le volume, entraînant une forte pression sur les marges. Bien que des économies d'échelle importantes puissent être obtenues par les achats en gros et l'optimisation logistique, cela ne suffit pas à compenser la pression à la baisse sur les prix des composants et des services de distribution. Cela force ces acteurs à opérer avec une faible valeur ajoutée intrinsèque par rapport aux autres étapes de la chaîne.</p>
+        <h4>Économie unitaire &amp; captation</h4>
+        <p>Le pool de profits se déplace des étapes amont et intermédiaires à faible différenciation vers les étapes aval de service, d'expertise et de maintenance. Les marges sont particulièrement compressées à l'étape « Acquisition, Logistique et Sécurisation de la Supply Chain » en raison de son caractère commoditisé. En revanche, les marges s'étendent considérablement pour les étapes « Exploitation, Surveillance et Maintenance Préventive & Corrective » et « Gestion de la Conformité, Audit et Optimisation Continue » (score de marge de 6.5 et 7.0 respectivement), grâce à un pouvoir de fixation des prix « Premium », des structures de coûts plus fixes et des économies d'échelle substantielles par la mutualisation des ressources. Le modèle d'affaires le mieux positionné pour capturer cette valeur émergente est celui d'un intégrateur de solutions spécialisé, verticalement intégré dans les services d'exploitation et de maintenance et offrant une expertise pointue en matière de conformité. Prosero, la startup cible, avec son focus sur l'étape « Déploiement et Intégration Multi-Sites » (score stratégique 5.6) et son extension dans l'étape à forte valeur d'« Exploitation, Surveillance et Maintenance Préventive & Corrective » (score stratégique 6.8), correspond à cette configuration. Sa capacité à offrir des services de maintenance clés en main pour des parcs immobiliers multi-sites lui permet de fidéliser une clientèle avec des coûts de commutation élevés, de générer des revenus récurrents à marges élevées, et de bénéficier des économies d'échelle propres aux services managés, en synergie avec la croissance des exigences réglementaires et de la complexité technologique.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>08</div></div>
+</section>
+
+<section data-screen-label="09 Acteurs">
+  <div class="s-head"><div class="brand">Prosero · I — Marché</div><div class="meta">09&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Acteurs de la chaîne de valeur</div>
+  <div class="s-title">Acteurs de la chaîne de valeur</div>
+  <div class="s-body">
+    <table class="fin">
+      <thead><tr><th>Étape</th><th>Acteurs principaux</th><th>Position de Prosero</th></tr></thead>
+      <tbody>
+        <tr><td><b>R&amp;D et Développement Technologique de Composants</b></td><td>ASSA ABLOY, Axis Communications, Ajax Systems</td><td>ASSA ABLOY est un groupe mondial coté en bourse, leader dans les solutions d&#39;accès et la sécurité. Axis Communications est une filiale à 100% de Canon Inc., spécialisée dans le développement et la fabrication de composants technologiques fondamentaux pour la sécurité. Ajax Systems est une entreprise privée ukrainienne spécialisée dans le matériel de sécurité, notamment dans le développement technologique de composants.</td></tr>
+        <tr><td><b>Acquisition, Logistique et Sécurisation de la Supply Chain</b></td><td>AddSecure</td><td>AddSecure est une société privée spécialisée dans la fourniture de solutions IoT sécurisées et de connectivité.</td></tr>
+        <tr><td><b>Déploiement et Intégration Multi-Sites</b></td><td>Prosero, CERTEGO, Goldfunk, Sikret, WEO Lås, Svea Säkerhet, ZIPP Systems</td><td>Prosero est un acteur majeur dans le domaine des services de sécurité, spécialisé dans l&#39;intégration technologique et les services de maintenance de sécurité physique pour les parcs immobiliers multi-sites. CERTEGO est un groupe privé nordique spécialisé dans les solutions de sécurité. Goldfunk, Sikret, WEO Lås, Svea Säkerhet et ZIPP Systems sont des micro-entreprises locales.</td></tr>
+        <tr><td><b>Exploitation, Surveillance et Maintenance Préventive &amp; Corrective</b></td><td>Securitas, Verisure, Sector Alarm</td><td>Securitas AB est une entreprise publique internationale spécialisée dans les services de sécurité. Verisure plc est une entreprise publique cotée sur le Nasdaq Stockholm, spécialisée dans les services d&#39;exploitation, de surveillance et de maintenance. Sector Alarm est une entreprise de sécurité privée opérant dans plusieurs pays européens, spécialisée dans l&#39;exploitation, la surveillance et la maintenance.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>09</div></div>
+</section>
+
+<section data-screen-label="10 Magic Quadrant">
+  <div class="s-head"><div class="brand">Prosero · I — Marché</div><div class="meta">10&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Magic Quadrant — concurrence</div>
+  <div class="s-title">Quadrant Magique de la concurrence</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <h4>Leaders</h4><p>Aucune entreprise identifiée pour ce quadrant.</p>
+        <h4>Challengers</h4><p>Aucune entreprise identifiée pour ce quadrant.</p>
+        <h4>Visionnaires</h4><p>Aucune entreprise identifiée pour ce quadrant.</p>
+        <h4>Niche players</h4><p>Aucune entreprise identifiée pour ce quadrant.</p>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-31e9d65b025d73281dea30b9db1e31cd-lkrx4o2w.jpg" alt="Magic Quadrant"></div>
+        <figcaption>Fig. 10 — Magic Quadrant — vision × exécution</figcaption>
+      </figure>
+    </div>
+    <div class="callout" style="margin-top:18px">Le Magic Quadrant classe les entreprises sur deux dimensions : Score de Maturité (0-10) — combinaison du stade de financement, des années d'activité et du montant levé. Score de Différenciation (0-10) — base 5, +3 pour technologie propriétaire, +2 pour spécialisation de niche, +2 pour fonctionnalités uniques, +2 pour partenariats stratégiques ; −2 pour fonctionnalités génériques, −3 pour produit "me-too". Les entreprises sont classées en 4 quadrants selon ces deux scores : Leaders Établis (Maturité >5 et Différenciation >5), Innovateurs Émergents (Maturité ≤5 et Différenciation >5), Produits Commoditisés (Maturité >5 et Différenciation ≤5), Peu Différenciés Précoces (Maturité ≤5 et Différenciation ≤5).</div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>10</div></div>
+</section>
+
+<section data-screen-label="11 M&A Quadrant">
+  <div class="s-head"><div class="brand">Prosero · I — Marché</div><div class="meta">11&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">M&amp;A Quadrant — 4 archétypes</div>
+  <div class="s-title">Quadrant M&amp;A de la concurrence</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <h4>1. Les Prédateurs</h4><p>Prosero, ASSA ABLOY, Securitas, CERTEGO, AddSecure, Verisure</p>
+        <h4>2. Les Aspirants</h4><p>Sector Alarm</p>
+        <h4>3. Les Géants</h4><p>Axis Communications</p>
+        <h4>4. Les Cibles potentielles</h4><p>Ajax Systems, Goldfunk, Sikret, WEO Lås, Svea Säkerhet, ZIPP Systems</p>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-78e8c59930aa4d03aa0ddbded34a3723-njujxhqt.jpg" alt="M&A Quadrant"></div>
+        <figcaption>Fig. 11 — M&amp;A Quadrant — 4 archétypes</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>11</div></div>
+</section>
+
+<section data-screen-label="12 Scénarios stratégiques">
+  <div class="s-head"><div class="brand">Prosero · I — Marché</div><div class="meta">12&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Scénarios stratégiques</div>
+  <div class="s-title">Scénarios stratégiques</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <table class="fin pnl-dense">
+          <thead><tr><th>Scénario</th><th>Acteurs</th><th>Mécanique</th></tr></thead>
+          <tbody>
+            <tr><td><b>Expansion Géographique Ciblée : Acquisition Industrielle de Goldfunk par Prosero pour Pénétrer le Marché Allemand</b></td><td>Prosero, Goldfunk</td><td> Acquisition — Prosero est désigné comme une acquisition stratégique planifiée pour 2026. Priorité moyenne, horizon moyen-terme. Confiance 75/100.</td></tr>
+            <tr><td><b>Verrouillage de la Distribution Nordique : ASSA ABLOY Envisage l&#39;Acquisition Pivot du Réseau CERTEGO</b></td><td>ASSA ABLOY, CERTEGO</td><td> Acquisition — CERTEGO figure explicitement dans la liste des opportunités d&#39;acquisition d&#39;ASSA ABLOY. Priorité haute, horizon moyen-terme. Confiance 60/100.</td></tr>
+            <tr><td><b>Consolidation Majeure du Secteur de la Télésurveillance : Verisure Envisage d&#39;Acquérir son Concurrent Sector Alarm</b></td><td>Verisure, Sector Alarm</td><td> Acquisition — Sector Alarm est explicitement documenté comme l&#39;opportunité d&#39;acquisition prioritaire de Verisure. Priorité haute, horizon court-terme. Confiance 50/100.</td></tr>
+            <tr><td><b>Convergence de l&#39;Exploitation et du Déploiement : Alliance Opérationnelle Nordique entre Securitas et Prosero</b></td><td>Securitas, Prosero</td><td> Alliance — Les données d&#39;opportunités de Securitas proposent formellement d&#39;établir une alliance avec Prosero. Priorité haute, horizon moyen-terme. Confiance 70/100.</td></tr>
+            <tr><td><b>Synergie IoT et Vidéosurveillance IA : Alliance Technologique Majeure entre Prosero et Axis Communications</b></td><td>Prosero, Axis Communications</td><td> Alliance — L&#39;intégration d&#39;Axis Communications au sein de la plateforme KameraPortalen est expressément inscrite comme une priorité d&#39;alliance stratégique dans le plan de Prosero. Priorité moyenne, horizon moyen-terme. Confiance 70/100.</td></tr>
+            <tr><td><b>Modernisation des Équipements de Détection Résidentiels : Alliance d&#39;Intégration Technologique entre Sector Alarm et Ajax Systems</b></td><td>Sector Alarm, Ajax Systems</td><td> Alliance — Les deux acteurs affichent de manière concordante un projet de partenariat d&#39;intégration exclusif en France et en Scandinavie. Priorité moyenne, horizon moyen-terme. Confiance 55/100.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-0f8ec0806422e650317cd6c505a5191a-bxie7cat.jpg" alt="Scénarios stratégiques"></div>
+        <figcaption>Fig. 12 — Scénarios stratégiques M&amp;A</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>12</div></div>
+</section>
+
+<section data-screen-label="13 Synergies acteurs">
+  <div class="s-head"><div class="brand">Prosero · I — Marché</div><div class="meta">13&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Synergies entre les acteurs — synthèse M&amp;A</div>
+  <div class="s-title">Synergies entre les acteurs</div>
+  <div class="s-body">
+    <table class="fin" style="margin-bottom:24px">
+      <thead><tr><th style="width:32%">Scénario</th><th>Acteurs</th><th class="num">Revenus soft</th><th class="num">Coûts évités</th><th class="num">Synergie totale</th></tr></thead>
+      <tbody>
+        <tr><td>Consolidation Majeure du Secteur de la Télésurveillance : Verisure Envisage d&#39;Acquérir son Concurrent Sector Alarm</td><td>Verisure, Sector Alarm</td><td class="num">0</td><td class="num">45000000</td><td class="num"><b>45000000</b></td></tr>
+        <tr><td>Convergence de l&#39;Exploitation et du Déploiement : Alliance Opérationnelle Nordique entre Securitas et Prosero</td><td>Securitas, Prosero</td><td class="num">25000000</td><td class="num">0</td><td class="num"><b>25000000</b></td></tr>
+        <tr><td>Verrouillage de la Distribution Nordique : ASSA ABLOY Envisage l&#39;Acquisition Pivot du Réseau CERTEGO</td><td>ASSA ABLOY, CERTEGO</td><td class="num">0</td><td class="num">12000000</td><td class="num"><b>12000000</b></td></tr>
+        <tr><td>Synergie IoT et Vidéosurveillance IA : Alliance Technologique Majeure entre Prosero et Axis Communications</td><td>Prosero, Axis Communications</td><td class="num">5000000</td><td class="num">0</td><td class="num"><b>5000000</b></td></tr>
+        <tr><td>Modernisation des Équipements de Détection Résidentiels : Alliance d&#39;Intégration Technologique entre Sector Alarm et Ajax Systems</td><td>Sector Alarm, Ajax Systems</td><td class="num">2000000</td><td class="num">0</td><td class="num"><b>2000000</b></td></tr>
+        <tr><td>Expansion Géographique Ciblée : Acquisition Industrielle de Goldfunk par Prosero pour Pénétrer le Marché Allemand</td><td>Prosero, Goldfunk</td><td class="num">0</td><td class="num">1000000</td><td class="num"><b>1000000</b></td></tr>
+      </tbody>
+    </table>
+    <div class="callout"><b>Lecture.</b> Cette table des synergies catégorise les scénarios par groupe stratégique (Lacunes Stratégiques, Alliances Inévitables, etc.) et met en évidence la nature des synergies financières (Soft Revenue, Hard Cost) ainsi que les acteurs impliqués et leurs rôles. Les scénarios sont classés par ordre décroissant de synergie totale, ce qui permet d'identifier rapidement les opportunités ou menaces les plus significatives en termes de valeur financière. Le diagramme visuel ségrège les acteurs du marché en acquéreurs potentiels ou en cibles potentielles en se basant sur les scénarios stratégiques analysés. Scénarios impliquant Prosero: Prosero cherche à reproduire son modèle décentralisé hors des pays nordiques, avec Goldfunk comme acquisition stratégique pour le marché allemand, soulignant une lacune dans sa présence géographique actuelle. Prosero vise à intégrer les algorithmes d'analyse d'images par IA d'Axis dans sa plateforme KameraPortalen pour améliorer l'offre de télésurveillance et augmenter la rétention client, tandis qu'Axis trouve un canal de diffusion pour ses technologies. Securitas cherche à déléguer les interventions physiques d'installation et d'entretien à Prosero pour recentrer son modèle sur la télésurveillance de haute technologie, tandis que Prosero bénéficie d'un volume d'affaires additionnel récurrent.</div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>I — Marché</span></div><div>13</div></div>
+</section>
+
+<section class="divider" data-screen-label="14 II Société">
+  <div class="roman">II</div>
+  <div>
+    <div class="div-eyebrow">Deuxième partie</div>
+    <h2>Société</h2>
+    <div class="div-sub">II — L&#39;ANALYSE DE PROSERO</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="15 Proposition de valeur">
+  <div class="s-head"><div class="brand">Prosero · II — Société</div><div class="meta">15&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Proposition de valeur</div>
+  <div class="s-title">Proposition de valeur</div>
+  <div class="s-body">
+    <p class="lead">Prosero est le leader en Europe du Nord en sécurité technique, offrant des solutions sur mesure pour protéger les personnes et les biens grâce à une expertise locale alliée à la force d'un grand groupe.</p>
+    <div class="two-col" style="margin-top:16px">
+      <div class="col-block">
+        <h4>Profil client idéal (ICP)</h4>
+        <ul><li>Propriétaires immobiliers</li><li>entreprises de construction</li><li>gestionnaires d&#39;infrastructures</li><li>services publics</li><li>secteurs nécessitant une surveillance périmétrique (écoles, parkings)</li></ul>
+        <h4>Modèle</h4>
+        <p>B2B prioritairement. Les services s'adressent aux organisations de toutes tailles avec un accent sur les sites industriels et commerciaux.</p>
+      </div>
+      <div class="col-block">
+        <h4>Industrie</h4>
+        <p>Sécurité technique, alarmes et contrôle d'accès.</p>
+        <h4>Clients clés</h4>
+        <ul><li>Plus de 100 000 clients récurrents chaque année. Mention de collaboration avec OpenUp pour le développement d&#39;outils internes.</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>15</div></div>
+</section>
+
+<section data-screen-label="16 Produit">
+  <div class="s-head"><div class="brand">Prosero · II — Société</div><div class="meta">16&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Produit</div>
+  <div class="s-title">Produits et services</div>
+  <div class="s-body">
+    <p class="lead">Systèmes de sécurité complets et intégrés incluant le verrouillage, les alarmes et la surveillance.</p>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Capacités produit</h4>
+        <ul><li>Systèmes de verrouillage mécanique et électromécanique</li><li>Contrôle d'accès</li><li>Portes, barrières et portails</li><li>Alarmes d'intrusion, d'incendie et personnelles</li><li>Surveillance par caméra</li><li>Télésurveillance</li><li>Protection contre l'incendie et évacuation</li><li>Formations</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>Capacités techniques</h4>
+        <ul><li>Prosero Outdoor Surveillance (système portable sans fil avec analyse vidéo IA)</li><li>Application KameraPortalen</li><li>Outil CEUPP (système web et mobile pour le marquage CE via QR Codes)</li><li>Systèmes hébergés et intégrés</li></ul>
+        <h4>Cas d'usage</h4>
+        <ul><li>Surveillance de chantiers de construction</li><li>sécurisation des établissements scolaires</li><li>gestion des accès de propriétés immobilières</li><li>conformité réglementaire pour l'automatisation des entrées</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>16</div></div>
+</section>
+
+<section data-screen-label="17 Modèle économique">
+  <div class="s-head"><div class="brand">Prosero · II — Société</div><div class="meta">17&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Modèle économique</div>
+  <div class="s-title">Modèle économique</div>
+  <div class="s-body">
+    <p class="lead">Basé sur le service, l'installation et l'abonnement (SaaS pour les outils logiciels et abonnement pour la télésurveillance).</p>
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">Vente d&#39;équipements de sécurité</div><div class="kpi-value">n.d.</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">Contrats de maintenance</div><div class="kpi-value">n.d.</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">Abonnements aux centres d&#39;alarme</div><div class="kpi-value">n.d.</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">Vente de solutions d&#39;innovation comme Prosero Outdoor Surveillance et l&#39;outil CEUPP</div><div class="kpi-value">n.d.</div><div class="kpi-note"></div></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Flux de revenus</h4>
+        <ul><li>Vente d'équipements de sécurité</li><li>Contrats de maintenance</li><li>Abonnements aux centres d'alarme</li><li>Vente de solutions d'innovation comme Prosero Outdoor Surveillance et l'outil CEUPP. Solutions sur mesure via devis personnalisé.</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>Caractéristiques des plans</h4>
+        <ul><li>Solutions sur mesure via devis personnalisé. Inclut la planification de projet, l'installation et le service après-vente.</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>17</div></div>
+</section>
+
+<section data-screen-label="18 Équipe">
+  <div class="s-head"><div class="brand">Prosero · II — Société</div><div class="meta">18&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Équipe</div>
+  <div class="s-title">Équipe et Culture</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Direction</h4>
+        <dl class="dl-grid">
+          <dt>Ancien CEO</dt><dd>Anders Uddfors</dd>
+          <dt>Nouveau CEO à partir de mai 2026</dt><dd>Henrik Norrbom</dd>
+        </dl>
+      </div>
+      <div class="col-block">
+        <h4>Effectifs estimés</h4>
+        <table class="fin">
+          <tbody>
+            <tr class="total"><td>Total de 2 000+ employés</td><td class="num">2000</td></tr>
+            <tr ><td>Product &amp; Engineering</td><td class="num">Élevée via les branches locales comme OpenUp</td></tr>
+            <tr ><td>Marketing</td><td class="num">Inconnu</td></tr>
+            <tr ><td>Sales</td><td class="num">Inconnu</td></tr>
+            <tr ><td>Support &amp; IT</td><td class="num">Inconnu</td></tr>
+            <tr ><td>General &amp; Admin (G&amp;A)</td><td class="num">Structure de groupe Prosero AB</td></tr>
+          </tbody>
+        </table>
+<p style="font-size:17px;color:var(--muted);margin-top:14px">Modèle décentralisé axé sur les branches locales, l&#39;innovation collaborative pour résoudre les problèmes de terrain et une vision de contribution à une société plus sûre.</p>      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>18</div></div>
+</section>
+
+<section data-screen-label="19 Fondateur">
+  <div class="s-head"><div class="brand">Prosero · II — Société</div><div class="meta">19&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Fondateur — Anders Uddfors</div>
+  <div class="s-title">Ancien CEO</div>
+  <div class="s-body">
+    <p class="lead">Il a dirigé Prosero avec brio durant sa phase d'expansion rapide de décembre 2021 à mai 2026, s'appuyant sur une connaissance intime de la dynamique d'intégration locale en Europe du Nord.</p>
+    <div class="two-col" style="margin-top:8px">
+      <div class="col-block">
+        <h4>Parcours</h4>
+        <dl class="dl-grid">
+          <dt>Décembre 2021 à Mai 2026</dt><dd>Direction de Prosero, expansion rapide et succès des acquisitions.</dd>
+        </dl>
+      </div>
+      <div class="col-block">
+        <h4>Founder DNA &amp; assessment</h4>
+        <table class="fin">
+          <tbody>
+            <tr ><td>Grit</td><td class="num">8&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Execution</td><td class="num">9&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Discipline</td><td class="num">8&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Vision &amp; Purpose</td><td class="num">7&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Self-Belief</td><td class="num">7&thinsp;/&thinsp;100</td></tr>
+            <tr ><td>Leadership</td><td class="num">9&thinsp;/&thinsp;100</td></tr>
+            <tr class="total"><td>total</td><td class="num">48&thinsp;/&thinsp;100</td></tr>
+          </tbody>
+        </table>
+<p style="font-size:17px;color:var(--muted);margin-top:14px"><b>Point aveugle.</b> La transition managériale de mai 2026 vers Henrik Norrbom, ancien opérationnel interne au groupe, limite le risque de rupture : il maîtrise les critères de rentabilité et les matrices de risque de Prosero. Le risque réel n'est pas la compétence du nouveau CEO, mais la tentation de bureaucratiser le siège au détriment de l'autonomie décisionnelle des filiales, qui est précisément la source du churn structurellement bas.</p>      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>II — Société</span></div><div>19</div></div>
+</section>
+
+<section class="divider" data-screen-label="20 III Évaluation">
+  <div class="roman">III</div>
+  <div>
+    <div class="div-eyebrow">Troisième partie</div>
+    <h2>Évaluation<br>stratégique</h2>
+    <div class="div-sub">III — NOTRE ÉVALUATION</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="21 Résumé entreprise">
+  <div class="s-head"><div class="brand">Prosero · III — Évaluation</div><div class="meta">21&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Résumé de l'entreprise — scores</div>
+  <div class="s-title">Résumé de l&#39;entreprise</div>
+  <div class="s-body">
+    <div class="text-image">
+      <div class="col-block">
+        <div class="kpi-row" style="grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:18px">
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Excellence équipe</div><div class="kpi-value" style="font-size:32px">85</div></div>
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Opportunité marché</div><div class="kpi-value" style="font-size:32px">85</div></div>
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Innovation produit</div><div class="kpi-value" style="font-size:32px">75</div></div>
+          <div class="kpi" style="padding:14px 16px"><div class="kpi-label">Modèle d&#39;affaires</div><div class="kpi-value" style="font-size:32px">90</div></div>
+        </div>
+        <h4>En bref</h4><p style="font-size:18px">Prosero est un réseau leader en Sécurité Technique Intégrée qui permet aux gestionnaires des parcs immobiliers multi-sites de sécuriser et simplifier la maintenance de leurs accès, alarmes et surveillance par une approche décentralisée de leaders locaux unifiés sous une même plateforme de scale.</p>
+        <h4>Problème &amp; solution</h4><p style="font-size:18px">Prosero unifie les services de verrouillage électromécanique, les systèmes d'alarme et la surveillance par caméras IA à travers un réseau décentralisé de filiales qualifiées, garantissant une réactivité locale absolue doublée d'outils digitaux centralisés.</p>
+      </div>
+      <figure class="s-figure">
+        <div class="frame"><img src="https://placid-fra.fra1.digitaloceanspaces.com/production/rest-images/9e7podoyeqhi9/int-8150be68e8f2f8ef0d7ed6c506ee1020-b5j1oscn.jpg" alt="Résumé de l'entreprise"></div>
+        <figcaption>Fig. 21 — Synthèse visuelle de l'entreprise</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>III — Évaluation</span></div><div>21</div></div>
+</section>
+
+<section data-screen-label="22 SWOT">
+  <div class="s-head"><div class="brand">Prosero · III — Évaluation</div><div class="meta">22&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Analyse SWOT</div>
+  <div class="s-title">Forces · Faiblesses · Opportunités · Menaces</div>
+  <div class="s-body">
+    <div class="swot">
+      <div class="swot-cell"><h4>Forces</h4><ul><li>Prosero exploite un modèle décentralisé qui conserve le leadership local tout en mutualisant les ressources du groupe pour accélérer l'acquisition de parts de marché.</li><li>L'entreprise dispose de plus de 180 sites et de 2 000 employés, lui conférant une présence physique dense sur tout le nord de l'Europe.</li><li>Plus de 100 000 clients récurrents chaque année assurent une base de revenus prévisibles via les contrats de télésurveillance et de maintenance.</li><li>La position de Prosero dans l'étape « Exploitation, Surveillance et Maintenance » (score stratégique 6,8) génère des marges élevées et des coûts de commutation forts.</li><li>La stratégie d'acquisitions ciblées (Goldfunk, WEO Lås, Sikret) permet d'intégrer rapidement des leaders locaux sans diluer le contrôle.</li></ul></div>
+      <div class="swot-cell"><h4>Faiblesses</h4><ul><li>L'absence de levées de fonds récentes limite la capacité à financer une expansion géographique accélérée par fonds propres.</li><li>Les marges de l'étape « Déploiement et Intégration Multi-Sites » (score 5,6) restent modérées face à une concurrence intense sur les projets d'installation.</li><li>La dépendance au savoir-faire local des équipes rend Prosero vulnérable à la pénurie de techniciens qualifiés.</li><li>La transition de direction prévue en mai 2026 (Henrik Norrbom) crée un risque temporaire de dilution de la culture d'exécution.</li><li>Le modèle décentralisé peut ralentir le déploiement de technologies communes comme Prosero Outdoor Surveillance à l'échelle du groupe.</li></ul></div>
+      <div class="swot-cell"><h4>Opportunités</h4><ul><li>La croissance du marché européen de la sécurité périmétrique (CAGR 9-10 %) alimente la demande pour les services d'intégration et de maintenance de Prosero.</li><li>Les réglementations NIS2 et ISO 27001 augmentent le besoin d'audits et de services managés récurrents chez les propriétaires de parcs immobiliers multi-sites.</li><li>L'intégration verticale dans l'étape 5 permet à Prosero de capturer des marges supérieures tout en fidélisant les clients acquis lors des déploiements.</li><li>L'expansion continue en Allemagne (Goldfunk 2026) ouvre un marché plus large que les seuls pays nordiques.</li><li>Le développement de solutions logicielles SaaS (KameraPortalen, CEUPP) offre un levier additionnel de revenus récurrents à forte marge.</li></ul></div>
+      <div class="swot-cell"><h4>Menaces</h4><ul><li>Une compression des budgets immobiliers en période de ralentissement économique pourrait réduire le volume de contrats d'installation et de maintenance.</li><li>Les grands intégrateurs systèmes et les opérateurs SOC généralistes pourraient éroder les prix sur les projets de déploiement multi-sites.</li><li>L'évolution rapide des technologies de surveillance (IA, edge computing) exige des investissements continus que le modèle actuel ne finance pas par fonds propres.</li><li>Une défaillance d'un fournisseur critique de composants pourrait perturber les plannings d'intégration sur plusieurs pays simultanément.</li><li>Un intégrateur concurrent mieux capitalisé pourrait reproduire le modèle décentralisé et accélérer sa propre consolidation dans la région.</li></ul></div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>III — Évaluation</span></div><div>22</div></div>
+</section>
+
+<section data-screen-label="23 Plan d'action">
+  <div class="s-head"><div class="brand">Prosero · III — Évaluation</div><div class="meta">23&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Plan d'action</div>
+  <div class="s-title">Défense, offensive, kill shot, remédiation.</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Défense</h4><p>Le modèle décentralisé crée un coût de commutation élevé pour les clients multi-sites et rend difficile la réplication pure par des concurrents centralisés. Protéger cette position exige de conserver un niveau d'autonomie locale suffisant pour maintenir la qualité et la réactivité dont dépendent les contrats de maintenance.</p>
+        <h4>Offensive</h4><p>Prosero doit continuer à acquérir des leaders locaux tout en renforçant l'étape 5 de maintenance pour convertir chaque déploiement en contrat récurrent à forte marge. Cette combinaison de croissance inorganique et de revenus récurrents protégés constitue le chemin le plus direct vers une position dominante dans le nord de l'Europe.</p>
+      </div>
+      <div class="col-block">
+        <h4>Kill shot</h4><p>Une combinaison de resserrement des budgets immobiliers et d'une intégration plus large d'un concurrent mieux financé dans les mêmes pays du nord pourrait simultanément réduire le volume de projets et éroder les prix sur la maintenance, annihilant l'avantage des revenus récurrents.</p>
+        <h4>Remédiation</h4><p>La vulnérabilité principale réside dans la dépendance au déploiement (étape 4) où les marges sont modérées et la pénurie de techniciens limite la scalabilité. Prosero doit structurer des programmes de formation interne et de partenariats techniques pour réduire ce goulot d'étranglement opérationnel.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>III — Évaluation</span></div><div>23</div></div>
+</section>
+
+<section class="divider" data-screen-label="24 IV Thèse sforbt">
+  <div class="roman">IV</div>
+  <div>
+    <div class="div-eyebrow">Quatrième partie</div>
+    <h2>Thèse sforbt</h2>
+    <div class="div-sub">IV — LA THÈSE D&#39;INVESTISSEMENT</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="25 Résumé Type C">
+  <div class="s-head"><div class="brand">Prosero · IV — Thèse sforbt</div><div class="meta">25&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Synergies sforbt — résumé Type B — Strategic</div>
+  <div class="s-title">Conviction du GP Synthétique</div>
+  <div class="s-body">
+    <p class="lead">Prosero a construit ce qui ressemble, en pratique, à un monopole de facto sur la maintenance des accès physiques complexes en Europe du Nord : 100 000 clients récurrents liés par des coûts de commutation économiquement prohibitifs, un réseau de 180 sites dont la profondeur opérationnelle exige 3+ années de certifications pour être répliqué, et un chiffre d'affaires de 4 800+ MSEK autofinancé sans levée de fonds externe significative. La directive NIS2 transforme cette position de force en avantage réglementaire structurel, en forçant les gestionnaires de parcs multi-sites à professionnaliser leurs accès physiques auprès d'un opérateur certifié.</p>
+    <div class="two-col" style="margin-top:8px">
+      <div class="col-block">
+        <h4>Les leviers de synergie</h4>
+        <ul><li>Le modèle de build-up décentralisé, où chaque fondateur acquis conserve une participation au capital du groupe, crée un alignement d'intérêts long terme qui maintient la rétention des dirigeants au-dessus de 85 %.</li></ul>
+      </div>
+      <div class="col-block">
+        <h4>Fragilités principales</h4>
+        <p>Corrélation revenus-effectifs techniques : la croissance des revenus reste partiellement corrélée à la taille de l'effectif technique sur le terrain, ce qui plafonne les marges en cas de pénurie structurelle de techniciens qualifiés en Europe du Nord et limite le levier opérationnel pur.</p>
+        <h4>Fenêtre d'acquisition</h4>
+        <div class="callout" style="margin-top:0">La fenêtre d'opportunité est optimale aujourd'hui, portée par deux catalyseurs simultanés : la directive NIS2, qui oblige les opérateurs d'infrastructures critiques à professionnaliser leurs accès physiques auprès d'opérateurs certifiés, et la transition technologique vers les contrôles d'accès cloud, qui crée une urgence de modernisation chez les gestionnaires de parcs multi-sites.</div>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>IV — Thèse sforbt</span></div><div>25</div></div>
+</section>
+
+<section data-screen-label="26 Synergies détaillées">
+  <div class="s-head"><div class="brand">Prosero · IV — Thèse sforbt</div><div class="meta">26&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Synergies sforbt — tableau détaillé</div>
+  <div class="s-title">Stratégie de croissance externe — Hypothèses stratégiques</div>
+  <div class="s-body">
+    <table class="fin">
+      <thead><tr><th style="width:36px">#</th><th>Synergie</th><th>Type</th><th>Impact</th><th>Délai</th><th>Difficulté</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Serrurerie et Contrôle d&#39;Accès Électromécanique</td><td>Capability</td><td>High</td><td>Short-term</td><td>Low</td></tr>
+        <tr><td>2</td><td>Vidéosurveillance IA et Surveillance de Chantier</td><td>Revenue</td><td>High</td><td>Mid-term</td><td>Medium</td></tr>
+        <tr><td>3</td><td>Télésurveillance et Services Managés Critiques</td><td>Hard cost</td><td>High</td><td>Short-term</td><td>Low</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>IV — Thèse sforbt</span></div><div>26</div></div>
+</section>
+
+<section data-screen-label="27 Deal killers">
+  <div class="s-head"><div class="brand">Prosero · IV — Thèse sforbt</div><div class="meta">27&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Deal killers identifiés</div>
+  <div class="s-title">Red Flags / Deal Killers</div>
+  <div class="s-body">
+    <table class="fin">
+      <thead><tr><th>Risque</th><th>Description</th><th>Mitigation</th></tr></thead>
+      <tbody>
+        <tr><td><b>Corrélation revenus-effectifs techniques</b></td><td>La croissance des revenus reste partiellement corrélée à la taille de l'effectif technique sur le terrain, ce qui plafonne les marges en cas de pénurie structurelle de techniciens qualifiés en Europe du Nord et limite le levier opérationnel pur.</td><td>Due diligence approfondie sur les modèles de staffing et les programmes de formation interne.</td></tr>
+        <tr><td><b>Risque managérial post-transition</b></td><td>La prise de fonction de Henrik Norrbom en mai 2026 crée une fenêtre de vulnérabilité de 12 à 18 mois pendant laquelle une bureaucratisation excessive du siège pourrait briser l'incitation entrepreneuriale des leaders de filiales.</td><td>Mise en place de mécanismes de gouvernance qui protègent l'autonomie des filiales et audit des rémunérations à long terme des dirigeants acquis.</td></tr>
+        <tr><td><b>Exécution de l&#39;expansion allemande</b></td><td>L'intégration de Goldfunk représente le premier test hors de la zone culturelle nordique ; une friction opérationnelle non anticipée dans la gestion des équipes locales germaniques pourrait éroder les marges des premières acquisitions allemandes.</td><td>Période d'intégration pilote avec des KPIs spécifiques et un accompagnement culturel renforcé.</td></tr>
+        <tr><td><b>Homogénéisation de la qualité de service</b></td><td>Maintenir un niveau de service identique sur 180 sites avec des cultures d'entreprise très différentes est structurellement complexe.</td><td>Renforcement des outils de reporting centralisés et des audits qualité réguliers, avec des bonus liés à la satisfaction client.</td></tr>
+        <tr><td><b>Modèle hybride service-logiciel</b></td><td>Si des alternatives connectées (IoT, télésurveillance pure) permettent aux clients de remplacer une partie des interventions sur site, le verrouillage physique pourrait partiellement s'éroder.</td><td>Investissement continu dans la R&D pour maintenir la pertinence du service sur site et développement de l'offre logicielle pour compléter le service physique.</td></tr>
+        <tr><td><b>Données financières partielles</b></td><td>Le churn historique détaillé par région, la structure exacte de la dette consolidée et les taux de rétention des dirigeants de filiales à horizon 3 ans ne sont pas documentés publiquement.</td><td>Exigence de transparence totale lors de la due diligence pour obtenir ces informations clés.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>IV — Thèse sforbt</span></div><div>27</div></div>
+</section>
+
+<section class="divider" data-screen-label="28 V Conviction">
+  <div class="roman">V</div>
+  <div>
+    <div class="div-eyebrow">Cinquième partie</div>
+    <h2>Conviction GP</h2>
+    <div class="div-sub">V — NOTRE CONVICTION</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="29 Angle, marché, timing">
+  <div class="s-head"><div class="brand">Prosero · V — Conviction</div><div class="meta">29&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Angle dominant · marché · timing</div>
+  <div class="s-title">Notre angle d&#39;investissement</div>
+  <div class="s-body">
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Angle dominant</h4><p>Cette analyse est conduite sous l'angle Signal Qualité Acquisition — M&A et Entreprises Rentables, qui s'impose comme le prisme dominant pour Prosero. La preuve d'ancrage est directe : Prosero a réalisé plus de 50 acquisitions régionales rentables, maintient un portefeuille de 100 000 clients récurrents, et affiche un chiffre d'affaires consolidé de 4 800+ MSEK sans levée de fonds externe significative — un profil d'entreprise autofinancée à EBITDA positif qui correspond exactement au signal de détection de cet angle. L'angle Signal Qualité Croissance — Série A à Série B présente également une pertinence modérée (expansion internationale active, intégration de plateformes, présence en Allemagne et dans les pays nordiques), tout comme l'angle Signal Qualité Early Stage — Pré-Seed et Seed, qui capte des signaux faibles liés aux outils propriétaires KameraPortalen et CEUPP, mais dont la maturité industrielle avancée de Prosero le rend peu pertinent comme angle principal. La Matrice de Fit Stratégique a tranché en faveur de l'angle Acquisition, porté par le taux de confirmation le plus élevé et la correspondance structurelle la plus forte. Voir la section 'Sélection holistique de l'angle' dans l'annexe pour le détail du raisonnement de la matrice.</p>
+        <h4>Marché</h4><p>Le marché de l'intégration et de la maintenance de sécurité physique pour parcs multi-sites représente un TAM global de 45,7 milliards USD et un SAM européen de 21 à 22 milliards USD. Ce marché est en phase de consolidation active : il reste extrêmement fragmenté au niveau régional, avec une multitude de PME locales hautement spécialisées mais sans capacité d'expansion nationale ou européenne. Cette fragmentation crée précisément la rente de consolidation que Prosero exploite par sa stratégie de build-up. Les géants globaux comme Securitas ou ASSA ABLOY dominent par la puissance financière et les technologies de masse, mais le segment intermédiaire des intégrateurs locaux reste un terrain de chasse peu disputé.</p>
+      </div>
+      <div class="col-block">
+        <h4>Timing</h4><p>La fenêtre est idéale aujourd'hui. La directive NIS2, qui oblige les opérateurs d'infrastructures critiques à professionnaliser la gestion de leurs accès physiques, crée une demande structurelle et urgente pour une plateforme certifiée comme Prosero. La transition forcée vers les systèmes de contrôle d'accès hébergés dans le cloud amplifie cette pression réglementaire. Le risque de timing le plus important est la transition managériale de mai 2026 vers Henrik Norrbom : une institutionnalisation excessive du siège pendant cette période de changement pourrait ralentir le rythme d'acquisition et fragiliser l'esprit entrepreneurial des filiales locales.</p>
+        <h4>Founder &amp; thesis-fit</h4><p>Anders Uddfors a construit Prosero comme un missionnaire pragmatisme, valorisant la rétention de l'equity par les leaders locaux pour aligner leurs intérêts sur ceux du groupe plutôt que de déployer un modèle centralisé classique. Ce mécanisme d'intéressement au capital holding est l'actif organisationnel le plus difficile à répliquer. La transition vers Henrik Norrbom, ancien opérationnel interne au groupe, limite le risque de rupture : il maîtrise les critères de rentabilité et les matrices de risque de Prosero. Le risque réel n'est pas la compétence du nouveau CEO, mais la tentation de bureaucratiser le siège au détriment de l'autonomie décisionnelle des filiales, qui est précisément la source du churn structurellement bas.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>V — Conviction</span></div><div>29</div></div>
+</section>
+
+<section data-screen-label="30 Verdict">
+  <div class="s-head"><div class="brand">Prosero · V — Conviction</div><div class="meta">30&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Verdict de conviction</div>
+  <div class="s-title">Verdict</div>
+  <div class="s-body">
+    <div style="margin-bottom:36px">
+      <div class="verdict"><span class="v-tag">Verdict GP</span><span class="v-text">Conviction · 86/100</span></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Synthèse</h4><p>Prosero a construit ce qui ressemble, en pratique, à un monopole de facto sur la maintenance des accès physiques complexes en Europe du Nord : 100 000 clients récurrents liés par des coûts de commutation économiquement prohibitifs, un réseau de 180 sites dont la profondeur opérationnelle exige 3+ années de certifications pour être répliqué, et un chiffre d'affaires de 4 800+ MSEK autofinancé sans levée de fonds externe significative. La directive NIS2 transforme cette position de force en avantage réglementaire structurel, en forçant les gestionnaires de parcs multi-sites à professionnaliser leurs accès physiques auprès d'un opérateur certifié.</p>
+      </div>
+      <div class="col-block">
+        <h4>Risk register</h4>
+        <ul><li>Corrélation revenus-effectifs techniques : la croissance des revenus reste partiellement corrélée à la taille de l'effectif technique sur le terrain, ce qui plafonne les marges en cas de pénurie structurelle de techniciens qualifiés en Europe du Nord et limite le levier opérationnel pur.</li><li>Risque managérial post-transition : la prise de fonction de Henrik Norrbom en mai 2026 crée une fenêtre de vulnérabilité de 12 à 18 mois pendant laquelle une bureaucratisation excessive du siège pourrait briser l'incitation entrepreneuriale des leaders de filiales, entraînant des démissions et l'exode de portefeuilles clients locaux à l'issue des clauses de non-concurrence.</li><li>Exécution de l'expansion allemande : l'intégration de Goldfunk représente le premier test hors de la zone culturelle nordique ; une friction opérationnelle non anticipée dans la gestion des équipes locales germaniques pourrait éroder les marges des premières acquisitions allemandes.</li><li>Homogénéisation de la qualité de service : maintenir un niveau de service identique sur 180 sites avec des cultures d'entreprise très différentes est structurellement complexe — l'analyse reconnaît elle-même que la décentralisation rend cette homogénéisation difficile, créant un risque de dégradation silencieuse des SLA de maintenance.</li><li>Modèle hybride service-logiciel : si des alternatives connectées (IoT, télésurveillance pure) permettent aux clients de remplacer une partie des interventions sur site, le verrouillage physique pourrait partiellement s'éroder, transformant une barrière à l'entrée structurelle en avantage de commodité progressivement négociable.</li><li>Données financières partielles : le churn historique détaillé par région, la structure exacte de la dette consolidée et les taux de rétention des dirigeants de filiales à horizon 3 ans ne sont pas documentés publiquement — ces lacunes doivent être résolues en due diligence avant toute décision de prix.</li></ul>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>V — Conviction</span></div><div>30</div></div>
+</section>
+
+<section class="divider" data-screen-label="31 VI Modèle financier">
+  <div class="roman">VI</div>
+  <div>
+    <div class="div-eyebrow">Sixième partie</div>
+    <h2>Modèle<br>financier</h2>
+    <div class="div-sub">VI — FINANCES ET ROI</div>
+    <div class="div-rule"></div>
+  </div>
+</section>
+
+<section data-screen-label="32 Valorisation">
+  <div class="s-head"><div class="brand">Prosero · VI — Modèle financier</div><div class="meta">32&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">Valorisation triangulée</div>
+  <div class="s-title">Analyse de la valeur</div>
+  <div class="s-body">
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">ARR Y1</div><div class="kpi-value">4363.6M€</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">EBITDA Y1 (réel)</div><div class="kpi-value">327.27M€</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">EBITDA normalisé (régime sectoriel)</div><div class="kpi-value">807.27M€</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">FCF Y5</div><div class="kpi-value">-520.6M€</div><div class="kpi-note"></div></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Comparables (multiples de transaction)</h4>
+        <table class="fin">
+          <thead><tr><th>Transaction</th><th class="num">Multiple</th></tr></thead>
+          <tbody>
+            <tr><td>N.D.</td><td class="num">N.D.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="col-block">
+        <h4>DCF — hypothèses</h4>
+        <p>Le DCF (Discounted Cash Flow) n'est pas significatif car les flux de trésorerie cumulés sont inférieurs à zéro ou la valeur terminale est dominante, ce qui le rend non pertinent pour l'évaluation.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>VI — Modèle financier</span></div><div>32</div></div>
+</section>
+
+<section data-screen-label="33 P&L et trésorerie">
+  <div class="s-head"><div class="brand">Prosero · VI — Modèle financier</div><div class="meta">33&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">P&amp;L sur 5 ans &amp; flux de trésorerie</div>
+  <div class="s-title">Compte de résultat prévisionnel (€M)</div>
+  <div class="s-body">
+    <table class="fin pnl-dense">
+      <thead>
+        <tr><th>Indicateur</th><th class="num">Y1</th><th class="num">Y2</th><th class="num">Y3</th><th class="num">Y4</th><th class="num">Y5</th></tr>
+      </thead>
+      <tbody>
+        <tr ><td>Total Revenue</td><td class="num">4363.64</td><td class="num">4854.55</td><td class="num">5264.15</td><td class="num">5597.27</td><td class="num">5862.92</td></tr>
+        <tr ><td>Croissance YoY</td><td class="num">15.0%</td><td class="num">11.2%</td><td class="num">8.4%</td><td class="num">6.3%</td><td class="num">4.8%</td></tr>
+        <tr ><td>Marge brute</td><td class="num">55.0%</td><td class="num">55.0%</td><td class="num">55.0%</td><td class="num">55.0%</td><td class="num">55.0%</td></tr>
+        <tr ><td>OPEX</td><td class="num">2072.73</td><td class="num">2305.91</td><td class="num">2500.47</td><td class="num">2658.70</td><td class="num">2784.89</td></tr>
+        <tr class="total"><td>EBITDA</td><td class="num">327.27</td><td class="num">364.09</td><td class="num">394.81</td><td class="num">419.80</td><td class="num">439.72</td></tr>
+        <tr ><td>Free Cash Flow</td><td class="num">-387.49</td><td class="num">-431.08</td><td class="num">-467.46</td><td class="num">-497.04</td><td class="num">-520.63</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>VI — Modèle financier</span></div><div>33</div></div>
+</section>
+
+<section data-screen-label="34 ROI et verdict">
+  <div class="s-head"><div class="brand">Prosero · VI — Modèle financier</div><div class="meta">34&thinsp;/&thinsp;35</div></div>
+  <div class="s-kicker">ROI et verdict quantitatif</div>
+  <div class="s-title">Valorisation et ROI</div>
+  <div class="s-body">
+    <div class="kpi-row">
+      <div class="kpi"><div class="kpi-label">Investissement</div><div class="kpi-value">5 236.4 M€</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">Valeur année 5</div><div class="kpi-value">7 914.9 M€</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">MOIC</div><div class="kpi-value">1.51x</div><div class="kpi-note"></div></div>
+      <div class="kpi"><div class="kpi-label">IRR</div><div class="kpi-value">8.6%</div><div class="kpi-note"></div></div>
+    </div>
+    <div class="two-col">
+      <div class="col-block">
+        <h4>Lecture du retour</h4><p>Le MOIC de 1.51x et l'IRR de 8.6% se situent en dessous de nos seuils fixés à 5.0x et 35% respectivement. Cette sous-performance, malgré une valorisation élevée, indique que le prix d'entrée est trop élevé par rapport à nos objectifs de rendement. Des ajustements sont nécessaires pour aligner le deal avec nos hurdles.</p>
+      </div>
+      <div class="col-block">
+        <h4>Verdict quantitatif</h4>
+        <div class="verdict" style="margin-bottom:18px"><span class="v-tag">Post-model</span><span class="v-text">HORS HURDLE</span></div>
+        <p>Le MOIC (1.51x < 5.0x) et l'IRR (8.6% < 35.0%) sont inférieurs aux seuils minimums du fonds. Il est recommandé de tester un multiple de sortie plus élevé ou de renégocier la valorisation d'entrée à la baisse. Sans ces ajustements, le deal ne passe pas les hurdles du fonds.</p>
+      </div>
+    </div>
+  </div>
+  <div class="s-foot"><div class="lhs"><span>Confidentiel</span><span>VI — Modèle financier</span></div><div>34</div></div>
+</section>
+
+<section class="closing" data-screen-label="35 Fin">
+  <div>
+    <div class="closing-mark">§</div>
+    <h2>Prosero est un CALL fort, sous réserve de la validation des ajustements financiers. <br> C’est un investissement stratégique dans une infrastructure critique.</h2>
+  </div>
+  <div class="closing-sig">
+    <div class="cover-tag" style="text-align:left">sforbt · M&amp;A Strategic · investment memo<br>Janvier 2025</div>
+    <div class="cover-tag">Mémo confidentiel — Prosero<br>Diffusion restreinte</div>
+  </div>
+</section>
+
+</deck-stage>
+</body>
+</html>
