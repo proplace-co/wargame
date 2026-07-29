@@ -8,10 +8,50 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
-  <script type="module" crossorigin src="/meeting/assets/index-rTJ2oab6.js"></script>
+  <style>
+    /* Shell anti-page-blanche AVANT le JS (et si le JS échoue) */
+    #root:empty::before {
+      content: "Chargement du cockpit Meeting…";
+      display: block;
+      padding: 48px 24px;
+      font-family: system-ui, sans-serif;
+      font-size: 15px;
+      color: #334155;
+    }
+    #boot-fallback {
+      padding: 48px 24px;
+      font-family: system-ui, sans-serif;
+      color: #334155;
+      max-width: 640px;
+    }
+    #boot-fallback code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; }
+  </style>
+  <script type="module" crossorigin src="/meeting/assets/index-CCSER8q1.js"></script>
   <link rel="stylesheet" crossorigin href="/meeting/assets/index-svqt3rMV.css">
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root">
+    <div id="boot-fallback">
+      <div style="font-weight:700;font-size:16px;margin-bottom:8px">Chargement du cockpit Meeting…</div>
+      <div style="font-size:13px;color:#64748b;line-height:1.5">
+        Si ce message reste plus de 15 secondes : hard refresh (Ctrl+F5) ou ouvrir la console (F12).
+      </div>
+    </div>
+  </div>
+  <script>
+    // Si le module ES échoue (CSP, réseau), afficher un message après 12s
+    setTimeout(function () {
+      var root = document.getElementById('root');
+      if (!root) return;
+      // React a monté s'il n'y a plus le fallback ou s'il y a .cockpit / .loading-shell
+      if (root.querySelector('.cockpit, .loading-shell, .error-shell, .main')) return;
+      if (root.querySelector('#boot-fail')) return;
+      var el = document.createElement('div');
+      el.id = 'boot-fail';
+      el.style.cssText = 'padding:24px;margin:24px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;color:#991b1b;font-family:system-ui;max-width:640px';
+      el.innerHTML = '<b>Le cockpit ne démarre pas</b><p style="font-size:13px;line-height:1.5">Le JavaScript n’a pas rendu l’interface. Vérifie l’onglet Console (F12) : erreur rouge, CSP, ou script bloqué. URL attendue : <code>/meeting/assets/index-*.js</code></p>';
+      root.appendChild(el);
+    }, 12000);
+  </script>
 </body>
 </html>
