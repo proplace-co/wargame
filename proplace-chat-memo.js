@@ -45,9 +45,9 @@
   // CALL family (PENDING/YES/NO) is ALWAYS green; only the icon distinguishes
   // the state (matches the Place Chat / daily-mail palette).
   var PILL_COLORS = {
-    "✓ CALL YES":      { bg: "#4ac67f", text: "#fff" },
-    "❌ CALL NO":       { bg: "#4ac67f", text: "#fff" },
-    "⏳ CALL PENDING":  { bg: "#4ac67f", text: "#fff" },
+    "✓ CALL YES":      { bg: "#12A150", text: "#fff" },
+    "❌ CALL NO":       { bg: "#12A150", text: "#fff" },
+    "⏳ CALL PENDING":  { bg: "#12A150", text: "#fff" },
     "CONSIDER":         { bg: "#E0A81E", text: "#fff" },
     "MONITOR":          { bg: "#16233A", text: "#fff" },
     "PASS":             { bg: "#E5484D", text: "#fff" },
@@ -434,10 +434,10 @@
           '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.6;">7 phases de A\u2192Z pour g\u00e9rer ce dossier.</div>' +
           '<button class="stan-guide-nav" data-tab="roadmap" style="font-family:var(--serif);font-size:13px;font-weight:600;background:var(--navy);color:#fff;border:none;padding:5px 14px;cursor:pointer;margin-top:6px;">' + t("parcours") + ' \u2192</button>' +
         '</div>' +
-        '<div style="border-left:3px solid #5a3a90;padding:10px 14px;margin-bottom:10px;background:var(--off);">' +
-          '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:#5a3a90;margin-bottom:4px;">\u2461 ' + t("chat") + '</div>' +
+        '<div style="border-left:3px solid #0E7F3F;padding:10px 14px;margin-bottom:10px;background:var(--off);">' +
+          '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:#0E7F3F;margin-bottom:4px;">\u2461 ' + t("chat") + '</div>' +
           '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.6;">Donnez des instructions en fran\u00e7ais.</div>' +
-          '<button class="stan-guide-nav" data-tab="chat" style="font-family:var(--serif);font-size:13px;font-weight:600;background:#5a3a90;color:#fff;border:none;padding:5px 14px;cursor:pointer;margin-top:6px;">' + t("chat") + ' \u2192</button>' +
+          '<button class="stan-guide-nav" data-tab="chat" style="font-family:var(--serif);font-size:13px;font-weight:600;background:#0E7F3F;color:#fff;border:none;padding:5px 14px;cursor:pointer;margin-top:6px;">' + t("chat") + ' \u2192</button>' +
         '</div>' +
         '<div style="border-left:3px solid var(--blue);padding:10px 14px;margin-bottom:10px;background:var(--off);">' +
           '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--blue);margin-bottom:4px;">\u2462 ' + t("skills") + '</div>' +
@@ -659,7 +659,7 @@
         "&action_timestamp=" + new Date().toISOString() +
         "&user_action_log=CALL&feedback_reason=no%20feedback&thesis_impact_status=processed&id=" + record;
       var noteHtml = ceoNote ? ''
-        + '<div style="background:#fffbe6;border:1px solid #f0e6a8;border-radius:4px;padding:9px 11px;margin-top:10px">'
+        + '<div style="background:#FFFBEB;border:1px solid #F0E3BC;border-radius:4px;padding:9px 11px;margin-top:10px">'
         +   '<span style="font-size:11px;font-weight:700;color:#8FA0B8;display:block;margin-bottom:4px">Your note</span>'
         +   '<p style="font-family:Georgia,serif;font-size:13px;color:#16233A;margin:0;line-height:1.55">' + ceoNote + '</p>'
         + '</div>' : "";
@@ -783,7 +783,7 @@
     if (!box) return;
 
     box.style.display     = "block";
-    box.style.background  = isNo ? "#fff8f8" : "#F7FCF9";
+    box.style.background  = isNo ? "#FDECEC" : "#F7FCF9";
     box.style.border      = "1px solid " + (isNo ? "#F5C6C8" : "#BFE6CF");
     box.style.borderRadius = "6px";
     box.style.padding     = "12px 14px";
@@ -797,7 +797,7 @@
       + '<p style="font-size:12px;color:#4B5E78;margin:0 0 6px 0">Your note (optional)</p>'
       + '<textarea id="stan-ceo-note" placeholder="' + (isNo ? "e.g. Founders too junior, wrong B2C focus..." : "e.g. API-native, founder ex-Amadeus...") + '" rows="2" style="width:100%;box-sizing:border-box;border:1px solid #E3E8F0;border-radius:4px;padding:8px 10px;font-size:14px;font-family:Georgia,serif;font-style:normal;color:#16233A;line-height:1.55;resize:none;outline:none;background:#fff"></textarea>'
       + '<div style="display:flex;gap:8px;margin-top:10px">'
-      +   '<button onclick="stanSaveCeoDecision()" style="flex:1;padding:9px 0;background:' + (isNo ? "#E5484D" : "#4ac67f") + ';color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">Save</button>'
+      +   '<button onclick="stanSaveCeoDecision()" style="flex:1;padding:9px 0;background:' + (isNo ? "#E5484D" : "#12A150") + ';color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">Save</button>'
       +   '<button onclick="stanSkipCeoNote()" style="padding:9px 16px;background:#F9FBFD;color:#61708A;border:1px solid #E3E8F0;border-radius:4px;font-size:12px;cursor:pointer">Skip</button>'
       + '</div>'
       + (isNo ? '<p style="font-size:11px;color:#8FA0B8;margin:8px 0 0 0;font-style:italic">One line doubles Stan\'s convergence speed on this angle.</p>' : "");
@@ -1713,7 +1713,7 @@
       html += '<div style="display:flex;flex-direction:column;gap:12px;">';
       html += buildParams();
       // Step 1
-      html += '<div style="border:2px solid var(--abr);background:#fffbf0;padding:14px 16px;">' +
+      html += '<div style="border:2px solid var(--abr);background:#FFFBEB;padding:14px 16px;">' +
         '<div style="font-family:var(--mono);font-size:11.5px;color:var(--amber);font-weight:700;margin-bottom:6px;">\u2460 ' + t("dir_step1") + '</div>' +
         '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.6;margin-bottom:12px;">' + t("dir_step1_desc") + '</div>' +
         '<button id="stan-dir-copy-btn-' + dirId + '" style="font-family:var(--serif);font-size:15px;font-weight:700;background:var(--navy);color:#fff;border:none;padding:11px 24px;cursor:pointer;width:100%;">\ud83d\udccb ' + t("dir_copy_prompt") + '</button></div>';
