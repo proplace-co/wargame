@@ -1018,3 +1018,110 @@ details.scenario-card { border-radius: 8px; }
   :where(.section-container) h3 { font-size: 1.08rem !important; }
   :where(.content-area) p, :where(.content-area) li { font-size: 0.96rem; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MÉMO v3 — LE CALQUE DE MISE EN PAGE
+   Source : data/design_handoff_proplace_v3/Memo.html
+
+   J'AI FAIT DEUX FOIS LA MÊME ERREUR. Sur le cockpit d'abord, sur le mémo
+   ensuite : repeindre les jetons — palette, police, capitales — et croire le
+   travail fait. Mesuré sur analysis.proplace.co/aitona-v2, la page n'avait
+   AUCUNE des décisions de mise en page de sa maquette :
+
+       sommaire       300 px, blanc plein, fixe, filet de 2 px, ombre portée
+                      → la maquette : 232 px, transparent, collant, une liste
+       cartes         filet haut de 3 px MARINE, angles à 14 px, 32/36 de marge
+                      → la maquette : filet clair 1 px, 16 px, 28 de marge
+       titre          48 px (3 rem)          → 30 px
+       titre section  33 px, souligné marine → 20 px, sans trait
+       largeur        1 400 px               → 1 240 px
+       sommaire       en-têtes de groupe sur bandeau gris #f0f2f5
+                      → la maquette : un libellé, et rien d'autre
+       pastilles      six teintes de catégorie, dont deux bleus et un violet
+                      → la maquette : une seule, verte quand c'est la section
+                        courante
+
+   Autrement dit, la page était en v3 de couleur et en v2 de forme. Ce bloc
+   est le DERNIER de la feuille : à spécificité égale, c'est lui qui gagne.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── ① LA PAGE : deux colonnes, 1 240 px, et de l'air ────────────────────── */
+.main-wrapper{display:grid;grid-template-columns:232px minmax(0,1fr);gap:24px;
+  align-items:start;max-width:1240px;width:100%;margin:0 auto;
+  padding:24px 28px 72px;padding-left:28px;box-sizing:border-box;
+  overflow-x:clip}
+
+/* ── ② LE SOMMAIRE : collant, transparent, une simple liste ──────────────── */
+/* Il était fixe, blanc plein, sur 300 px, avec un filet de 2 px et une ombre :
+   un meuble. La maquette en fait une colonne qui accompagne la lecture. */
+.sidebar{position:sticky;top:24px;left:auto;width:auto;height:auto;
+  max-height:calc(100vh - 48px);overflow-y:auto;overflow-x:hidden;
+  border-right:0;background:transparent;box-shadow:none;z-index:1;
+  display:flex;flex-direction:column;gap:2px;
+  scrollbar-width:none}
+.sidebar::-webkit-scrollbar{width:0;display:none}
+.sidebar-fund-link{padding:0 0 14px;border-bottom:0;text-align:left}
+.sidebar-fund-link:hover{background:transparent}
+.sidebar-fund-logo{max-width:132px;height:auto}
+.meta-block{padding:0 0 14px;margin:0 0 6px;background:transparent;
+  border-bottom:1px solid var(--pp-line,#E3E8F0)}
+/* le libellé de groupe : la maquette écrit « Sommaire », pas un bandeau gris */
+.sb-nav-heading{font-family:var(--pp-body);font-size:12px;font-weight:600;
+  color:var(--pp-ink-4,#8FA0B8);background:transparent;border:0;
+  padding:14px 12px 6px;letter-spacing:0;text-transform:none}
+/* les entrées : pilule douce, pastille de 6 px, l'active en teinte verte */
+/* ⚠️ deux classes, pas une : la feuille pose « .sidebar .nav-item{font-size:
+   0.9rem} », qui battait ma règle à une classe — les entrées restaient à
+   14,4 px au lieu des 13 de la maquette. */
+.sidebar .nav-item,.nav-item{display:flex;align-items:center;gap:10px;padding:7px 12px;
+  border-left:0;border-radius:8px;margin:0;
+  font-family:var(--pp-body);font-size:13px;font-weight:600;line-height:1.4;
+  color:var(--pp-ink-3,#61708A);transition:background .12s,color .12s}
+.nav-item::before{width:6px;height:6px;border-radius:50%;flex:none}
+.nav-item:hover{background:var(--pp-line-in,#EEF2F7)!important;
+  border-left-color:transparent;color:var(--pp-ink,#16233A)}
+.nav-item.is-active{background:var(--pp-green-chip,#EAF6EF)!important;
+  color:var(--pp-ink,#16233A);border-left-color:transparent}
+/* UNE SEULE pastille. Les six teintes de catégorie — deux bleus, un violet,
+   un gris — étaient un sixième langage de couleur à elles seules. */
+.bg-yellow::before,.bg-green::before,.bg-light-purple::before,
+.bg-blue::before,.bg-grey::before,.bg-dd::before,.bg-pm::before{
+  background:var(--pp-line-dash,#C9D6E6)!important}
+.nav-item.is-active::before{background:var(--pp-green,#12A150)!important}
+
+/* ── ③ LA COLONNE DE LECTURE : des cartes, 18 px entre elles ─────────────── */
+.content-area{display:flex;flex-direction:column;gap:18px;
+  padding:0;margin:0;width:100%;max-width:none;min-height:0;
+  box-sizing:border-box;overflow-x:clip}
+.section-container{background:#fff;border:1px solid var(--pp-line,#E3E8F0);
+  border-top:1px solid var(--pp-line,#E3E8F0);border-radius:16px;
+  padding:28px;margin:0;
+  box-shadow:0 6px 18px rgba(15,29,51,.05);scroll-margin-top:24px}
+
+/* ── ④ LA TYPOGRAPHIE DE LA MAQUETTE ─────────────────────────────────────── */
+h1{font-size:30px;font-weight:700;letter-spacing:-.015em;line-height:1.2;
+  margin-bottom:0}
+.subtitle-category{font-size:14px;font-weight:400;color:var(--pp-ink-3,#61708A);
+  letter-spacing:0;line-height:1.5;margin:4px 0 0}
+.section-title{font-family:var(--pp-body);font-size:20px;font-weight:700;
+  color:var(--pp-ink,#16233A);letter-spacing:-.01em;line-height:1.3;
+  border-bottom:0;padding-bottom:0;margin:0 0 4px}
+h3{font-family:var(--pp-body);font-size:16px;font-weight:700;
+  letter-spacing:-.01em;line-height:1.35;margin:22px 0 8px;
+  border-bottom:0;padding-bottom:0}
+h4{font-family:var(--pp-body);font-size:14px;font-weight:700;
+  letter-spacing:0;margin:18px 0 6px}
+
+/* ── ⑤ CE QUI RESTAIT HORS PALETTE ──────────────────────────────────────── */
+/* Un jaune de surlignage (#fefce8) et les deux pastilles de catégorie. */
+.section-container [style*="#fefce8"],.content-area [style*="#fefce8"]{
+  background:var(--pp-amber-bg2,#FFFBEB)!important}
+
+/* ── ⑥ SOUS 900 px : une seule colonne, le sommaire au-dessus ───────────── */
+@media (max-width:900px){
+  .main-wrapper{grid-template-columns:minmax(0,1fr);gap:16px;
+    padding:16px 14px 48px}
+  .sidebar{position:static;max-height:none;width:auto}
+  .section-container{padding:20px;border-radius:14px}
+  h1{font-size:26px}
+}
