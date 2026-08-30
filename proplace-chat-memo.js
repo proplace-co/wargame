@@ -341,8 +341,8 @@
     html += '<div style="background:var(--navy);padding:12px 14px;margin:0 0 4px;">' +
       '<div style="font-family:var(--mono);font-size:11.5px;color:rgba(255,255,255,.5);margin-bottom:5px;">Directives \u26a1</div>' +
       '<div style="font-family:var(--serif);font-size:13px;color:#fff;line-height:1.7;">' + t("directives_intro") + '<br>' +
-        '<span style="color:rgba(255,200,100,.9);">\ud83d\udccb ' + t("directives_copy_desc") + '</span><br>' +
-        '<span style="color:rgba(100,220,150,.9);">\u26a1 ' + t("directives_direct_desc") + '</span>' +
+        '<span style="color:rgba(240, 227, 188, .9);">\ud83d\udccb ' + t("directives_copy_desc") + '</span><br>' +
+        '<span style="color:rgba(18, 161, 80, .9);">\u26a1 ' + t("directives_direct_desc") + '</span>' +
       '</div>' +
     '</div>';
 
@@ -1235,7 +1235,7 @@
             var el = node.parentElement;
             el.style.transition = "background 1.2s ease";
             var prev = el.style.background;
-            el.style.background = "rgba(255,220,100,.5)";
+            el.style.background = "rgba(240, 227, 188, .5)";
             setTimeout(function(el, prev) { return function() { el.style.background = prev; }; }(el, prev), 1500);
           }
           break;

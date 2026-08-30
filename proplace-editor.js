@@ -63,25 +63,25 @@
   var style = document.createElement("style");
   style.textContent = [
     "#plEditor{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;align-items:flex-end;gap:8px;font-family:'EB Garamond',Georgia,serif;}",
-    "#plToggle{background:#0F1D33;color:#fff;border:none;padding:11px 20px;font-size:13px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(15,31,51,0.25);font-family:'DM Mono','Courier New',monospace;transition:background 0.15s;}",
-    "#plToggle.editing{background:#c04a00;}",
+    "#plToggle{background:#0F1D33;color:#fff;border:none;padding:11px 20px;font-size:13px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(15, 29, 51, 0.25);font-family:'DM Mono','Courier New',monospace;transition:background 0.15s;}",
+    "#plToggle.editing{background:#96690E;}",
     "#plActions{display:none;flex-direction:column;gap:6px;align-items:flex-end;}",
     ".pl-action-btn{border:none;padding:9px 16px;font-size:11px;font-weight:500;cursor:pointer;font-family:'DM Mono','Courier New',monospace;transition:opacity 0.15s;}",
     ".pl-action-btn:hover{opacity:0.85;}",
     ".pl-btn-save{background:#0E7F3F;color:#fff;}.pl-btn-pdf{background:#1B2F4E;color:#fff;}.pl-btn-link{background:#4B5E78;color:#fff;}.pl-btn-section{background:#0E7F3F;color:#fff;}.pl-btn-cancel{background:#F9FBFD;color:#0F1D33;border:1px solid #E3E8F0;}",
     "#plToast{position:fixed;bottom:100px;right:24px;z-index:9999;background:#0F1D33;color:#fff;padding:11px 18px;font-size:12px;opacity:0;transition:opacity 0.25s;pointer-events:none;max-width:300px;font-family:'EB Garamond',Georgia,serif;font-style:italic;line-height:1.5;}",
-    "[contenteditable]:focus{outline:2px solid #8fa8c8;outline-offset:2px;background:rgba(143,168,200,0.06);}",
-    "[contenteditable]:hover{outline:1px dashed #c0ccd8;}",
+    "[contenteditable]:focus{outline:2px solid #B4C2D4;outline-offset:2px;background:rgba(180, 194, 212, 0.06);}",
+    "[contenteditable]:hover{outline:1px dashed #C9D6E6;}",
     ".pl-section-ctrl{display:flex;gap:6px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px dashed #EEF2F7;}",
     ".pl-ctrl-btn{padding:3px 10px;font-size:11.5px;border-radius:0;border:1px solid;background:#fff;cursor:pointer;font-family:'DM Mono','Courier New',monospace;}",
     ".pl-hide-btn{color:#4B5E78;border-color:#E3E8F0;}.pl-hide-btn:hover{background:#0F1D33;color:#fff;border-color:#0F1D33;}",
     ".pl-del-btn{color:#C0353A;border-color:#F5C6C8;}.pl-del-btn:hover{background:#C0353A;color:#fff;}",
     ".pl-label-btn{color:#8FA0B8;border-color:transparent;background:transparent;cursor:default;font-size:11px;}",
     /* ── v3.7 : bouton × carte injectée ── */
-    ".pl-card-del{position:absolute;top:8px;right:8px;background:rgba(122,24,36,0.07);border:1px solid #F5C6C8;color:#C0353A;font-size:11.5px;cursor:pointer;padding:3px 8px;font-family:'DM Mono','Courier New',monospace;z-index:10;transition:background 0.15s;}",
+    ".pl-card-del{position:absolute;top:8px;right:8px;background:rgba(192, 53, 58, 0.07);border:1px solid #F5C6C8;color:#C0353A;font-size:11.5px;cursor:pointer;padding:3px 8px;font-family:'DM Mono','Courier New',monospace;z-index:10;transition:background 0.15s;}",
     ".pl-card-del:hover{background:#C0353A;color:#fff;}",
-    "#plModal{position:fixed;inset:0;background:rgba(11,25,41,0.65);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;}",
-    "#plModalBox{background:#fff;padding:28px;max-width:460px;width:100%;box-shadow:0 8px 40px rgba(11,25,41,0.2);border-top:3px solid #0F1D33;max-height:90vh;overflow-y:auto;}",
+    "#plModal{position:fixed;inset:0;background:rgba(15, 29, 51, 0.65);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;}",
+    "#plModalBox{background:#fff;padding:28px;max-width:460px;width:100%;box-shadow:0 8px 40px rgba(15, 29, 51, 0.2);border-top:3px solid #0F1D33;max-height:90vh;overflow-y:auto;}",
     "#plModalTitle{font-family:'EB Garamond',Georgia,serif;font-size:1.25rem;font-weight:600;color:#0F1D33;margin:0 0 6px;}",
     "#plModalSubtitle{font-family:'EB Garamond',Georgia,serif;font-size:0.85rem;font-style:italic;color:#4B5E78;margin:0 0 18px;line-height:1.55;}",
     ".pl-modal-label{font-family:'DM Mono','Courier New',monospace;font-size:0.6rem;letter-spacing:0.14em;color:#4B5E78;display:block;margin-bottom:5px;margin-top:12px;}",
@@ -98,7 +98,7 @@
     ".pl-modal-ok:disabled{background:#8FA0B8;cursor:not-allowed;}",
     ".pl-modal-cancel{background:#F9FBFD;color:#0F1D33;border:1px solid #E3E8F0;padding:9px 18px;font-size:11px;font-weight:500;cursor:pointer;font-family:'DM Mono','Courier New',monospace;}",
     "@media (max-width:1000px){",
-      "#plEditor{bottom:0!important;right:0!important;left:0!important;width:100%!important;padding:8px 12px 12px!important;border-top:2px solid #E3E8F0!important;background:#fff!important;box-shadow:0 -4px 20px rgba(15,31,51,0.12)!important;align-items:stretch!important;gap:4px!important;}",
+      "#plEditor{bottom:0!important;right:0!important;left:0!important;width:100%!important;padding:8px 12px 12px!important;border-top:2px solid #E3E8F0!important;background:#fff!important;box-shadow:0 -4px 20px rgba(15, 29, 51, 0.12)!important;align-items:stretch!important;gap:4px!important;}",
       "#plToggle{width:100%!important;justify-content:center!important;box-shadow:none!important;}",
       "#plActions{width:100%!important;align-items:stretch!important;}",
       ".pl-action-btn{text-align:center!important;width:100%!important;padding:11px 16px!important;font-size:12px!important;}",
@@ -153,7 +153,7 @@
     var LIMIT = 3 * 1024 * 1024;
 
     var modal = document.createElement("div"); modal.id = "plModal";
-    modal.innerHTML = "<div id='plModalBox'><h2 id='plModalTitle'>&#0E7F3F; Analyser un document PDF</h2><p id='plModalSubtitle'>Stan va analyser le PDF et mettre à jour la section Due Diligence ou Portfolio.</p><div id='plDropZone'><p>&#0E7F3F; <strong>Cliquez ici</strong> ou glissez-déposez</p><small>" + sizeHint + "</small></div><div id='plFileInfo'></div><label class='pl-modal-label' style='margin-top:16px;'>Note (optionnel)</label><input class='pl-modal-input' type='text' id='plPdfNote' placeholder='Ex : Term sheet Partech v finale'><div id='plModalActions'><button class='pl-modal-cancel'>Annuler</button><button class='pl-modal-ok' id='plPdfConfirm' disabled>Envoyer &#x2192;</button></div></div>";
+    modal.innerHTML = "<div id='plModalBox'><h2 id='plModalTitle'>&#128196; Analyser un document PDF</h2><p id='plModalSubtitle'>Stan va analyser le PDF et mettre à jour la section Due Diligence ou Portfolio.</p><div id='plDropZone'><p>&#128196; <strong>Cliquez ici</strong> ou glissez-déposez</p><small>" + sizeHint + "</small></div><div id='plFileInfo'></div><label class='pl-modal-label' style='margin-top:16px;'>Note (optionnel)</label><input class='pl-modal-input' type='text' id='plPdfNote' placeholder='Ex : Term sheet Partech v finale'><div id='plModalActions'><button class='pl-modal-cancel'>Annuler</button><button class='pl-modal-ok' id='plPdfConfirm' disabled>Envoyer &#x2192;</button></div></div>";
     document.body.appendChild(modal);
 
     var fi = document.createElement("input"); fi.type="file"; fi.accept=".pdf,application/pdf"; fi.style.display="none"; document.body.appendChild(fi);
@@ -354,7 +354,7 @@
         "<span id='plLabel'>"+getMainLabel()+"</span>",
       "</button>",
       "<div id='plActionsP1' style='display:none;flex-direction:column;gap:6px;align-items:flex-end;'>",
-        "<button class='pl-action-btn pl-btn-pdf'     onclick='plOpenPDFUpload()'>&#0E7F3F; Analyser un document PDF</button>",
+        "<button class='pl-action-btn pl-btn-pdf'     onclick='plOpenPDFUpload()'>&#128196; Analyser un document PDF</button>",
         "<button class='pl-action-btn pl-btn-link'    onclick='plAttachLink()'>&#128279; Lier un fichier (sans analyse)</button>",
         "<button class='pl-action-btn pl-btn-section' onclick='plAddSection()'>+ Ajouter une section manuellement</button>",
         "<button class='pl-action-btn' style='background:#4B5E78;color:#fff;' onclick='plStartTextEdit()'>&#9998; Éditer le texte du mémo</button>",
@@ -736,7 +736,7 @@
                 "<td style='border-bottom:1px solid #EEF2F7;width:32px;'></td>",
               "</tr></tbody>",
             "</table>",
-            "<button onclick='plTableAddRow(this)' style='margin-top:6px;background:#F5F7FA;border:1px dashed #c0ccd8;color:#4B5E78;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;cursor:pointer;width:100%;'>+ Ligne</button>",
+            "<button onclick='plTableAddRow(this)' style='margin-top:6px;background:#F5F7FA;border:1px dashed #C9D6E6;color:#4B5E78;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;cursor:pointer;width:100%;'>+ Ligne</button>",
           "</div>"
         ].join("");
       } else if(res.type==="flags"){
