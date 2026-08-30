@@ -48,9 +48,9 @@
     "✓ CALL YES":      { bg: "#4ac67f", text: "#fff" },
     "❌ CALL NO":       { bg: "#4ac67f", text: "#fff" },
     "⏳ CALL PENDING":  { bg: "#4ac67f", text: "#fff" },
-    "CONSIDER":         { bg: "#ca8a04", text: "#fff" },
-    "MONITOR":          { bg: "#2563eb", text: "#fff" },
-    "PASS":             { bg: "#dc2626", text: "#fff" },
+    "CONSIDER":         { bg: "#E0A81E", text: "#fff" },
+    "MONITOR":          { bg: "#16233A", text: "#fff" },
+    "PASS":             { bg: "#E5484D", text: "#fff" },
   };
   var _stanPendingDecision = null;
 
@@ -222,7 +222,7 @@
       /* Pane: Outputs */
       '<div class="stan-pane" id="stan-pane-outputs">' +
         '<div class="stan-out-header">' +
-          '<div style="font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--tl);text-transform:uppercase;margin-bottom:4px;">' + t("outputs") + '</div>' +
+          '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--tl);margin-bottom:4px;">' + t("outputs") + '</div>' +
           '<p style="font-family:var(--serif);font-size:13px;color:var(--ts);line-height:1.5;margin:0;">' + t("what_is_output") + '</p>' +
         '</div>' +
         '<div class="stan-out-scroll" id="stan-outList">' +
@@ -339,7 +339,7 @@
 
     // Directives explanation box
     html += '<div style="background:var(--navy);padding:12px 14px;margin:0 0 4px;">' +
-      '<div style="font-family:var(--mono);font-size:10px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px;">Directives \u26a1</div>' +
+      '<div style="font-family:var(--mono);font-size:11.5px;color:rgba(255,255,255,.5);margin-bottom:5px;">Directives \u26a1</div>' +
       '<div style="font-family:var(--serif);font-size:13px;color:#fff;line-height:1.7;">' + t("directives_intro") + '<br>' +
         '<span style="color:rgba(255,200,100,.9);">\ud83d\udccb ' + t("directives_copy_desc") + '</span><br>' +
         '<span style="color:rgba(100,220,150,.9);">\u26a1 ' + t("directives_direct_desc") + '</span>' +
@@ -391,22 +391,22 @@
     if (!msgs) return;
     msgs.innerHTML =
       '<div class="stan-msg-s" style="border-top-color:var(--navy);">' +
-        '<div style="font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--tl);text-transform:uppercase;margin-bottom:8px;">Stan \u2014 Ce que vous pouvez faire ici</div>' +
+        '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--tl);margin-bottom:8px;">Stan \u2014 Ce que vous pouvez faire ici</div>' +
         '<div style="margin-bottom:10px;">' +
-          '<div style="font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--navy);text-transform:uppercase;margin-bottom:4px;">Modifier le m\u00e9mo</div>' +
+          '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--navy);margin-bottom:4px;">Modifier le m\u00e9mo</div>' +
           '<div style="font-family:var(--serif);font-size:13px;color:var(--tb);line-height:1.6;">' +
             '<em>"R\u00e9\u00e9cris le r\u00e9sum\u00e9 ex\u00e9cutif en insistant sur le moat API"</em><br>' +
             '<em>"Ajoute une section \u00c9quipe avec ces donn\u00e9es : [donn\u00e9es]"</em>' +
           '</div>' +
         '</div>' +
         '<div style="margin-bottom:10px;">' +
-          '<div style="font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--navy);text-transform:uppercase;margin-bottom:4px;">Analyser un document</div>' +
+          '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--navy);margin-bottom:4px;">Analyser un document</div>' +
           '<div style="font-family:var(--serif);font-size:13px;color:var(--tb);line-height:1.6;">' +
             'Cliquez <strong>' + t("analyze_pdf") + '</strong> puis envoyez.' +
           '</div>' +
         '</div>' +
         '<div>' +
-          '<div style="font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--navy);text-transform:uppercase;margin-bottom:4px;">G\u00e9n\u00e9rer un output</div>' +
+          '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--navy);margin-bottom:4px;">G\u00e9n\u00e9rer un output</div>' +
           '<div style="font-family:var(--serif);font-size:13px;color:var(--tb);line-height:1.6;">' +
             '<em>"G\u00e9n\u00e8re la version LP board-ready"</em><br>' +
             '<em>"R\u00e9dige l\u2019email d\u2019approche fondateur"</em>' +
@@ -430,22 +430,22 @@
 
         /* Guide cards */
         '<div style="border-left:3px solid var(--navy);padding:10px 14px;margin-bottom:10px;background:var(--off);">' +
-          '<div style="font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--navy);text-transform:uppercase;margin-bottom:4px;">\u2460 ' + t("parcours") + '</div>' +
+          '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--navy);margin-bottom:4px;">\u2460 ' + t("parcours") + '</div>' +
           '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.6;">7 phases de A\u2192Z pour g\u00e9rer ce dossier.</div>' +
           '<button class="stan-guide-nav" data-tab="roadmap" style="font-family:var(--serif);font-size:13px;font-weight:600;background:var(--navy);color:#fff;border:none;padding:5px 14px;cursor:pointer;margin-top:6px;">' + t("parcours") + ' \u2192</button>' +
         '</div>' +
         '<div style="border-left:3px solid #5a3a90;padding:10px 14px;margin-bottom:10px;background:var(--off);">' +
-          '<div style="font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;color:#5a3a90;text-transform:uppercase;margin-bottom:4px;">\u2461 ' + t("chat") + '</div>' +
+          '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:#5a3a90;margin-bottom:4px;">\u2461 ' + t("chat") + '</div>' +
           '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.6;">Donnez des instructions en fran\u00e7ais.</div>' +
           '<button class="stan-guide-nav" data-tab="chat" style="font-family:var(--serif);font-size:13px;font-weight:600;background:#5a3a90;color:#fff;border:none;padding:5px 14px;cursor:pointer;margin-top:6px;">' + t("chat") + ' \u2192</button>' +
         '</div>' +
         '<div style="border-left:3px solid var(--blue);padding:10px 14px;margin-bottom:10px;background:var(--off);">' +
-          '<div style="font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--blue);text-transform:uppercase;margin-bottom:4px;">\u2462 ' + t("skills") + '</div>' +
+          '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--blue);margin-bottom:4px;">\u2462 ' + t("skills") + '</div>' +
           '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.6;">21 outils organis\u00e9s par phase.</div>' +
           '<button class="stan-guide-nav" data-tab="skills" style="font-family:var(--serif);font-size:13px;font-weight:600;background:var(--blue);color:#fff;border:none;padding:5px 14px;cursor:pointer;margin-top:6px;">' + t("skills") + ' \u2192</button>' +
         '</div>' +
         '<div style="border-left:3px solid var(--green);padding:10px 14px;margin-bottom:16px;background:var(--off);">' +
-          '<div style="font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--green);text-transform:uppercase;margin-bottom:4px;">\u2464 ' + t("outputs") + '</div>' +
+          '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--green);margin-bottom:4px;">\u2464 ' + t("outputs") + '</div>' +
           '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.6;">' + t("what_is_output") + '</div>' +
           '<button class="stan-guide-nav" data-tab="outputs" style="font-family:var(--serif);font-size:13px;font-weight:600;background:var(--green);color:#fff;border:none;padding:5px 14px;cursor:pointer;margin-top:6px;">' + t("outputs") + ' \u2192</button>' +
         '</div>' +
@@ -660,24 +660,24 @@
         "&user_action_log=CALL&feedback_reason=no%20feedback&thesis_impact_status=processed&id=" + record;
       var noteHtml = ceoNote ? ''
         + '<div style="background:#fffbe6;border:1px solid #f0e6a8;border-radius:4px;padding:9px 11px;margin-top:10px">'
-        +   '<span style="font-size:9px;font-weight:700;text-transform:uppercase;color:#94a3b8;letter-spacing:.06em;display:block;margin-bottom:4px">Your note</span>'
-        +   '<p style="font-family:Georgia,serif;font-size:13px;color:#0f172a;margin:0;line-height:1.55">' + ceoNote + '</p>'
+        +   '<span style="font-size:11px;font-weight:700;color:#8FA0B8;display:block;margin-bottom:4px">Your note</span>'
+        +   '<p style="font-family:Georgia,serif;font-size:13px;color:#16233A;margin:0;line-height:1.55">' + ceoNote + '</p>'
         + '</div>' : "";
       return ''
         + '<div style="margin-bottom:8px">'
         +   '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
-        +     '<span style="display:inline-block;padding:4px 12px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:' + col2.bg + ';color:' + col2.text + '">' + decLabel + '</span>'
+        +     '<span style="display:inline-block;padding:4px 12px;border-radius:4px;font-size:11.5px;font-weight:700;background:' + col2.bg + ';color:' + col2.text + '">' + decLabel + '</span>'
         +   '</div>'
         +   noteHtml
         +   '<div style="text-align:right;margin-top:4px">'
-        +     '<a href="' + overrideUrl2 + '" target="_blank" style="font-size:9px;color:#94a3b8;text-decoration:underline">Override \u2192</a>'
+        +     '<a href="' + overrideUrl2 + '" target="_blank" style="font-size:11px;color:#8FA0B8;text-decoration:underline">Override \u2192</a>'
         +   '</div>'
         + '</div>';
     }
 
     // CAS 1 — verdict autonome Stan (CONSIDER / MONITOR / PASS uniquement)
     if (isAutonomous) {
-      var col = PILL_COLORS[status] || { bg: "#94a3b8", text: "#fff" };
+      var col = PILL_COLORS[status] || { bg: "#8FA0B8", text: "#fff" };
       var overrideUrl1 = "https://forms.proplace.co/t/c2246dXQEVus?status=" + status +
         "&action_timestamp=" + new Date().toISOString() +
         "&user_action_log=" + status +
@@ -685,12 +685,12 @@
       return ''
         + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
         +   '<div>'
-        +     '<span style="font-size:8px;color:#94a3b8;font-family:monospace;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:2px">Stan decided autonomously</span>'
-        +     '<span style="display:inline-block;padding:4px 12px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;background:' + col.bg + ';color:' + col.text + '">'
+        +     '<span style="font-size:11px;color:#8FA0B8;font-family:monospace;display:block;margin-bottom:2px">Stan decided autonomously</span>'
+        +     '<span style="display:inline-block;padding:4px 12px;border-radius:4px;font-size:11.5px;font-weight:700;background:' + col.bg + ';color:' + col.text + '">'
         +       status
         +     '</span>'
         +   '</div>'
-        +   '<a href="' + overrideUrl1 + '" target="_blank" style="font-size:9px;color:#94a3b8;text-decoration:underline">Override \u2192</a>'
+        +   '<a href="' + overrideUrl1 + '" target="_blank" style="font-size:11px;color:#8FA0B8;text-decoration:underline">Override \u2192</a>'
         + '</div>';
     }
 
@@ -737,7 +737,7 @@
       return;
     }
     b.style.display = "";
-    var col = PILL_COLORS[ds] || { bg: "#94a3b8", text: "#fff" };
+    var col = PILL_COLORS[ds] || { bg: "#8FA0B8", text: "#fff" };
     b.textContent = ds;
     b.className = "stan-tpil";
     b.style.background = col.bg;
@@ -782,24 +782,24 @@
     if (!box) return;
 
     box.style.display     = "block";
-    box.style.background  = isNo ? "#fff8f8" : "#f0fdf4";
-    box.style.border      = "1px solid " + (isNo ? "#fecaca" : "#bbf7d0");
+    box.style.background  = isNo ? "#fff8f8" : "#F7FCF9";
+    box.style.border      = "1px solid " + (isNo ? "#F5C6C8" : "#BFE6CF");
     box.style.borderRadius = "6px";
     box.style.padding     = "12px 14px";
     box.style.marginTop   = "10px";
 
     box.innerHTML = ''
-      + '<style>#stan-ceo-note::placeholder{font-style:normal;color:#94a3b8;font-family:Georgia,serif;font-size:13px;}</style>'
-      + '<p style="font-size:13px;font-weight:700;color:' + (isNo ? "#dc2626" : "#166534") + ';margin:0 0 10px 0;font-family:monospace;text-transform:uppercase;letter-spacing:.04em">'
+      + '<style>#stan-ceo-note::placeholder{font-style:normal;color:#8FA0B8;font-family:Georgia,serif;font-size:13px;}</style>'
+      + '<p style="font-size:13px;font-weight:700;color:' + (isNo ? "#E5484D" : "#0E7F3F") + ';margin:0 0 10px 0;font-family:monospace;">'
       +   (isNo ? "\u2717 NO saved \u2014 Stan will recalibrate." : "\u2713 YES saved \u2014 Stan is on it.")
       + '</p>'
-      + '<p style="font-size:12px;color:#475569;margin:0 0 6px 0">Your note (optional)</p>'
-      + '<textarea id="stan-ceo-note" placeholder="' + (isNo ? "e.g. Founders too junior, wrong B2C focus..." : "e.g. API-native, founder ex-Amadeus...") + '" rows="2" style="width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:4px;padding:8px 10px;font-size:14px;font-family:Georgia,serif;font-style:normal;color:#0f172a;line-height:1.55;resize:none;outline:none;background:#fff"></textarea>'
+      + '<p style="font-size:12px;color:#4B5E78;margin:0 0 6px 0">Your note (optional)</p>'
+      + '<textarea id="stan-ceo-note" placeholder="' + (isNo ? "e.g. Founders too junior, wrong B2C focus..." : "e.g. API-native, founder ex-Amadeus...") + '" rows="2" style="width:100%;box-sizing:border-box;border:1px solid #E3E8F0;border-radius:4px;padding:8px 10px;font-size:14px;font-family:Georgia,serif;font-style:normal;color:#16233A;line-height:1.55;resize:none;outline:none;background:#fff"></textarea>'
       + '<div style="display:flex;gap:8px;margin-top:10px">'
-      +   '<button onclick="stanSaveCeoDecision()" style="flex:1;padding:9px 0;background:' + (isNo ? "#dc2626" : "#4ac67f") + ';color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;text-transform:uppercase;letter-spacing:.06em">Save</button>'
-      +   '<button onclick="stanSkipCeoNote()" style="padding:9px 16px;background:#f8fafc;color:#64748b;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;cursor:pointer">Skip</button>'
+      +   '<button onclick="stanSaveCeoDecision()" style="flex:1;padding:9px 0;background:' + (isNo ? "#E5484D" : "#4ac67f") + ';color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">Save</button>'
+      +   '<button onclick="stanSkipCeoNote()" style="padding:9px 16px;background:#F9FBFD;color:#61708A;border:1px solid #E3E8F0;border-radius:4px;font-size:12px;cursor:pointer">Skip</button>'
       + '</div>'
-      + (isNo ? '<p style="font-size:11px;color:#94a3b8;margin:8px 0 0 0;font-style:italic">One line doubles Stan\'s convergence speed on this angle.</p>' : "");
+      + (isNo ? '<p style="font-size:11px;color:#8FA0B8;margin:8px 0 0 0;font-style:italic">One line doubles Stan\'s convergence speed on this angle.</p>' : "");
 
     setTimeout(function() { var ta = document.getElementById("stan-ceo-note"); if (ta) ta.focus(); }, 80);
   }
@@ -1394,7 +1394,7 @@
       d.innerHTML =
         '<div class="stan-out-meta">Phase ' + o.phaseNum + ' \u00b7 ' + o.phase + '</div>' +
         '<div class="stan-out-title">' + o.title + '</div>' +
-        '<div style="font-family:var(--mono);font-size:10px;color:' + statusColor + ';margin-bottom:7px;">' + o.time + ' \u00b7 ' + statusTxt + '</div>' +
+        '<div style="font-family:var(--mono);font-size:11.5px;color:' + statusColor + ';margin-bottom:7px;">' + o.time + ' \u00b7 ' + statusTxt + '</div>' +
         '<div class="stan-out-btns">' +
           '<button class="stan-ob pr" data-out-view="' + o.key + '">' + t("view") + '</button>' +
           '<button class="stan-ob" data-qs="' + i + '">' + t("share_url") + '</button>' +
@@ -1440,7 +1440,7 @@
     }
     openModal("stan-outModal");
     var urlHtml = '<div style="background:var(--gbg);border:1px solid var(--gbr);padding:12px 16px;margin-bottom:14px;">' +
-      '<div style="font-family:var(--mono);font-size:10px;color:var(--green);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;">\u2713 ' + t("share_created") + '</div>' +
+      '<div style="font-family:var(--mono);font-size:11.5px;color:var(--green);margin-bottom:6px;">\u2713 ' + t("share_created") + '</div>' +
       '<a href="' + url + '" target="_blank" style="font-family:var(--mono);font-size:12px;color:var(--blue);display:block;margin-bottom:6px;word-break:break-all;">' + url + '</a>' +
       '</div>';
     var body = document.getElementById("stan-outBody");
@@ -1453,7 +1453,7 @@
     if ((window.STANDALONE_OUTPUTS || []).indexOf(pendingOut.key) !== -1) {
       // Standalone — explain
       var msg = '<div style="background:var(--off);border-left:2px solid var(--border);padding:10px 14px;margin-bottom:14px;">' +
-        '<div style="font-family:var(--mono);font-size:10px;color:var(--tl);text-transform:uppercase;letter-spacing:.1em;margin-bottom:5px;">' + t("standalone_explain") + '</div>' +
+        '<div style="font-family:var(--mono);font-size:11.5px;color:var(--tl);margin-bottom:5px;">' + t("standalone_explain") + '</div>' +
         '<div style="font-family:var(--serif);font-size:13px;color:var(--ts);">' + t("standalone_detail") + '</div></div>';
       var body = document.getElementById("stan-outBody");
       if (body) body.innerHTML = msg + (body.innerHTML || "");
@@ -1507,7 +1507,7 @@
       var ctrlBar = document.createElement("div");
       ctrlBar.style.cssText = "display:flex;gap:6px;align-items:center;padding:3px 0 6px;border-bottom:1px solid var(--border-l);margin-bottom:8px;";
       var ctrlLbl = document.createElement("span");
-      ctrlLbl.style.cssText = "font-family:var(--mono);font-size:10px;color:var(--tl);flex:1;letter-spacing:.06em;";
+      ctrlLbl.style.cssText = "font-family:var(--mono);font-size:11.5px;color:var(--tl);flex:1;";
       ctrlLbl.textContent = "Stan \u00b7 " + target.label;
       var ctrlDel = document.createElement("button");
       ctrlDel.style.cssText = "font-family:var(--serif);font-size:12px;color:var(--red);background:none;border:none;cursor:pointer;padding:0;";
@@ -1692,11 +1692,11 @@
     // Build params HTML
     function buildParams() {
       var h = '<div style="background:var(--off);border:1px solid var(--border);padding:12px 14px;margin-bottom:14px;">';
-      h += '<div style="font-family:var(--mono);font-size:10px;color:var(--tl);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px;">' + t("dir_params") + '</div>';
+      h += '<div style="font-family:var(--mono);font-size:11.5px;color:var(--tl);margin-bottom:8px;">' + t("dir_params") + '</div>';
       Object.keys(params).forEach(function(k) {
         if (typeof params[k] === "object") return;
         h += '<div style="display:grid;grid-template-columns:100px 1fr;gap:6px;align-items:center;padding:5px 0;border-bottom:1px solid var(--border-l);">';
-        h += '<span style="font-family:var(--mono);font-size:10px;color:var(--tl);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + k + '</span>';
+        h += '<span style="font-family:var(--mono);font-size:11.5px;color:var(--tl);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + k + '</span>';
         h += '<input id="stan-dp-' + dirId + '-' + k + '" value="' + String(params[k]).replace(/"/g, '&quot;') + '" style="width:100%;min-width:0;font-family:var(--serif);font-size:13px;padding:3px 6px;border:1px solid var(--border);color:var(--navy);box-sizing:border-box;">';
         h += '</div>';
       });
@@ -1713,33 +1713,33 @@
       html += buildParams();
       // Step 1
       html += '<div style="border:2px solid var(--abr);background:#fffbf0;padding:14px 16px;">' +
-        '<div style="font-family:var(--mono);font-size:10px;color:var(--amber);font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px;">\u2460 ' + t("dir_step1") + '</div>' +
+        '<div style="font-family:var(--mono);font-size:11.5px;color:var(--amber);font-weight:700;margin-bottom:6px;">\u2460 ' + t("dir_step1") + '</div>' +
         '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.6;margin-bottom:12px;">' + t("dir_step1_desc") + '</div>' +
         '<button id="stan-dir-copy-btn-' + dirId + '" style="font-family:var(--serif);font-size:15px;font-weight:700;background:var(--navy);color:#fff;border:none;padding:11px 24px;cursor:pointer;width:100%;">\ud83d\udccb ' + t("dir_copy_prompt") + '</button></div>';
       // Step 2
       html += '<div style="border:2px solid var(--bbr);background:var(--bbg);padding:14px 16px;">' +
-        '<div style="font-family:var(--mono);font-size:10px;color:var(--blue);font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px;">\u2461 ' + t("dir_step2") + '</div>' +
+        '<div style="font-family:var(--mono);font-size:11.5px;color:var(--blue);font-weight:700;margin-bottom:6px;">\u2461 ' + t("dir_step2") + '</div>' +
         '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.6;margin-bottom:10px;">' + t("dir_step2_desc") + '</div>' +
         '<button onclick="window.open(\'https://claude.ai/new\',\'_blank\')" style="font-family:var(--serif);font-size:14px;font-weight:600;background:var(--blue);color:#fff;border:none;padding:9px 20px;cursor:pointer;margin-right:8px;">' + t("dir_open_claude") + '</button>' +
         '<button onclick="window.open(\'https://gemini.google.com\',\'_blank\')" style="font-family:var(--serif);font-size:14px;font-weight:600;background:transparent;color:var(--blue);border:1px solid var(--bbr);padding:9px 20px;cursor:pointer;">' + t("dir_open_gemini") + '</button></div>';
       // Step 3
       html += '<div style="border:2px solid var(--gbr);background:var(--gbg);padding:14px 16px;">' +
-        '<div style="font-family:var(--mono);font-size:10px;color:var(--green);font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px;">\u2462 ' + t("dir_step3") + '</div>' +
+        '<div style="font-family:var(--mono);font-size:11.5px;color:var(--green);font-weight:700;margin-bottom:6px;">\u2462 ' + t("dir_step3") + '</div>' +
         '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.6;margin-bottom:10px;">' + t("dir_step3_desc") + '</div>' +
         '<button id="stan-dir-paste-btn-' + dirId + '" style="font-family:var(--serif);font-size:14px;font-weight:600;background:var(--green);color:#fff;border:none;padding:9px 20px;cursor:pointer;width:100%;">' + t("paste_result") + '</button></div>';
       // Prompt preview
-      html += '<details style="border:1px solid var(--border-l);"><summary style="font-family:var(--mono);font-size:10px;color:var(--tl);text-transform:uppercase;letter-spacing:.1em;padding:8px 12px;cursor:pointer;">' + t("dir_view_prompt") + ' \u25be</summary>' +
+      html += '<details style="border:1px solid var(--border-l);"><summary style="font-family:var(--mono);font-size:11.5px;color:var(--tl);padding:8px 12px;cursor:pointer;">' + t("dir_view_prompt") + ' \u25be</summary>' +
         '<div style="padding:10px 12px;background:var(--off);font-family:var(--mono);font-size:11px;color:var(--tb);line-height:1.65;white-space:pre-wrap;max-height:180px;overflow-y:auto;">' + displayPrompt.replace(/</g, "&lt;").replace(/>/g, "&gt;") + '</div></details>';
       html += '</div>';
     } else {
       html += '<div style="display:flex;flex-direction:column;gap:12px;">';
       html += buildParams();
-      html += '<div style="border:2px solid var(--gbr);background:#f0fdf4;padding:14px 16px;">' +
-        '<div style="font-family:var(--mono);font-size:10px;color:var(--green);font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px;">\u26a1 ' + t("dir_modal_mode") + '</div>' +
+      html += '<div style="border:2px solid var(--gbr);background:#F7FCF9;padding:14px 16px;">' +
+        '<div style="font-family:var(--mono);font-size:11.5px;color:var(--green);font-weight:700;margin-bottom:6px;">\u26a1 ' + t("dir_modal_mode") + '</div>' +
         '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.6;margin-bottom:14px;">' + dir.description + '</div>' +
         '<button id="stan-dir-launch-btn-' + dirId + '" style="font-family:var(--serif);font-size:16px;font-weight:700;background:var(--green);color:#fff;border:none;padding:14px 32px;cursor:pointer;width:100%;">\u26a1 ' + t("dir_launch") + '</button></div>';
       // Copy alt
-      html += '<details style="border:1px solid var(--border-l);"><summary style="font-family:var(--mono);font-size:10px;color:var(--tl);text-transform:uppercase;letter-spacing:.1em;padding:8px 12px;cursor:pointer;">' + t("dir_prefer_copy") + ' \u25be</summary>' +
+      html += '<details style="border:1px solid var(--border-l);"><summary style="font-family:var(--mono);font-size:11.5px;color:var(--tl);padding:8px 12px;cursor:pointer;">' + t("dir_prefer_copy") + ' \u25be</summary>' +
         '<div style="padding:12px;display:flex;flex-direction:column;gap:8px;">' +
         '<div style="background:var(--off);padding:8px 10px;font-family:var(--mono);font-size:11px;color:var(--tb);line-height:1.6;white-space:pre-wrap;max-height:140px;overflow-y:auto;">' + displayPrompt.replace(/</g, "&lt;").replace(/>/g, "&gt;") + '</div>' +
         '<button id="stan-dir-copy-alt-' + dirId + '" style="font-family:var(--serif);font-size:14px;font-weight:600;background:var(--navy);color:#fff;border:none;padding:8px 18px;cursor:pointer;align-self:flex-start;">\ud83d\udccb ' + t("dir_copy_prompt") + '</button>' +

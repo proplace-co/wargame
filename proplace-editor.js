@@ -63,40 +63,40 @@
   var style = document.createElement("style");
   style.textContent = [
     "#plEditor{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;align-items:flex-end;gap:8px;font-family:'EB Garamond',Georgia,serif;}",
-    "#plToggle{background:#0f1f33;color:#fff;border:none;padding:11px 20px;font-size:13px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(15,31,51,0.25);font-family:'DM Mono','Courier New',monospace;letter-spacing:0.08em;text-transform:uppercase;transition:background 0.15s;}",
+    "#plToggle{background:#0f1f33;color:#fff;border:none;padding:11px 20px;font-size:13px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(15,31,51,0.25);font-family:'DM Mono','Courier New',monospace;transition:background 0.15s;}",
     "#plToggle.editing{background:#c04a00;}",
     "#plActions{display:none;flex-direction:column;gap:6px;align-items:flex-end;}",
-    ".pl-action-btn{border:none;padding:9px 16px;font-size:11px;font-weight:500;cursor:pointer;font-family:'DM Mono','Courier New',monospace;letter-spacing:0.08em;text-transform:uppercase;transition:opacity 0.15s;}",
+    ".pl-action-btn{border:none;padding:9px 16px;font-size:11px;font-weight:500;cursor:pointer;font-family:'DM Mono','Courier New',monospace;transition:opacity 0.15s;}",
     ".pl-action-btn:hover{opacity:0.85;}",
-    ".pl-btn-save{background:#185c38;color:#fff;}.pl-btn-pdf{background:#183460;color:#fff;}.pl-btn-link{background:#526070;color:#fff;}.pl-btn-section{background:#5a3a90;color:#fff;}.pl-btn-cancel{background:#f4f5f7;color:#0b1929;border:1px solid #d4d9e2;}",
+    ".pl-btn-save{background:#185c38;color:#fff;}.pl-btn-pdf{background:#183460;color:#fff;}.pl-btn-link{background:#4B5E78;color:#fff;}.pl-btn-section{background:#5a3a90;color:#fff;}.pl-btn-cancel{background:#f4f5f7;color:#0b1929;border:1px solid #d4d9e2;}",
     "#plToast{position:fixed;bottom:100px;right:24px;z-index:9999;background:#0f1f33;color:#fff;padding:11px 18px;font-size:12px;opacity:0;transition:opacity 0.25s;pointer-events:none;max-width:300px;font-family:'EB Garamond',Georgia,serif;font-style:italic;line-height:1.5;}",
     "[contenteditable]:focus{outline:2px solid #8fa8c8;outline-offset:2px;background:rgba(143,168,200,0.06);}",
     "[contenteditable]:hover{outline:1px dashed #c0ccd8;}",
     ".pl-section-ctrl{display:flex;gap:6px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px dashed #e4e7ed;}",
-    ".pl-ctrl-btn{padding:3px 10px;font-size:10px;border-radius:0;border:1px solid;background:#fff;cursor:pointer;font-family:'DM Mono','Courier New',monospace;letter-spacing:0.06em;text-transform:uppercase;}",
-    ".pl-hide-btn{color:#526070;border-color:#d4d9e2;}.pl-hide-btn:hover{background:#0f1f33;color:#fff;border-color:#0f1f33;}",
+    ".pl-ctrl-btn{padding:3px 10px;font-size:11.5px;border-radius:0;border:1px solid;background:#fff;cursor:pointer;font-family:'DM Mono','Courier New',monospace;}",
+    ".pl-hide-btn{color:#4B5E78;border-color:#d4d9e2;}.pl-hide-btn:hover{background:#0f1f33;color:#fff;border-color:#0f1f33;}",
     ".pl-del-btn{color:#7a1824;border-color:#ddb8be;}.pl-del-btn:hover{background:#7a1824;color:#fff;}",
-    ".pl-label-btn{color:#9eaaba;border-color:transparent;background:transparent;cursor:default;font-size:9px;}",
+    ".pl-label-btn{color:#9eaaba;border-color:transparent;background:transparent;cursor:default;font-size:11px;}",
     /* ── v3.7 : bouton × carte injectée ── */
-    ".pl-card-del{position:absolute;top:8px;right:8px;background:rgba(122,24,36,0.07);border:1px solid #ddb8be;color:#7a1824;font-size:10px;cursor:pointer;padding:3px 8px;font-family:'DM Mono','Courier New',monospace;letter-spacing:0.06em;text-transform:uppercase;z-index:10;transition:background 0.15s;}",
+    ".pl-card-del{position:absolute;top:8px;right:8px;background:rgba(122,24,36,0.07);border:1px solid #ddb8be;color:#7a1824;font-size:11.5px;cursor:pointer;padding:3px 8px;font-family:'DM Mono','Courier New',monospace;z-index:10;transition:background 0.15s;}",
     ".pl-card-del:hover{background:#7a1824;color:#fff;}",
     "#plModal{position:fixed;inset:0;background:rgba(11,25,41,0.65);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;}",
     "#plModalBox{background:#fff;padding:28px;max-width:460px;width:100%;box-shadow:0 8px 40px rgba(11,25,41,0.2);border-top:3px solid #0f1f33;max-height:90vh;overflow-y:auto;}",
     "#plModalTitle{font-family:'EB Garamond',Georgia,serif;font-size:1.25rem;font-weight:600;color:#0f1f33;margin:0 0 6px;}",
-    "#plModalSubtitle{font-family:'EB Garamond',Georgia,serif;font-size:0.85rem;font-style:italic;color:#526070;margin:0 0 18px;line-height:1.55;}",
-    ".pl-modal-label{font-family:'DM Mono','Courier New',monospace;font-size:0.6rem;letter-spacing:0.14em;text-transform:uppercase;color:#526070;display:block;margin-bottom:5px;margin-top:12px;}",
+    "#plModalSubtitle{font-family:'EB Garamond',Georgia,serif;font-size:0.85rem;font-style:italic;color:#4B5E78;margin:0 0 18px;line-height:1.55;}",
+    ".pl-modal-label{font-family:'DM Mono','Courier New',monospace;font-size:0.6rem;letter-spacing:0.14em;color:#4B5E78;display:block;margin-bottom:5px;margin-top:12px;}",
     ".pl-modal-input{width:100%;padding:9px 12px;border:1px solid #d4d9e2;font-size:14px;font-family:'EB Garamond',Georgia,serif;box-sizing:border-box;outline:none;}",
     ".pl-modal-input:focus{border-color:#0f1f33;}",
     "#plDropZone{border:2px dashed #d4d9e2;padding:24px;text-align:center;margin-top:14px;cursor:pointer;transition:border-color 0.2s,background 0.2s;}",
     "#plDropZone:hover,#plDropZone.dragover{border-color:#0f1f33;background:#f4f5f7;}",
-    "#plDropZone p{font-family:'EB Garamond',Georgia,serif;font-size:0.88rem;color:#526070;margin:0;line-height:1.6;}",
+    "#plDropZone p{font-family:'EB Garamond',Georgia,serif;font-size:0.88rem;color:#4B5E78;margin:0;line-height:1.6;}",
     "#plDropZone strong{color:#0f1f33;}",
-    "#plDropZone small{font-family:'DM Mono',monospace;font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:#9eaaba;display:block;margin-top:4px;}",
-    "#plFileInfo{font-family:'DM Mono',monospace;font-size:0.62rem;letter-spacing:0.06em;margin-top:8px;text-align:center;min-height:16px;}",
+    "#plDropZone small{font-family:'DM Mono',monospace;font-size:0.6rem;color:#9eaaba;display:block;margin-top:4px;}",
+    "#plFileInfo{font-family:'DM Mono',monospace;font-size:0.62rem;margin-top:8px;text-align:center;min-height:16px;}",
     "#plModalActions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;}",
-    ".pl-modal-ok{background:#0f1f33;color:#fff;border:none;padding:9px 18px;font-size:11px;font-weight:500;cursor:pointer;font-family:'DM Mono','Courier New',monospace;letter-spacing:0.08em;text-transform:uppercase;}",
+    ".pl-modal-ok{background:#0f1f33;color:#fff;border:none;padding:9px 18px;font-size:11px;font-weight:500;cursor:pointer;font-family:'DM Mono','Courier New',monospace;}",
     ".pl-modal-ok:disabled{background:#9eaaba;cursor:not-allowed;}",
-    ".pl-modal-cancel{background:#f4f5f7;color:#0b1929;border:1px solid #d4d9e2;padding:9px 18px;font-size:11px;font-weight:500;cursor:pointer;font-family:'DM Mono','Courier New',monospace;letter-spacing:0.08em;text-transform:uppercase;}",
+    ".pl-modal-cancel{background:#f4f5f7;color:#0b1929;border:1px solid #d4d9e2;padding:9px 18px;font-size:11px;font-weight:500;cursor:pointer;font-family:'DM Mono','Courier New',monospace;}",
     "@media (max-width:1000px){",
       "#plEditor{bottom:0!important;right:0!important;left:0!important;width:100%!important;padding:8px 12px 12px!important;border-top:2px solid #d4d9e2!important;background:#fff!important;box-shadow:0 -4px 20px rgba(15,31,51,0.12)!important;align-items:stretch!important;gap:4px!important;}",
       "#plToggle{width:100%!important;justify-content:center!important;box-shadow:none!important;}",
@@ -165,7 +165,7 @@
         inf.style.color="#7a1824"; inf.textContent="\u26a0 " + Math.round(file.size/1024) + " Ko \u2014 max 3 Mo. Ajoutez data-pdfco-key ou compressez.";
         cb.disabled=true; selectedFile=null; selectedBase64=null; return;
       }
-      inf.style.color="#526070"; inf.textContent="Lecture\u2026";
+      inf.style.color="#4B5E78"; inf.textContent="Lecture\u2026";
       var r = new FileReader();
       r.onload=function(ev){ selectedFile=file; selectedBase64=ev.target.result.split(",")[1]; inf.style.color="#185c38"; inf.textContent="\u2713 "+file.name+" ("+Math.round(file.size/1024)+" Ko)"+(hasPdfco?" \u2014 via PDF.co":""); cb.disabled=false; };
       r.onerror=function(){ inf.style.color="#7a1824"; inf.textContent="\u26a0 Erreur de lecture."; };
@@ -241,7 +241,7 @@
 
     function hf(file){
       if(!file)return;
-      inf.style.color="#526070"; inf.textContent="Lecture\u2026";
+      inf.style.color="#4B5E78"; inf.textContent="Lecture\u2026";
       var r=new FileReader();
       r.onload=function(ev){
         selectedFile=file; selectedBase64=ev.target.result.split(",")[1];
@@ -315,10 +315,10 @@
     card.className = "pl-linked-file";
     card.style.cssText = "display:flex;align-items:center;gap:12px;padding:11px 14px;background:#f4f5f7;border:1px solid #d4d9e2;border-left:3px solid #0f1f33;margin-bottom:8px;";
     card.innerHTML = [
-      "<span style='font-family:DM Mono,monospace;font-size:0.62rem;background:#0f1f33;color:#fff;padding:2px 7px;letter-spacing:0.06em;flex-shrink:0;'>"+ext+"</span>",
+      "<span style='font-family:DM Mono,monospace;font-size:0.62rem;background:#0f1f33;color:#fff;padding:2px 7px;flex-shrink:0;'>"+ext+"</span>",
       "<div style='flex:1;min-width:0;'>",
         "<a href='"+fileUrl+"' target='_blank' style='font-family:EB Garamond,serif;font-size:0.95rem;font-weight:600;color:#0f1f33;text-decoration:underline;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>"+fileName+"</a>",
-        "<span style='font-family:DM Mono,monospace;font-size:0.6rem;color:#9eaaba;letter-spacing:0.04em;'>"+date+(note?" &middot; "+note:"")+"</span>",
+        "<span style='font-family:DM Mono,monospace;font-size:0.6rem;color:#9eaaba;'>"+date+(note?" &middot; "+note:"")+"</span>",
       "</div>"
     ].join("");
 
@@ -357,7 +357,7 @@
         "<button class='pl-action-btn pl-btn-pdf'     onclick='plOpenPDFUpload()'>&#128196; Analyser un document PDF</button>",
         "<button class='pl-action-btn pl-btn-link'    onclick='plAttachLink()'>&#128279; Lier un fichier (sans analyse)</button>",
         "<button class='pl-action-btn pl-btn-section' onclick='plAddSection()'>+ Ajouter une section manuellement</button>",
-        "<button class='pl-action-btn' style='background:#526070;color:#fff;' onclick='plStartTextEdit()'>&#9998; Éditer le texte du mémo</button>",
+        "<button class='pl-action-btn' style='background:#4B5E78;color:#fff;' onclick='plStartTextEdit()'>&#9998; Éditer le texte du mémo</button>",
         "<button class='pl-action-btn pl-btn-cancel'  onclick='plCloseActions()'>&#x2715; Fermer</button>",
       "</div>",
       "<div id='plActionsP2' style='display:none;flex-direction:column;gap:6px;align-items:flex-end;'>",
@@ -722,7 +722,7 @@
           "<div class='pl-table-wrap' style='overflow-x:auto;'>",
             "<table class='pl-custom-table' style='width:100%;border-collapse:collapse;font-size:0.95rem;'>",
               "<thead><tr style='background:#0f1f33;'>",
-                "<th contenteditable='true' style='padding:10px 12px;text-align:left;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.1em;text-transform:uppercase;border-right:1px solid rgba(255,255,255,0.1);min-width:120px;'>Métrique</th>",
+                "<th contenteditable='true' style='padding:10px 12px;text-align:left;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;border-right:1px solid rgba(255,255,255,0.1);min-width:120px;'>Métrique</th>",
                 "<th contenteditable='true' style='padding:10px 12px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;border-right:1px solid rgba(255,255,255,0.1);min-width:80px;'>Y1</th>",
                 "<th contenteditable='true' style='padding:10px 12px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;border-right:1px solid rgba(255,255,255,0.1);min-width:80px;'>Y2</th>",
                 "<th contenteditable='true' style='padding:10px 12px;color:#fff;font-family:DM Mono,monospace;font-size:0.62rem;min-width:80px;'>Y3</th>",
@@ -736,7 +736,7 @@
                 "<td style='border-bottom:1px solid #e4e7ed;width:32px;'></td>",
               "</tr></tbody>",
             "</table>",
-            "<button onclick='plTableAddRow(this)' style='margin-top:6px;background:#f0f2f5;border:1px dashed #c0ccd8;color:#526070;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;width:100%;'>+ Ligne</button>",
+            "<button onclick='plTableAddRow(this)' style='margin-top:6px;background:#f0f2f5;border:1px dashed #c0ccd8;color:#4B5E78;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;cursor:pointer;width:100%;'>+ Ligne</button>",
           "</div>"
         ].join("");
       } else if(res.type==="flags"){
@@ -751,8 +751,8 @@
             "<button onclick='this.parentNode.remove()' style='position:absolute;top:8px;right:8px;background:none;border:none;color:#185c38;font-size:14px;cursor:pointer;padding:2px 6px;opacity:0.6;' title='Supprimer'>\u00d7</button>",
           "</div>",
           "<div style='margin-top:6px;'>",
-            "<button onclick='plFlagsAddRow(this,\"red\")' style='background:#f0f2f5;border:1px dashed #ddb8be;color:#7a1824;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;text-transform:uppercase;cursor:pointer;margin-right:6px;'>+ Risk flag</button>",
-            "<button onclick='plFlagsAddRow(this,\"green\")' style='background:#f0f2f5;border:1px dashed #b0d4c0;color:#185c38;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;text-transform:uppercase;cursor:pointer;'>+ Signal positif</button>",
+            "<button onclick='plFlagsAddRow(this,\"red\")' style='background:#f0f2f5;border:1px dashed #ddb8be;color:#7a1824;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;cursor:pointer;margin-right:6px;'>+ Risk flag</button>",
+            "<button onclick='plFlagsAddRow(this,\"green\")' style='background:#f0f2f5;border:1px dashed #b0d4c0;color:#185c38;padding:5px 14px;font-family:DM Mono,monospace;font-size:0.62rem;cursor:pointer;'>+ Signal positif</button>",
           "</div>"
         ].join("");
       }
