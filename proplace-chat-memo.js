@@ -743,11 +743,12 @@
     b.style.background = col.bg;
     b.style.color = col.text;
     b.style.padding = "4px 12px";
-    b.style.borderRadius = "4px";
-    b.style.fontSize = "10px";
+    // v3 : une pastille, pas une petite capitale espacée — la seule que la
+    // migration de style n'avait pas vue, parce qu'elle est posée en JS et non
+    // dans une chaîne de style.
+    b.style.borderRadius = "999px";
+    b.style.fontSize = "11px";
     b.style.fontWeight = "700";
-    b.style.textTransform = "uppercase";
-    b.style.letterSpacing = ".04em";
     b.style.whiteSpace = "nowrap";
   }
 
