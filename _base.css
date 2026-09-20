@@ -1229,3 +1229,26 @@ h4{font-family:var(--pp-body);font-size:14px;font-weight:700;
 /* ③ LE VOILE DE LA VISIONNEUSE D'IMAGE : un marine a lui (#0b1929), ecrit en
    rgba() — invisible a un recensement qui ne cherche que des « # ». */
 .img-lightbox{background:rgba(15,29,51,.88)}
+
+
+/* ── LE STICKY DES IMAGES, RENDU A LA LECTURE ────────────────────────────── */
+/* Le 30/08 (c394df3c) « .section-container{overflow-x:auto} » a ete pose pour
+   que la matrice d'horizon defile dans SA carte plutot que d'etre coupee.
+   Effet de bord non vu pendant trois semaines : per CSS Overflow 3 §3.3, un axe
+   a `auto` force l'autre `visible` a `auto`. La carte devenait donc un conteneur
+   de defilement, c'est-a-dire le scrollport de reference de tous les
+   `position:sticky` qu'elle contient. Les .img-col, qui suivaient la lecture,
+   se sont figees : une carte de hauteur auto ne defile jamais, le sticky a zero
+   course — rendu stricto sensu identique a un position:static.
+   On rend la carte `visible` et on met le debordement sur le TABLEAU, qui est
+   le seul element reellement trop large. */
+.section-container{overflow:visible}
+/* 34 des 36 tableaux d'un memo sont deja enveloppes dans .table-container :
+   c'est lui qui defile. Les deux qui ne le sont pas passent en display:block,
+   seule facon de faire defiler un <table> sans toucher au HTML publie. */
+.section-container .table-container,
+.section-container .memo-table-fallback{overflow-x:auto;scrollbar-width:none}
+.section-container > table{display:block;max-width:100%;overflow-x:auto;scrollbar-width:none}
+.section-container .table-container::-webkit-scrollbar,
+.section-container .memo-table-fallback::-webkit-scrollbar,
+.section-container > table::-webkit-scrollbar{height:0;display:none}
