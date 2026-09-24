@@ -69,7 +69,7 @@
     // CSS
     var link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = base + "stan-styles.css?v=12";
+    link.href = base + "stan-styles.css?v=13";
     link.onload = tick;
     link.onerror = tick;
     document.head.appendChild(link);
