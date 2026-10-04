@@ -2118,11 +2118,252 @@
   }
 
   /* ══════════════════════════════════════════════════════════════
+     LIEN « OUVRIR LE DEAL FLOW » ET SOMMAIRE MOBILE (04/10)
+     ══════════════════════════════════════════════════════════════ */
+
+  /* Le mémo pointait toujours /cibles/<fonds>/open/, la vue complète. Pour un fonds
+     en essai, c'est l'aperçu qu'il faut ouvrir, et sur la société d'où l'on vient :
+     ?sel= ouvre son panneau, ?only= réduit la liste à elle seule. La vue /open/ reste
+     celle des offres Standard et Entreprise, lue sur /v3/memo-pipeline. */
+  var PP_PROXY = "https://alexandre-79537--proplace-chat-proxy-fastapi-app.modal.run";
+
+  function initFundLink() {
+    var links = document.querySelectorAll("a.sidebar-fund-link[href*='/cibles/']");
+    if (!links.length) return;
+    var name = String((DEAL_CONTEXT && DEAL_CONTEXT.name) || "").trim();
+    var q = name ? "?sel=" + encodeURIComponent(name) + "&only=" + encodeURIComponent(name) : "";
+    var slug = "", bases = [];
+    Array.prototype.forEach.call(links, function(a) {
+      var m = (a.getAttribute("href") || "").match(/^(https?:\/\/[^\/]+(?:\/(?:fr|en))?)\/cibles\/([^\/?#]+)(?:\/open)?\/?(?:[?#].*)?$/);
+      if (!m) return;
+      var base = m[1] + "/cibles/" + m[2] + "/";
+      a.setAttribute("href", base + q);
+      bases.push([a, base]);
+      slug = slug || m[2];
+    });
+    if (!slug || !window.fetch) return;
+    fetch(PP_PROXY + "/v3/memo-pipeline?fund=" + encodeURIComponent(slug))
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) {
+        var offre = String((d && d.offre && d.offre.offre) || "").toLowerCase();
+        if (offre !== "standard" && offre !== "entreprise") return;
+        bases.forEach(function(x) { x[0].setAttribute("href", x[1] + "open/" + q); });
+      })
+      .catch(function() {});
+  }
+
+  /* Sous 900 px le menu de gauche passe AU-DESSUS du mémo et défile avec lui : passé
+     le premier écran, plus de sommaire. Cette barre reste collée en haut de la zone
+     de lecture (#memo-content, l'élément qui défile) : la partie en cours, ‹ › pour
+     la précédente ou la suivante, « Sommaire » pour la liste complète du menu.
+     Au-dessus de 900 px elle n'est pas affichée. Le style vit ICI et non dans
+     _base.css : la barre et son style arrivent ensemble, jamais l'un sans l'autre. */
+  var MTOC_CSS =
+    ".pp-mtoc{display:none}" +
+    "@media (max-width:900px){" +
+    ".pp-mtoc{display:flex;align-items:center;gap:6px;position:-webkit-sticky;position:sticky;top:0;z-index:950;" +
+    "background:#fff;border-bottom:1px solid #E3E8F0;padding:8px 10px 10px;" +
+    "box-shadow:0 2px 10px rgba(15,29,51,.06);font-family:'Instrument Sans',system-ui,sans-serif}" +
+    ".pp-mtoc button{font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}" +
+    ".pp-mtoc-open{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;" +
+    "border-radius:999px;border:1px solid #0E7F3F;background:#E7F6EE;color:#0E7F3F;font-size:13px!important;font-weight:700}" +
+    ".pp-mtoc-cur{flex:1 1 auto;min-width:0;font-size:13px;font-weight:600;color:#16233A;line-height:1.3;" +
+    "white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+    ".pp-mtoc-step{flex:0 0 auto;width:36px;height:36px;border-radius:999px;border:1px solid #E3E8F0;" +
+    "background:#fff;color:#16233A;font-size:20px!important;line-height:1;padding:0}" +
+    ".pp-mtoc-step:disabled{opacity:.35;cursor:default}" +
+    ".pp-mtoc-prog{position:absolute;left:0;right:0;bottom:0;height:3px;background:#EEF2F7}" +
+    ".pp-mtoc-prog i{display:block;height:100%;width:0;background:#0E7F3F;transition:width .15s}" +
+    "#memo-content [id]{scroll-margin-top:64px}" +
+    "}" +
+    ".pp-mtoc-panel{position:fixed;inset:0;z-index:10002;background:rgba(15,29,51,.45);display:flex;" +
+    "align-items:flex-end;font-family:'Instrument Sans',system-ui,sans-serif}" +
+    ".pp-mtoc-panel[hidden]{display:none}" +
+    ".pp-mtoc-sheet{width:100%;max-height:82vh;max-height:82dvh;background:#fff;border-radius:16px 16px 0 0;" +
+    "display:flex;flex-direction:column;box-shadow:0 -8px 30px rgba(15,29,51,.2)}" +
+    ".pp-mtoc-hd{display:flex;align-items:center;gap:10px;padding:14px 16px 10px;border-bottom:1px solid #EEF2F7}" +
+    ".pp-mtoc-hd b{flex:1;min-width:0;font-size:16px;color:#16233A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+    ".pp-mtoc-x{width:36px;height:36px;border-radius:999px;border:1px solid #E3E8F0;background:#fff;color:#16233A;" +
+    "font-size:20px;line-height:1;cursor:pointer;padding:0}" +
+    ".pp-mtoc-list{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 10px calc(16px + env(safe-area-inset-bottom,0px))}" +
+    ".pp-mtoc-h{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#8FA0B8;margin:14px 8px 4px}" +
+    ".pp-mtoc-it{display:block;width:100%;text-align:left;border:0;background:transparent;border-radius:10px;" +
+    "padding:11px 10px;font:inherit;font-size:15px;font-weight:600;color:#16233A;line-height:1.35;cursor:pointer}" +
+    ".pp-mtoc-it.on{background:#E7F6EE;color:#0E7F3F}" +
+    ".pp-mtoc-top{color:#61708A;font-weight:500}";
+
+  function initMobileToc() {
+    var sc = document.getElementById("memo-content");
+    var side = document.querySelector(".main-wrapper > .sidebar") || document.querySelector(".sidebar");
+    if (!sc || !side || document.getElementById("pp-mtoc")) return;
+    var items = [];
+    var navs = side.querySelectorAll("a.nav-item[href^='#']");
+    Array.prototype.forEach.call(navs, function(a) {
+      var id = "";
+      try { id = decodeURIComponent(a.getAttribute("href").slice(1)); } catch (e) { return; }
+      var el = id && document.getElementById(id);
+      if (el) items.push({ a: a, el: el, label: (a.textContent || "").replace(/\s+/g, " ").trim() });
+    });
+    if (items.length < 2) return;
+    var fr = !/^en/i.test(String((DEAL_CONTEXT && DEAL_CONTEXT.lang) || document.documentElement.lang || "fr"));
+    var L = fr
+      ? { toc: "Sommaire", prev: "Partie précédente", next: "Partie suivante", close: "Fermer", top: "↑ Haut du mémo" }
+      : { toc: "Contents", prev: "Previous part", next: "Next part", close: "Close", top: "↑ Top of the memo" };
+    var dealName = String((DEAL_CONTEXT && DEAL_CONTEXT.name) || "").trim();
+
+    var st = document.createElement("style");
+    st.id = "pp-mtoc-css";
+    st.textContent = MTOC_CSS;
+    document.head.appendChild(st);
+
+    var bar = document.createElement("div");
+    bar.id = "pp-mtoc";
+    bar.className = "pp-mtoc";
+    var open = document.createElement("button");
+    open.type = "button";
+    open.className = "pp-mtoc-open";
+    open.setAttribute("aria-haspopup", "dialog");
+    open.textContent = "☰ " + L.toc;
+    var curEl = document.createElement("span");
+    curEl.className = "pp-mtoc-cur";
+    function stepBtn(d, label, glyph) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "pp-mtoc-step";
+      b.setAttribute("aria-label", label);
+      b.title = label;
+      b.textContent = glyph;
+      b.addEventListener("click", function() { go(Math.max(0, Math.min(items.length - 1, cur + d))); });
+      return b;
+    }
+    var prev = stepBtn(-1, L.prev, "‹");
+    var next = stepBtn(1, L.next, "›");
+    var prog = document.createElement("span");
+    prog.className = "pp-mtoc-prog";
+    var fill = document.createElement("i");
+    prog.appendChild(fill);
+    bar.appendChild(open);
+    bar.appendChild(curEl);
+    bar.appendChild(prev);
+    bar.appendChild(next);
+    bar.appendChild(prog);
+    sc.insertBefore(bar, sc.firstChild);
+
+    var panel = document.createElement("div");
+    panel.id = "pp-mtoc-panel";
+    panel.className = "pp-mtoc-panel";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "true");
+    panel.setAttribute("aria-label", L.toc);
+    panel.hidden = true;
+    var sheet = document.createElement("div");
+    sheet.className = "pp-mtoc-sheet";
+    var hd = document.createElement("div");
+    hd.className = "pp-mtoc-hd";
+    var ttl = document.createElement("b");
+    ttl.textContent = L.toc + (dealName ? " · " + dealName : "");
+    var x = document.createElement("button");
+    x.type = "button";
+    x.className = "pp-mtoc-x";
+    x.setAttribute("aria-label", L.close);
+    x.textContent = "×";
+    hd.appendChild(ttl);
+    hd.appendChild(x);
+    var list = document.createElement("div");
+    list.className = "pp-mtoc-list";
+    var topBtn = document.createElement("button");
+    topBtn.type = "button";
+    topBtn.className = "pp-mtoc-it pp-mtoc-top";
+    topBtn.textContent = L.top;
+    topBtn.addEventListener("click", function() { close(); sc.scrollTo({ top: 0, behavior: "smooth" }); });
+    list.appendChild(topBtn);
+    var rows = [];
+    Array.prototype.forEach.call(side.querySelectorAll(".sb-nav-heading, a.nav-item[href^='#']"), function(n) {
+      if (n.classList.contains("sb-nav-heading")) {
+        var h = document.createElement("div");
+        h.className = "pp-mtoc-h";
+        h.textContent = (n.textContent || "").trim();
+        list.appendChild(h);
+        return;
+      }
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].a !== n) continue;
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "pp-mtoc-it";
+        b.textContent = items[i].label;
+        (function(k) { b.addEventListener("click", function() { close(); go(k); }); })(i);
+        list.appendChild(b);
+        rows[i] = b;
+        return;
+      }
+    });
+    sheet.appendChild(hd);
+    sheet.appendChild(list);
+    panel.appendChild(sheet);
+    document.body.appendChild(panel);
+
+    var cur = -2;
+    function setCur(i) {
+      if (i === cur) return;
+      cur = i;
+      curEl.textContent = i >= 0 ? items[i].label : (dealName || L.toc);
+      prev.disabled = i <= 0;
+      next.disabled = i >= items.length - 1;
+      rows.forEach(function(r, k) { if (r) r.classList.toggle("on", k === i); });
+    }
+    function go(i) {
+      var it = items[i];
+      if (!it) return;
+      var top = it.el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - bar.offsetHeight - 8;
+      sc.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+      setCur(i);
+    }
+    function close() {
+      panel.hidden = true;
+      open.focus();
+    }
+    open.addEventListener("click", function() {
+      panel.hidden = false;
+      var r = rows[cur];
+      if (r && r.scrollIntoView) r.scrollIntoView({ block: "center" });
+      x.focus();
+    });
+    x.addEventListener("click", close);
+    panel.addEventListener("click", function(e) { if (e.target === panel) close(); });
+    document.addEventListener("keydown", function(e) { if (e.key === "Escape" && !panel.hidden) close(); });
+
+    var ticking = false;
+    function measure() {
+      ticking = false;
+      if (!bar.offsetHeight) return;
+      var lim = sc.getBoundingClientRect().top + bar.offsetHeight + 24, idx = -1, best = -Infinity;
+      for (var i = 0; i < items.length; i++) {
+        var t = items[i].el.getBoundingClientRect().top;
+        if (t <= lim && t > best) { best = t; idx = i; }
+      }
+      setCur(idx);
+      fill.style.width = Math.min(100, sc.scrollTop / Math.max(1, sc.scrollHeight - sc.clientHeight) * 100) + "%";
+    }
+    function onScroll() {
+      if (ticking) return;
+      ticking = true;
+      (window.requestAnimationFrame || setTimeout)(measure);
+    }
+    sc.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    measure();
+    if (cur === -2) setCur(-1);
+  }
+
+  /* ══════════════════════════════════════════════════════════════
      INIT
      ══════════════════════════════════════════════════════════════ */
   function init() {
     var layout = wrapLayout();
     var sidebar = buildSidebar(layout);
+    try { initFundLink(); } catch (e) { console.error("Stan fund link failed:", e); }
+    try { initMobileToc(); } catch (e) { console.error("Stan mobile toc failed:", e); }
 
     loadAssets(function() {
       // Wire the essential events FIRST so FAB/close always work
