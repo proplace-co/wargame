@@ -88,6 +88,7 @@
   async function connectAccount() {
     if (demo || accessToken) return;
     memberSession = memberSession || readMemberSession();
+    if (memberSession) key = '';
     if (!memberSession && !key) throw new Error('Connectez votre compte Proplace pour ouvrir ce dossier privé.');
     if (!accessPending) accessPending = (async function () {
       var result = await (await api(key ? '/access' : '/connection', {})).json();
