@@ -1,2406 +1,283 @@
-/* ══════════════════════════════════════════════════════════════
-   STAN — Main sidebar IIFE
-   Loads assets, builds sidebar DOM, wires all interactions.
-   Replaces proplace-editor.js on memos with <meta name="stan-deal">.
-   ══════════════════════════════════════════════════════════════ */
-(function() {
-  "use strict";
-
-  /* ── 1. Read deal context from meta tag ── */
+/* Stan Parcours — canonical production entry point, also used by the isolated demo. */
+(function () {
+  'use strict';
+  if (window.StanJourney) return;
   var meta = document.querySelector('meta[name="stan-deal"]');
-  if (!meta) return; // Not a Stan memo — do nothing
-
-  var DEAL_CONTEXT;
-  try { DEAL_CONTEXT = JSON.parse(meta.getAttribute("content")); }
-  catch(e) { console.error("Stan: invalid deal meta", e); return; }
-
-  window.DEAL_CONTEXT = DEAL_CONTEXT;
-  window.STAN_LANG = DEAL_CONTEXT.lang || "fr";
-
-  /* ── 2. State ── */
-  var attached = [];
-  var historyItems = [];
-  var savedOutputs = [];
-  var pendingOut = null;
-  var expandedPhases = { 0: true };
-  var DEAL_STATUS = DEAL_CONTEXT.status || "CALL";
-  var nextActOpen = false;
-  var guideOpen = false;
-  var _firstVisit = true;
-  var PHASES = [];
-
-  var pendingInjectKey = null;
-  var pendingInjectHtml = null;
-  var selectedInjectTarget = null;
-  var pasteDirectiveId = null;
-  var pasteDirectiveName = null;
-
-  /* ── Modal API base URL ── */
-  var MODAL_BASE = "https://alexandre-79537--";
-
-  /* ── CEO Decision constants ── */
-  var STAN_PROXY_URL        = "https://alexandre-79537--stan-skills-fastapi-app.modal.run";
-  var AIRTABLE_BRIDGE_URL   = "https://alexandre-79537--airtable-bridge-fastapi-app.modal.run";
-  // Unified pill colors — same source of truth everywhere (sidebar top, body, card).
-  // CALL family (PENDING/YES/NO) is ALWAYS green; only the icon distinguishes
-  // the state (matches the Place Chat / daily-mail palette).
-  var PILL_COLORS = {
-    "✓ CALL YES":      { bg: "#12A150", text: "#fff" },
-    "❌ CALL NO":       { bg: "#12A150", text: "#fff" },
-    "⏳ CALL PENDING":  { bg: "#12A150", text: "#fff" },
-    "CONSIDER":         { bg: "#E0A81E", text: "#fff" },
-    "MONITOR":          { bg: "#16233A", text: "#fff" },
-    "PASS":             { bg: "#E5484D", text: "#fff" },
-  };
-  var _stanPendingDecision = null;
-
-  /* ── 3. Load assets dynamically ── */
-  function loadAssets(cb) {
-    var base = getBaseUrl();
-    var loaded = 0;
-    var total = 3;
-
-    var hideOldEditor = document.createElement("style");
-    hideOldEditor.textContent = "#plEditor{display:none!important;}";
-    document.head.appendChild(hideOldEditor);
-
-    function tick() { loaded++; if (loaded >= total && cb) cb(); }
-
-    // CSS
-    var link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = base + "stan-styles.css?v=13";
-    link.onload = tick;
-    link.onerror = tick;
-    document.head.appendChild(link);
-
-    // i18n
-    var s1 = document.createElement("script");
-    s1.src = base + "stan-i18n.js";
-    s1.onload = tick;
-    s1.onerror = tick;
-    document.head.appendChild(s1);
-
-    // skills
-    var s2 = document.createElement("script");
-    s2.src = base + "stan-skills.js";
-    s2.onload = tick;
-    s2.onerror = tick;
-    document.head.appendChild(s2);
-
-    // Fonts (non-blocking)
-    if (!document.querySelector('link[href*="cormorant"]')) {
-      var f = document.createElement("link");
-      f.rel = "stylesheet";
-      f.href = "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;700&display=swap";
-      document.head.appendChild(f);
+  if (!meta) return;
+  var context;
+  try { context = JSON.parse(meta.content); } catch (_) { return; }
+  var script = document.currentScript;
+  var assetBase = script && script.src ? new URL('.', script.src).href : 'https://analysis.proplace.co/';
+  var API = 'https://alexandre-79537--stan-journey-web.modal.run';
+  var record = context.airtable_record || context.deal_id;
+  var demo = !!window.__STAN_JOURNEY_DEMO__;
+  var state = null, pane = 'roadmap', active = '', filter = '', search = '', poll = null, running = false;
+  var selected = new Set(), key = '', shell, content, statusLine, fab, opened = false, pendingDossier = null;
+  var states = { ready: 'À préparer', running: 'En cours', awaiting_evidence: 'Pièces attendues', review: 'À valider',
+    validated: 'Validé', failed: 'À reprendre', not_applicable: 'Non applicable' };
+  var esc = function (v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); };
+  var date = function (n) { return new Date(n * 1000).toLocaleString(context.lang === 'en' ? 'en-GB' : 'fr-FR'); };
+  var euro = function (n) { return Number(n || 0).toFixed(2).replace('.', ',') + ' €'; };
+  function el(tag, attrs, text) { var e = document.createElement(tag); Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); }); if (text != null) e.textContent = text; return e; }
+  function button(label, cls, action, id) { return '<button type="button" class="ppj-btn ' + (cls || '') + '" data-do="' + action + '"' + (id ? ' data-id="' + esc(id) + '"' : '') + '>' + label + '</button>'; }
+  function announce(text, error) { statusLine.textContent = text; statusLine.classList.toggle('ppj-error', !!error); }
+  function headers() { return { 'Content-Type': 'application/json', 'X-Fund-Key': key }; }
+  async function api(path, data, method) {
+    if (demo) throw new Error('La démonstration ne peut pas appeler un service de production.');
+    var res = await fetch(API + '/deals/' + encodeURIComponent(record) + path, { method: method || (data ? 'POST' : 'GET'), headers: headers(), body: data ? JSON.stringify(data) : undefined, credentials: 'omit' });
+    if (!res.ok) { var error = await res.json().catch(function () { return {}; }); throw new Error(error.error || error.detail || 'Service indisponible'); }
+    return res;
+  }
+  async function refresh(initial) {
+    if (demo) { state = window.__STAN_JOURNEY_DEMO__.state; render(); return; }
+    state = await (await api(initial ? '/open' : '', initial ? {} : undefined)).json();
+    render();
+    schedule();
+  }
+  function schedule() {
+    clearTimeout(poll);
+    if (opened && state && Object.values(state.actions).some(function (a) { return a.status === 'running'; })) {
+      poll = setTimeout(function () { refresh(false).catch(function (e) { announce(e.message, true); schedule(); }); }, 3500);
     }
   }
-
-  function getBaseUrl() {
-    var scripts = document.querySelectorAll("script[src]");
-    for (var i = 0; i < scripts.length; i++) {
-      if (scripts[i].src.indexOf("proplace-chat-memo") !== -1) {
-        return scripts[i].src.replace(/proplace-chat-memo\.js.*$/, "");
-      }
-    }
-    return "https://proplace-co.github.io/wargame/";
+  function open(tab) {
+    opened = true; shell.hidden = false; fab.hidden = true; pane = tab === 'history' ? 'history' : 'roadmap';
+    shell.querySelector('#stan-tab-' + (pane === 'history' ? 'hist' : 'roadmap')).focus();
+    render(); schedule();
   }
-
-  /* ── 4. t() wrapper — safe before i18n loads ── */
-  function t(key) {
-    if (window.t) return window.t(key);
-    return key;
-  }
-
-  /* ── 5. Wrap body in layout ── */
-  function wrapLayout() {
-    document.documentElement.classList.add("stan-active");
-    var body = document.body;
-    var children = Array.prototype.slice.call(body.childNodes);
-    var memoWrap = document.createElement("div");
-    memoWrap.className = "stan-memo-col";
-    memoWrap.id = "stan-memo-col";
-    var memoScroll = document.createElement("div");
-    memoScroll.className = "stan-memo-scroll";
-    memoScroll.id = "memo-content";
-    children.forEach(function(c) { memoScroll.appendChild(c); });
-    memoWrap.appendChild(memoScroll);
-
-    var layout = document.createElement("div");
-    layout.className = "stan-layout";
-    layout.id = "stan-layout";
-    layout.appendChild(memoWrap);
-    body.appendChild(layout);
-
-    return layout;
-  }
-
-  /* ── 6. Build sidebar DOM ── */
-  function buildSidebar(layout) {
-    var sb = document.createElement("div");
-    sb.className = "stan-sidebar closed";
-    sb.id = "stan-sidebar";
-
-    var dealName = DEAL_CONTEXT.name || "Deal";
-    var fundName = DEAL_CONTEXT.fund || "S4BT";
-
-    sb.innerHTML =
-      /* Header */
-      '<div class="stan-s-hd">' +
-        '<div class="stan-s-hd-top">' +
-          '<div>' +
-            '<div class="stan-s-eye">Stan \u00b7 ' + fundName + ' \u00b7 M&A</div>' +
-            '<div class="stan-s-deal">' + dealName + '</div>' +
-          '</div>' +
-          '<div class="stan-s-hd-right">' +
-            '<span class="stan-tpil call" id="stan-curBadge">' + DEAL_STATUS + '</span>' +
-            '<button id="stan-guidePillBtn" title="Guide" class="stan-guide-pill">?</button>' +
-            '<button class="stan-s-close" id="stan-close-btn">\u00d7</button>' +
-          '</div>' +
-        '</div>' +
-        '<div id="stan-status-block" style="padding:10px 12px 4px"></div>' +
-      '</div>' +
-
-      /* Next action */
-      '<div class="stan-next-act" id="stan-nextAct">' +
-        '<span class="stan-na-dot"></span>' +
-        '<div class="stan-na-body">' +
-          '<div class="stan-na-eyebrow">' + t("next_action") + '</div>' +
-          '<div class="stan-na-txt" id="stan-naTxt"></div>' +
-        '</div>' +
-        '<span class="stan-na-chevron" id="stan-naChev">\u2193</span>' +
-      '</div>' +
-
-      /* Tabs */
-      '<div class="stan-tabs">' +
-        '<button class="stan-tab on" id="stan-tab-roadmap">' + t("parcours") + '</button>' +
-        '<button class="stan-tab" id="stan-tab-chat">' + t("chat") + '</button>' +
-        '<button class="stan-tab" id="stan-tab-skills">' + t("skills") + '</button>' +
-        '<button class="stan-tab" id="stan-tab-outputs">' + t("outputs") + '<span class="stan-bdg" id="stan-outBdg">0</span></button>' +
-        '<button class="stan-tab" id="stan-tab-hist">' + t("historique") + '</button>' +
-      '</div>' +
-
-      /* Pane: Roadmap */
-      '<div class="stan-pane on" id="stan-pane-roadmap">' +
-        '<div class="stan-rm-scroll">' +
-          '<div class="stan-rm-top">' +
-            '<div class="stan-rm-prog-row">' +
-              '<span class="stan-rm-prog-title" id="stan-rmTitle">Phase 1/7</span>' +
-              '<span class="stan-rm-prog-pct" id="stan-rmPct">0%</span>' +
-            '</div>' +
-            '<div class="stan-rm-prog-bar"><div class="stan-rm-prog-fill" id="stan-rmFill"></div></div>' +
-            '<div class="stan-rm-sub" id="stan-rmSub"></div>' +
-          '</div>' +
-          '<div class="stan-rm-hint">' + t("auto_label") + '</div>' +
-          '<div id="stan-timelineEl"></div>' +
-        '</div>' +
-      '</div>' +
-
-      /* Pane: Chat */
-      '<div class="stan-pane" id="stan-pane-chat">' +
-        '<div class="stan-msgs" id="stan-msgs"></div>' +
-        '<div class="stan-tw" id="stan-typingW"><div class="stan-typing"><span></span><span></span><span></span></div></div>' +
-        '<div class="stan-attach-bar" id="stan-attachBar"></div>' +
-        '<div class="stan-input-bar">' +
-          '<textarea id="stan-chatInput" placeholder="' + t("chat_placeholder") + '" rows="2"></textarea>' +
-          '<div class="stan-bar-row">' +
-            '<div style="display:flex;align-items:center;gap:5px;">' +
-              '<button class="stan-ba" id="stan-btn-pdf">\ud83d\udd0d ' + t("analyze_pdf") + '</button>' +
-              '<button class="stan-ba" id="stan-btn-link">\ud83d\udd17 ' + t("reference_file") + '</button>' +
-            '</div>' +
-            '<button class="stan-bs" id="stan-sendBtn">' + t("send") + '</button>' +
-          '</div>' +
-        '</div>' +
-      '</div>' +
-
-      /* Pane: Skills */
-      '<div class="stan-pane" id="stan-pane-skills">' +
-        '<div class="stan-sk-scroll" id="stan-skillsList"></div>' +
-      '</div>' +
-
-      /* Pane: Outputs */
-      '<div class="stan-pane" id="stan-pane-outputs">' +
-        '<div class="stan-out-header">' +
-          '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--tl);margin-bottom:4px;">' + t("outputs") + '</div>' +
-          '<p style="font-family:var(--serif);font-size:13px;color:var(--ts);line-height:1.5;margin:0;">' + t("what_is_output") + '</p>' +
-        '</div>' +
-        '<div class="stan-out-scroll" id="stan-outList">' +
-          '<div class="stan-out-empty" id="stan-outEmpty">' +
-            '<div class="stan-out-empty-l">' + t("no_outputs") + '</div>' +
-            '<div class="stan-out-empty-h">' + t("no_outputs_hint") + '</div>' +
-          '</div>' +
-        '</div>' +
-      '</div>' +
-
-      /* Pane: History */
-      '<div class="stan-pane" id="stan-pane-hist">' +
-        '<div class="stan-hist-scroll" id="stan-histList">' +
-          '<div class="stan-hist-lbl">' + t("hist_title") + ' \u2014 ' + dealName + '</div>' +
-          '<div class="stan-hist-empty" id="stan-histEmpty">' + t("hist_empty") + '</div>' +
-        '</div>' +
-      '</div>' +
-
-      /* Guide pane (absolute overlay) */
-      '<div id="stan-pane-guide" class="stan-pane-guide"></div>';
-
-    layout.appendChild(sb);
-
-    /* Build modals */
-    buildModals(layout);
-
-    /* FAB button */
-    var fab = document.createElement("button");
-    fab.className = "stan-fab";
-    fab.id = "stan-fabBtn";
-    fab.innerHTML = "Stan \u2192<span class=\"stan-beta-badge\">Beta</span>";
-    fab.onclick = openSidebar;
-    document.body.appendChild(fab);
-
-    return sb;
-  }
-
-  /* ── 7. Build modals ── */
-  function buildModals(layout) {
-    // Inject chooser modal
-    var injectModal = document.createElement("div");
-    injectModal.className = "stan-m-ov";
-    injectModal.id = "stan-injectModal";
-    injectModal.innerHTML =
-      '<div class="stan-m-box" style="max-width:500px;border-top-color:var(--green);">' +
-        '<div class="stan-m-hd">' +
-          '<div><div class="stan-m-ti">' + t("where_inject") + '</div><div class="stan-m-st" id="stan-injectModalSub">' + t("inject_target_label") + '</div></div>' +
-          '<button class="stan-m-cls" data-close="stan-injectModal">\u00d7</button>' +
-        '</div>' +
-        '<div class="stan-m-body" id="stan-injectModalBody"></div>' +
-        '<div class="stan-m-ft">' +
-          '<button class="stan-mb stan-grn" id="stan-injectConfirmBtn" disabled style="opacity:.4;">' + t("inject_confirm") + '</button>' +
-          '<button class="stan-mb stan-out" data-close="stan-injectModal">' + t("cancel") + '</button>' +
-        '</div>' +
-      '</div>';
-    document.body.appendChild(injectModal);
-
-    // Paste modal
-    var pasteModal = document.createElement("div");
-    pasteModal.className = "stan-m-ov";
-    pasteModal.id = "stan-pasteModal";
-    pasteModal.innerHTML =
-      '<div class="stan-m-box" style="max-width:580px;border-top-color:var(--amber);">' +
-        '<div class="stan-m-hd">' +
-          '<div><div class="stan-m-ti">' + t("paste_title") + '</div><div class="stan-m-st">' + t("paste_subtitle") + '</div></div>' +
-          '<button class="stan-m-cls" data-close="stan-pasteModal">\u00d7</button>' +
-        '</div>' +
-        '<div class="stan-m-body">' +
-          '<div style="background:var(--abg);border:1px solid var(--abr);padding:10px 14px;margin-bottom:14px;font-family:var(--serif);font-size:13px;color:var(--amber);line-height:1.6;">' + t("paste_subtitle") + '</div>' +
-          '<textarea id="stan-pasteResultArea" placeholder="..." style="width:100%;min-height:200px;font-family:var(--serif);font-size:14px;padding:10px;border:1px solid var(--border);resize:vertical;line-height:1.65;color:var(--tm);box-sizing:border-box;"></textarea>' +
-        '</div>' +
-        '<div class="stan-m-ft">' +
-          '<button class="stan-mb stan-dark" id="stan-pasteAcceptBtn">' + t("paste_save") + '</button>' +
-          '<button class="stan-mb stan-out" data-close="stan-pasteModal">' + t("cancel") + '</button>' +
-        '</div>' +
-      '</div>';
-    document.body.appendChild(pasteModal);
-
-    // Output modal
-    var outModal = document.createElement("div");
-    outModal.className = "stan-m-ov";
-    outModal.id = "stan-outModal";
-    outModal.innerHTML =
-      '<div class="stan-m-box" id="stan-outBox">' +
-        '<div class="stan-m-hd"><div><div class="stan-m-ti" id="stan-outTi">Output</div><div class="stan-m-st">G\u00e9n\u00e9r\u00e9</div></div><button class="stan-m-cls" data-close="stan-outModal">\u00d7</button></div>' +
-        '<div class="stan-m-body" id="stan-outBody"></div>' +
-        '<div class="stan-m-ft" id="stan-outFt">' +
-          '<button class="stan-mb stan-dark" id="stan-shareBtn">' + t("share_url") + '</button>' +
-          '<button class="stan-mb stan-grn" id="stan-injectBtn">' + t("inject_memo") + '</button>' +
-          '<button class="stan-mb stan-out" data-close="stan-outModal">' + t("close") + '</button>' +
-        '</div>' +
-      '</div>';
-    document.body.appendChild(outModal);
-
-    // History modal
-    var histModal = document.createElement("div");
-    histModal.className = "stan-m-ov";
-    histModal.id = "stan-histModal";
-    histModal.innerHTML =
-      '<div class="stan-m-box" style="max-width:560px;border-top-color:var(--blue);">' +
-        '<div class="stan-m-hd"><div><div class="stan-m-ti">' + t("hist_title") + ' \u00b7 ' + (DEAL_CONTEXT.name || "") + '</div></div><button class="stan-m-cls" data-close="stan-histModal">\u00d7</button></div>' +
-        '<div class="stan-m-body" id="stan-histModalBody"><div style="font-family:var(--serif);font-style:italic;font-size:14px;color:var(--tl);">' + t("hist_empty") + '</div></div>' +
-        '<div class="stan-m-ft"><button class="stan-mb stan-out" data-close="stan-histModal">' + t("close") + '</button></div>' +
-      '</div>';
-    document.body.appendChild(histModal);
-  }
-
-  /* ── 8. Build skills tab content ── */
-  function buildSkillsTab() {
-    var container = document.getElementById("stan-skillsList");
-    if (!container || !window.SKILLS_TAB_LAYOUT) return;
-
-    var html = '<p style="font-family:var(--serif);font-style:italic;font-size:12px;color:var(--tl);line-height:1.4;padding:8px 16px 8px;">' + t("skills_intro") + '</p>';
-
-    // Directives explanation box
-    html += '<div style="background:var(--navy);padding:12px 14px;margin:0 0 4px;">' +
-      '<div style="font-family:var(--mono);font-size:11.5px;color:rgba(255,255,255,.5);margin-bottom:5px;">Directives \u26a1</div>' +
-      '<div style="font-family:var(--serif);font-size:13px;color:#fff;line-height:1.7;">' + t("directives_intro") + '<br>' +
-        '<span style="color:rgba(240, 227, 188, .9);">\ud83d\udccb ' + t("directives_copy_desc") + '</span><br>' +
-        '<span style="color:rgba(18, 161, 80, .9);">\u26a1 ' + t("directives_direct_desc") + '</span>' +
-      '</div>' +
-    '</div>';
-
-    window.SKILLS_TAB_LAYOUT.forEach(function(group) {
-      html += '<div class="stan-sk-ph">' + (group.phase || group.label || "") + '</div>';
-      (group.items || []).forEach(function(item) {
-        if (item.type === "directive") {
-          var dir = window.DIRECTIVES && window.DIRECTIVES[item.key];
-          var dirName = item.name || (dir && dir.name) || item.key;
-          var dirDesc = item.desc || (dir && dir.description) || "";
-          html += '<div class="stan-sk-card" data-directive="' + item.key + '">' +
-            '<div style="flex:1;min-width:0;"><div class="stan-sk-nm">' + dirName + '</div><div class="stan-sk-ds">' + dirDesc + '</div></div>' +
-            '<div class="stan-sk-arr">\u2192</div>' +
-          '</div>';
-        } else {
-          var name = item.name || (window.SKILL_NAMES && window.SKILL_NAMES[item.key]) || item.key;
-          var desc = item.desc || (window.SKILLS && window.SKILLS[item.key]) || "";
-          var ico = getSkillIcon(item.key);
-          html += '<div class="stan-sk-card" data-skill="' + item.key + '">' +
-            '<span class="stan-sk-ico">' + ico + '</span>' +
-            '<div><div class="stan-sk-nm">' + name + '</div><div class="stan-sk-ds">' + desc + '</div></div>' +
-            '<div class="stan-sk-arr">\u2192</div>' +
-          '</div>';
-        }
-      });
+  function close() { opened = false; shell.hidden = true; fab.hidden = false; clearTimeout(poll); fab.focus(); }
+  function build() {
+    var css = el('link', { rel: 'stylesheet', href: assetBase + 'stan-journey.css?v=1' }); document.head.appendChild(css);
+    fab = el('button', { id: 'stan-fabBtn', type: 'button', class: 'ppj-fab', 'aria-label': 'Stan Beta — ouvrir Parcours' }, 'Stan β · Parcours');
+    fab.onclick = function () { open('roadmap'); };
+    shell = el('aside', { id: 'stan-sidebar', class: 'ppj-shell', 'aria-label': 'Parcours du dossier' }); shell.hidden = true;
+    shell.innerHTML = '<div class="ppj-resize" role="separator" tabindex="0" aria-label="Largeur du panneau" aria-orientation="vertical"></div>' +
+      '<header class="ppj-header"><div><span class="ppj-eyebrow">STAN · POSTE DE TRAVAIL</span><h2>' + esc(context.name || context.company_name || 'Votre dossier') + '</h2></div>' +
+      '<div>' + button('⤢', '', 'full') + button('×', '', 'close') + '</div></header>' +
+      (demo ? '<div class="ppj-demo">Démonstration · dossier fictif · aucun envoi ni crédit consommé</div>' : '') +
+      '<nav class="ppj-tabs" aria-label="Vues du dossier"><button id="stan-tab-roadmap" type="button" data-do="roadmap">Parcours</button><button id="stan-tab-hist" type="button" data-do="history">Historique</button></nav>' +
+      '<p class="ppj-status" role="status" aria-live="polite"></p><main class="ppj-content"></main>';
+    content = shell.querySelector('main'); statusLine = shell.querySelector('[role=status]');
+    document.body.append(shell, fab);
+    shell.addEventListener('click', handleClick);
+    shell.addEventListener('submit', handleSubmit);
+    shell.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+    shell.querySelector('.ppj-resize').addEventListener('pointerdown', function (e) {
+      var target = e.currentTarget; target.setPointerCapture(e.pointerId);
+      target.onpointermove = function (p) { shell.style.width = Math.min(window.innerWidth, Math.max(390, window.innerWidth - p.clientX)) + 'px'; };
+      target.onpointerup = function () { target.onpointermove = null; };
     });
-
-    container.innerHTML = html;
+    shell.querySelector('.ppj-resize').addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); shell.style.width = Math.min(window.innerWidth, Math.max(390, shell.offsetWidth + (e.key === 'ArrowLeft' ? 40 : -40))) + 'px'; }
+    });
+    if (!demo) {
+      try { key = new URLSearchParams(location.search).get('k') || sessionStorage.getItem('ppj-key:' + record) || ''; } catch (_) { /* Private browsing */ }
+    }
+    if (demo || key) refresh(true).catch(function (e) { announce(e.message, true); render(); });
+    window.dispatchEvent(new Event('stan:ready'));
   }
-
-  function getSkillIcon(key) {
-    var icons = {
-      market: "\ud83d\udd0d", competitive: "\ud83d\uddfa", redflag: "\ud83d\udea8", techaudit: "\u2699\ufe0f",
-      techdd: "\u2699\ufe0f", loi: "\ud83d\udccb", callprep: "\ud83d\udcde", email: "\u2709\ufe0f",
-      refcheck: "\ud83d\udc64", custref: "\ud83d\udc65", lp: "\ud83d\udcc4", exec: "\ud83d\udcca",
-      slides: "\ud83d\udda5", excel: "\ud83d\udcc8", kpi: "\ud83d\udcc9", fairvalue: "\ud83d\udcb0",
-      board: "\ud83d\udcdd", "100days": "\ud83d\ude80", "lp-update": "\ud83d\udccb",
-      dir07: "\u26a1", dir08: "\u26a1"
+  function render() {
+    if (!content) return;
+    // A background run must never erase another action's unsaved form.
+    if (content.querySelector('form[data-form="add"],form[data-form="attest"],form[data-form="skip"],form[data-form="settings"]')) return;
+    shell.querySelector('#stan-tab-roadmap').setAttribute('aria-selected', String(pane === 'roadmap'));
+    shell.querySelector('#stan-tab-hist').setAttribute('aria-selected', String(pane === 'history'));
+    if (!state) {
+      content.innerHTML = '<section class="ppj-welcome"><span class="ppj-eyebrow">DE L’ÉVALUATION AU CLOSING</span><h3>Un dossier, toutes les prochaines actions.</h3>' +
+        '<p>Retrouvez vos preuves, analyses, décisions et documents dans un espace privé. Toutes les étapes restent consultables.</p>' +
+        '<form data-form="unlock"><label>Clé privée du fonds<input name="key" type="password" autocomplete="off" required placeholder="Votre clé d’accès au cockpit"></label><button class="ppj-btn ppj-primary">Ouvrir le parcours</button></form>' +
+        '<p class="ppj-muted">Le lien public du mémo n’accorde pas l’accès aux pièces confidentielles.</p></section>';
+      return;
+    }
+    var scroll = content.scrollTop;
+    content.innerHTML = pane === 'history' ? history() : roadmap();
+    content.scrollTop = scroll;
+    var searchInput = content.querySelector('[name=search]');
+    if (searchInput) searchInput.oninput = function () {
+      search = this.value.toLowerCase();
+      content.querySelectorAll('.ppj-card').forEach(function (c) { c.hidden = !c.textContent.toLowerCase().includes(search); });
     };
-    return icons[key] || "\u2192";
   }
-
-  /* ── 9. Build welcome message in chat ── */
-  function buildWelcomeMessage() {
-    var msgs = document.getElementById("stan-msgs");
-    if (!msgs) return;
-    msgs.innerHTML =
-      '<div class="stan-msg-s" style="border-top-color:var(--navy);">' +
-        '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--tl);margin-bottom:8px;">Stan \u2014 Ce que vous pouvez faire ici</div>' +
-        '<div style="margin-bottom:10px;">' +
-          '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--navy);margin-bottom:4px;">Modifier le m\u00e9mo</div>' +
-          '<div style="font-family:var(--serif);font-size:13px;color:var(--tb);line-height:1.6;">' +
-            '<em>"R\u00e9\u00e9cris le r\u00e9sum\u00e9 ex\u00e9cutif en insistant sur le moat API"</em><br>' +
-            '<em>"Ajoute une section \u00c9quipe avec ces donn\u00e9es : [donn\u00e9es]"</em>' +
-          '</div>' +
-        '</div>' +
-        '<div style="margin-bottom:10px;">' +
-          '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--navy);margin-bottom:4px;">Analyser un document</div>' +
-          '<div style="font-family:var(--serif);font-size:13px;color:var(--tb);line-height:1.6;">' +
-            'Cliquez <strong>' + t("analyze_pdf") + '</strong> puis envoyez.' +
-          '</div>' +
-        '</div>' +
-        '<div>' +
-          '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--navy);margin-bottom:4px;">G\u00e9n\u00e9rer un output</div>' +
-          '<div style="font-family:var(--serif);font-size:13px;color:var(--tb);line-height:1.6;">' +
-            '<em>"G\u00e9n\u00e8re la version LP board-ready"</em><br>' +
-            '<em>"R\u00e9dige l\u2019email d\u2019approche fondateur"</em>' +
-          '</div>' +
-        '</div>' +
-      '</div>';
-  }
-
-  /* ── 10. Build guide pane ── */
-  function buildGuide() {
-    var el = document.getElementById("stan-pane-guide");
-    if (!el) return;
-    el.style.display = "none";
-    el.innerHTML =
-      '<div style="flex:1;overflow-y:auto;padding:14px 16px 24px;">' +
-        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">' +
-          '<div style="font-family:var(--serif);font-size:1rem;font-weight:700;color:var(--navy);">' + t("guide_title") + '</div>' +
-          '<button class="stan-guide-close-btn" style="font-family:var(--serif);font-size:13px;background:transparent;border:1px solid var(--border);color:var(--ts);padding:2px 10px;cursor:pointer;">' + t("guide_close") + '</button>' +
-        '</div>' +
-        '<div style="font-family:var(--serif);font-style:italic;font-size:13px;color:var(--tl);margin-bottom:16px;line-height:1.5;">' + t("guide_intro") + '</div>' +
-
-        /* Guide cards */
-        '<div style="border-left:3px solid var(--navy);padding:10px 14px;margin-bottom:10px;background:var(--off);">' +
-          '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--navy);margin-bottom:4px;">\u2460 ' + t("parcours") + '</div>' +
-          '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.6;">7 phases de A\u2192Z pour g\u00e9rer ce dossier.</div>' +
-          '<button class="stan-guide-nav" data-tab="roadmap" style="font-family:var(--serif);font-size:13px;font-weight:600;background:var(--navy);color:#fff;border:none;padding:5px 14px;cursor:pointer;margin-top:6px;">' + t("parcours") + ' \u2192</button>' +
-        '</div>' +
-        '<div style="border-left:3px solid #0E7F3F;padding:10px 14px;margin-bottom:10px;background:var(--off);">' +
-          '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:#0E7F3F;margin-bottom:4px;">\u2461 ' + t("chat") + '</div>' +
-          '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.6;">Donnez des instructions en fran\u00e7ais.</div>' +
-          '<button class="stan-guide-nav" data-tab="chat" style="font-family:var(--serif);font-size:13px;font-weight:600;background:#0E7F3F;color:#fff;border:none;padding:5px 14px;cursor:pointer;margin-top:6px;">' + t("chat") + ' \u2192</button>' +
-        '</div>' +
-        '<div style="border-left:3px solid var(--blue);padding:10px 14px;margin-bottom:10px;background:var(--off);">' +
-          '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--blue);margin-bottom:4px;">\u2462 ' + t("skills") + '</div>' +
-          '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.6;">21 outils organis\u00e9s par phase.</div>' +
-          '<button class="stan-guide-nav" data-tab="skills" style="font-family:var(--serif);font-size:13px;font-weight:600;background:var(--blue);color:#fff;border:none;padding:5px 14px;cursor:pointer;margin-top:6px;">' + t("skills") + ' \u2192</button>' +
-        '</div>' +
-        '<div style="border-left:3px solid var(--green);padding:10px 14px;margin-bottom:16px;background:var(--off);">' +
-          '<div style="font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--green);margin-bottom:4px;">\u2464 ' + t("outputs") + '</div>' +
-          '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.6;">' + t("what_is_output") + '</div>' +
-          '<button class="stan-guide-nav" data-tab="outputs" style="font-family:var(--serif);font-size:13px;font-weight:600;background:var(--green);color:#fff;border:none;padding:5px 14px;cursor:pointer;margin-top:6px;">' + t("outputs") + ' \u2192</button>' +
-        '</div>' +
-      '</div>';
-  }
-
-  /* ── 11. Map memo sections ── */
-  function mapMemoSections() {
-    // Add data-stan-section attributes to existing memo sections for injection targeting
-    var mappings = [
-      { id: "conviction",          stan: "sec-verdict" },
-      { id: "market-summary",      stan: "sec-exec" },
-      { id: "due-diligence",       stan: "sec-dd" },
-      { id: "portfolio-management", stan: "sec-pm" }
-    ];
-    mappings.forEach(function(m) {
-      var el = document.getElementById(m.id);
-      if (el) el.setAttribute("data-stan-section", m.stan);
+  function roadmap() {
+    var catalog = state.catalog, total = catalog.actions.filter(function (a) { return !a.optional; }).length;
+    var done = catalog.actions.filter(function (a) { return !a.optional && ['validated', 'not_applicable'].includes(state.actions[a.id].status) && !state.actions[a.id].stale; }).length;
+    var next = catalog.actions.find(function (a) { return a.id === state.next; });
+    var html = (pendingDossier ? '<div class="ppj-notice">Votre dossier comité modifié est prêt à être réutilisé. ' + button('Importer dans cette étape', '', 'handoff') + '</div>' : '') + '<section class="ppj-overview"><div class="ppj-overview-top"><b>' + done + ' / ' + total + ' étapes traitées</b><span>' + euro(state.budget.spent) + ' / 5 €</span></div>' +
+      '<progress max="' + total + '" value="' + done + '"></progress><p>' + (next ? 'Prochaine action : <strong>' + esc(next.title) + '</strong><br><small>Priorité aux contrôles ouverts dont les prérequis sont disponibles.</small>' : 'Examinez les résultats et les décisions restantes.') + '</p>' +
+      '<small>' + euro(state.budget.remaining == null ? 5 - state.budget.spent - state.budget.reserved : state.budget.remaining) + ' disponibles · ' + euro(state.budget.reserved) + ' réservés · mémo et experts hors budget</small></section>' +
+      '<div class="ppj-toolbar"><input name="search" type="search" value="' + esc(search) + '" placeholder="Rechercher une action…" aria-label="Rechercher une action">' + button('Tout voir', '', 'all') + '</div>' +
+      '<div class="ppj-phase-nav">' + Object.keys(catalog.phases).map(function (p) { return button(esc(catalog.phases[p]), filter === p ? 'ppj-selected' : '', 'phase', p); }).join('') + '</div>' +
+      '<p class="ppj-muted">Toutes les actions sont accessibles. Les prérequis encadrent la validation, jamais la consultation.</p>';
+    Object.keys(catalog.phases).forEach(function (phase) {
+      if (filter && filter !== phase) return;
+      html += '<section class="ppj-phase" data-phase="' + phase + '"><h3>' + esc(catalog.phases[phase]) + '</h3>';
+      catalog.actions.filter(function (a) { return a.phase === phase; }).forEach(function (a) { html += card(a); });
+      html += '</section>';
     });
+    html += '<footer class="ppj-footer">' + button('Exporter le dossier d’audit', '', 'export') + button('Réglages et conservation', '', 'settings') + '</footer>';
+    return html;
   }
-
-  /* ══════════════════════════════════════════════════════════════
-     CORE FUNCTIONS
-     ══════════════════════════════════════════════════════════════ */
-
-  /* ── Navigation ── */
-  function switchTab(name, btn) {
-    var tabs = document.querySelectorAll(".stan-tab");
-    var panes = document.querySelectorAll(".stan-pane");
-    tabs.forEach(function(t) { t.classList.remove("on"); });
-    panes.forEach(function(p) { p.classList.remove("on"); });
-    if (btn) btn.classList.add("on");
-    else {
-      var b = document.getElementById("stan-tab-" + name);
-      if (b) b.classList.add("on");
+  function card(a) {
+    var item = state.actions[a.id], result = item.result, openNow = active === a.id;
+    var ids = item.evidence_ids || [], missing = item.missing || [];
+    var html = '<article class="ppj-card' + (openNow ? ' ppj-open' : '') + '" id="stan-action-' + a.id + '"><button class="ppj-card-head" data-do="expand" data-id="' + a.id + '" aria-expanded="' + openNow + '">' +
+      '<span><strong>' + esc(a.title) + '</strong><small>' + (a.optional ? 'Facultatif · ' : '') + (missing.length ? missing.length + ' élément(s) à compléter' : ids.length + ' pièce(s) disponible(s)') + '</small></span>' +
+      '<span class="ppj-badge ppj-' + item.status + '">' + (item.stale ? 'À actualiser' : states[item.status] || esc(item.status)) + '</span></button>';
+    if (!openNow) return html + '</article>';
+    html += '<div class="ppj-card-body"><p>' + esc(a.method) + '</p>';
+    if (item.legacy_claim) html += '<p class="ppj-notice">' + esc(item.legacy_claim) + '</p>';
+    if (item.error) html += '<p class="ppj-error">' + esc(item.error) + '</p>';
+    if (item.reason) html += '<p class="ppj-notice">Non applicable : ' + esc(item.reason) + '</p>';
+    html += '<h4>Déjà disponible</h4><div class="ppj-docs">' + (ids.length ? ids.map(function (id) { var e = state.evidence[id]; return button('↗ ' + esc(e.title), 'ppj-document', 'evidence', id); }).join('') : '<p class="ppj-muted">Ajoutez les premières pièces du dossier.</p>') + '</div>';
+    if (missing.length) html += '<h4>Ce qui manque</h4><ul>' + missing.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul>';
+    if (item.dependencies && item.dependencies.length) html += '<p class="ppj-notice">Pour valider : ' + item.dependencies.map(function (id) { return esc(state.catalog.actions.find(function (x) { return x.id === id; }).title); }).join(', ') + '. Vous pouvez déjà préparer cette étape.</p>';
+    html += '<div class="ppj-actions">' + (item.status === 'running' ? '<span class="ppj-live">● Vérifications en cours</span>' : button(result && !item.stale ? 'Réutiliser le résultat' : 'Lancer les vérifications', 'ppj-primary', 'run', a.id)) +
+      button('Ajouter une pièce / note', '', 'add', a.id) + button('Valider', '', 'attest', a.id) + button('Non applicable', 'ppj-quiet', 'skip', a.id) + '</div>';
+    var run = state.runs[item.run_id];
+    if (run) html += '<details class="ppj-run"' + (item.status === 'running' ? ' open' : '') + '><summary>' + (run.trace_expired ? 'Trace détaillée expirée' : '▶ Film des vérifications') + '</summary>' + trace(run) + '</details>';
+    if (result) {
+      html += '<div class="ppj-result"><h4>Résultat préparé</h4><p>' + esc(result.summary) + '</p>';
+      (result.sections || []).forEach(function (s) {
+        html += '<details><summary>' + esc(s.title) + '</summary><p class="ppj-prose">' + esc(s.text) + '</p>';
+        (s.citations || []).forEach(function (c) { html += button('Source : ' + esc((state.evidence[c.evidence_id] || {}).title || c.evidence_id), 'ppj-source', 'evidence', c.evidence_id); });
+        html += '</details>';
+      });
+      (result.gaps || []).concat(result.coverage_limits || []).forEach(function (gap) { html += '<p class="ppj-notice">' + esc(gap) + '</p>'; });
+      html += button(demo ? 'Exporter cet exemple (JSON)' : a.id === 'committee' ? 'PDF · synthèse 5 pages' : 'Exporter le résultat en PDF', '', 'pdf', a.id) + '</div>';
     }
-    var pane = document.getElementById("stan-pane-" + name);
-    if (pane) pane.classList.add("on");
+    if (item.validation) html += '<p class="ppj-validated">✓ ' + esc(item.validation.actor) + ' · ' + date(item.validation.at) + '<br>' + esc(item.validation.note) + '</p>';
+    html += '<details class="ppj-method"><summary>Méthode, couverture et expertise</summary><p>' + esc(a.method) + '</p><p>' + esc(a.expert || 'Stan prépare le travail et ses preuves. L’investisseur conserve la décision.') + '</p>' +
+      '<p>Connexions : import de documents et transcriptions disponible. Google Meet, envoi et signature : non connectés dans cet espace ; importez leurs confirmations.</p>' +
+      '<p>Pour une mission externe, ajoutez vos critères et les experts connus dans une note, puis lancez la préparation.</p></details><div class="ppj-form-slot" data-slot="' + a.id + '"></div></div></article>';
+    return html;
   }
-
-  function openSidebar() {
-    var sb = document.getElementById("stan-sidebar");
-    if (sb) sb.classList.remove("closed");
-    var fab = document.getElementById("stan-fabBtn");
-    if (fab) fab.style.display = "none";
-    if (!guideOpen && _firstVisit) {
-      _firstVisit = false;
-      toggleGuide();
-    }
+  function trace(run) {
+    if (run.trace_expired) return '<p>Les opérations détaillées ont expiré après 7 jours. Le résultat et les événements métier restent dans le dossier.</p>';
+    return '<ol class="ppj-trace">' + (run.trace || []).map(function (t) { return '<li><time>' + date(t.at) + '</time><span>' + esc(t.text) + '</span></li>'; }).join('') + '</ol>';
   }
-
-  function closeSidebar() {
-    var sb = document.getElementById("stan-sidebar");
-    if (sb) sb.classList.add("closed");
-    var fab = document.getElementById("stan-fabBtn");
-    if (fab) fab.style.display = "";
+  function history() {
+    return '<section id="stan-histList"><h3>Du premier contrôle au closing</h3><p class="ppj-muted">Décisions, pièces et travaux enregistrés. Les traces détaillées sont disponibles pendant sept jours.</p>' +
+      '<div class="ppj-actions">' + button(demo ? 'Exporter l’exemple (JSON)' : 'Exporter PDF', '', 'pdf') + button('Dossier complet et preuves', '', 'export') + '</div>' +
+      '<ol class="ppj-timeline">' + state.events.slice().sort(function (a, b) { return b.at - a.at; }).map(function (e) {
+        var recorded = e.run_id && state.runs[e.run_id];
+        return '<li class="stan-hist-item"><time>' + date(e.at) + '</time><strong>' + esc(e.text) + '</strong><small>' + esc(e.actor) + '</small>' +
+          (e.action ? button('Voir l’étape', 'ppj-quiet', 'goto', e.action) : '') +
+          (recorded ? '<details><summary>▶ Revoir les opérations enregistrées</summary>' + trace(recorded) + '</details>' : '') + '</li>';
+      }).join('') + '</ol></section>';
   }
-
-  function toggleGuide() {
-    guideOpen = !guideOpen;
-    var el = document.getElementById("stan-pane-guide");
-    var pill = document.getElementById("stan-guidePillBtn");
-    if (guideOpen) {
-      if (el) el.style.display = "flex";
-      if (pill) { pill.textContent = "\u00d7"; pill.style.background = "var(--navy)"; pill.style.color = "#fff"; pill.style.borderColor = "var(--navy)"; pill.style.fontStyle = "normal"; }
-      openSidebar();
+  function form(action, type) {
+    var slot = content.querySelector('[data-slot="' + action + '"]'); if (!slot) return;
+    selected.clear();
+    var html = '<form data-form="' + type + '" data-action="' + action + '"><h4>' + ({ add: 'Ajouter au dossier', attest: 'Valider avec des preuves', skip: 'Expliquer la non-applicabilité' })[type] + '</h4>';
+    if (type === 'add') {
+      html += '<label>Type de pièce<select name="kind">' + Object.keys(state.catalog.evidence_kinds).map(function (k) { return '<option value="' + k + '">' + esc(state.catalog.evidence_kinds[k]) + '</option>'; }).join('') + '</select></label>' +
+        '<label>Titre<input name="title" required maxlength="200"></label><label>Interlocuteur (pour un compte rendu de référence)<input name="subject" maxlength="180"></label><label>Source HTTPS<input name="url" type="url" placeholder="https://…"></label><label>Contenu / note / transcription<textarea name="text" rows="5"></textarea></label>' +
+        '<label>Ou importer un fichier<input name="file" type="file" accept=".pdf,.xlsx,.csv,.txt,.md,.json,.vtt,.srt,.mp3,.m4a,.wav,.webm,.mp4,.ogg"></label><p class="ppj-muted">12 Mo maximum. Un audio reste à transcrire ; il ne compte pas comme contenu analysé.</p>';
     } else {
-      if (el) el.style.display = "none";
-      if (pill) { pill.textContent = "?"; pill.style.background = "var(--white)"; pill.style.color = "var(--navy)"; pill.style.borderColor = "var(--navy)"; pill.style.fontStyle = "italic"; }
-    }
-  }
-
-  function toggleNextAction() {
-    var cp = getCurrentPhaseIdx();
-    var isOnRoadmap = document.getElementById("stan-pane-roadmap").classList.contains("on");
-    if (!isOnRoadmap || !expandedPhases[cp]) {
-      nextActOpen = true;
-      var na = document.getElementById("stan-nextAct"); if (na) na.classList.add("open");
-      var ch = document.getElementById("stan-naChev"); if (ch) ch.textContent = "\u2191";
-      switchTab("roadmap");
-      expandedPhases[cp] = true;
-      renderTimeline();
-      setTimeout(function() {
-        var hl = document.querySelector(".stan-task-item.stan-next-hl");
-        if (hl) hl.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 130);
-    } else {
-      nextActOpen = false;
-      var na2 = document.getElementById("stan-nextAct"); if (na2) na2.classList.remove("open");
-      var ch2 = document.getElementById("stan-naChev"); if (ch2) ch2.textContent = "\u2193";
-      expandedPhases[cp] = false;
-      renderTimeline();
-    }
-  }
-
-  /* ── Utility ── */
-  function flash(id) {
-    var el = document.getElementById(id);
-    if (!el) {
-      // Try fallback
-      el = findSection(id);
-    }
-    if (!el) return;
-    el.classList.add("flash");
-    el.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    setTimeout(function() { el.classList.remove("flash"); }, 2400);
-  }
-
-  function findSection(stanId) {
-    // 1. Try direct ID
-    var el = document.getElementById(stanId);
-    if (el) return el;
-    // 2. Try data-stan-section
-    el = document.querySelector('[data-stan-section="' + stanId + '"]');
-    if (el) return el;
-    // 3. Try INJECT_TARGET fallback_id
-    if (window.INJECT_TARGET && window.INJECT_TARGET[stanId]) {
-      var tgt = window.INJECT_TARGET[stanId];
-      if (tgt.fallback_id) el = document.getElementById(tgt.fallback_id);
-      if (el) return el;
-      // 4. Try comment anchor
-      if (tgt.fallback_anchor) {
-        var anchored = getElementsBetweenComments(tgt.fallback_anchor + "_START", tgt.fallback_anchor + "_END");
-        if (anchored.length) return anchored[0].parentElement || anchored[0];
+      html += '<label>' + (type === 'attest' ? 'Décision, auteur et résultat réellement constaté' : 'Motif') + '<textarea name="note" rows="4" minlength="15" required></textarea></label>';
+      if (type === 'attest') {
+        html += '<fieldset><legend>Pièces sur lesquelles repose la validation</legend>' + Object.values(state.evidence).map(function (e) { return '<label class="ppj-check"><input type="checkbox" name="proof" value="' + e.id + '">' + esc(e.title) + '</label>'; }).join('') + '</fieldset>';
+        (state.confirmations[action] || []).forEach(function (c) { html += '<label class="ppj-check"><input type="checkbox" name="confirmation" value="' + esc(c) + '" required>' + esc(c) + '</label>'; });
       }
     }
-    return null;
+    slot.innerHTML = html + '<div class="ppj-actions"><button class="ppj-btn ppj-primary">' + (demo ? 'Simuler' : 'Enregistrer') + '</button>' + button('Annuler', '', 'cancel', action) + '</div></form>';
+    slot.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    slot.querySelector('input,textarea,select').focus();
   }
-
-  function getElementsBetweenComments(startText, endText) {
-    var result = [];
-    function searchNode(node) {
-      var children = node.childNodes;
-      var collecting = false;
-      for (var i = 0; i < children.length; i++) {
-        var child = children[i];
-        if (child.nodeType === 8) {
-          var txt = child.data.trim();
-          if (txt === startText) { collecting = true; continue; }
-          if (txt === endText && collecting) return true;
-        }
-        if (collecting && child.nodeType === 1) result.push(child);
-        if (!collecting && child.nodeType === 1) {
-          if (searchNode(child)) return true;
-        }
-      }
-      return false;
-    }
-    searchNode(document.body);
-    return result;
-  }
-
-  function closeModal(id) {
-    var el = document.getElementById(id);
-    if (el) el.classList.remove("open");
-  }
-
-  function openModal(id) {
-    var el = document.getElementById(id);
-    if (el) el.classList.add("open");
-  }
-
-  /* ── Status ── */
-  function renderStatusButtons() {
-    var nexts = (window.STATUS_FLOW && window.STATUS_FLOW[DEAL_STATUS]) || [];
-    var c = document.getElementById("stan-nextBtns");
-    var b = document.getElementById("stan-curBadge");
-    if (b) {
-      b.textContent = DEAL_STATUS;
-      b.className = "stan-tpil " + ((window.STATUS_STYLE && window.STATUS_STYLE[DEAL_STATUS]) || "neutral");
-    }
-    if (!c) return;
-    c.innerHTML = "";
-    if (!nexts.length) {
-      c.innerHTML = '<span style="font-family:var(--mono);font-size:11px;color:var(--tl);">' + t("final_status") + '</span>';
-      return;
-    }
-    nexts.forEach(function(s) {
-      var a = document.createElement("a");
-      a.href = "javascript:void(0)";
-      a.className = "stan-dec " + ((window.STATUS_STYLE && window.STATUS_STYLE[s]) || "neutral");
-      a.textContent = (window.STATUS_LABELS && window.STATUS_LABELS[s]) || s;
-      a.onclick = function() { openDecision(s); };
-      c.appendChild(a);
-    });
-  }
-
-  function openDecision(status) {
-    var ts = new Date().toISOString();
-    var id = DEAL_CONTEXT.airtable_record || "";
-    var url = "https://forms.proplace.co/t/c2246dXQEVus?status=" + status +
-      "&action_timestamp=" + encodeURIComponent(ts) +
-      "&user_action_log=" + status +
-      "&feedback_reason=no%20feedback&thesis_impact_status=processed&id=" + id;
-    window.open(url, "_blank");
-    switchTab("chat");
-    addMsg('<span style="font-family:var(--mono);font-size:11px;color:var(--green);">\u2192 ' + t("form_opened") + '</span><br><br>Statut <strong>' + status + '</strong> s\u00e9lectionn\u00e9.', "ok");
-  }
-
-  /* ── CEO YES/NO decision block ── */
-  function buildStatusBlock(status, ceoDecision, ceoNote) {
-    var record = (window.DEAL_CONTEXT && window.DEAL_CONTEXT.airtable_record) || "";
-    var isAutonomous = status === "CONSIDER" || status === "MONITOR" || status === "PASS";
-    var hasCeoDecision = ceoDecision === "YES" || ceoDecision === "NO";
-
-    // CAS 2 — CEO a déjà décidé (only fires if NOT autonomous; isAutonomous handled below first)
-    if (hasCeoDecision && !isAutonomous) {
-      var decLabel = ceoDecision === "YES" ? "✓ CALL YES" : "❌ CALL NO";
-      var col2 = PILL_COLORS[decLabel];
-      var overrideUrl2 = "https://forms.proplace.co/t/c2246dXQEVus?status=CALL" +
-        "&action_timestamp=" + new Date().toISOString() +
-        "&user_action_log=CALL&feedback_reason=no%20feedback&thesis_impact_status=processed&id=" + record;
-      var noteHtml = ceoNote ? ''
-        + '<div style="background:#FFFBEB;border:1px solid #F0E3BC;border-radius:4px;padding:9px 11px;margin-top:10px">'
-        +   '<span style="font-size:11px;font-weight:700;color:#8FA0B8;display:block;margin-bottom:4px">Your note</span>'
-        +   '<p style="font-family:Georgia,serif;font-size:13px;color:#16233A;margin:0;line-height:1.55">' + ceoNote + '</p>'
-        + '</div>' : "";
-      return ''
-        + '<div style="margin-bottom:8px">'
-        +   '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
-        +     '<span style="display:inline-block;padding:4px 12px;border-radius:4px;font-size:11.5px;font-weight:700;background:' + col2.bg + ';color:' + col2.text + '">' + decLabel + '</span>'
-        +   '</div>'
-        +   noteHtml
-        +   '<div style="text-align:right;margin-top:4px">'
-        +     '<a href="' + overrideUrl2 + '" target="_blank" style="font-size:11px;color:#8FA0B8;text-decoration:underline">Override \u2192</a>'
-        +   '</div>'
-        + '</div>';
-    }
-
-    // CAS 1 — verdict autonome Stan (CONSIDER / MONITOR / PASS uniquement)
-    if (isAutonomous) {
-      var col = PILL_COLORS[status] || { bg: "#8FA0B8", text: "#fff" };
-      var overrideUrl1 = "https://forms.proplace.co/t/c2246dXQEVus?status=" + status +
-        "&action_timestamp=" + new Date().toISOString() +
-        "&user_action_log=" + status +
-        "&feedback_reason=no%20feedback&thesis_impact_status=processed&id=" + record;
-      return ''
-        + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
-        +   '<div>'
-        +     '<span style="font-size:11px;color:#8FA0B8;font-family:monospace;display:block;margin-bottom:2px">Stan decided autonomously</span>'
-        +     '<span style="display:inline-block;padding:4px 12px;border-radius:4px;font-size:11.5px;font-weight:700;background:' + col.bg + ';color:' + col.text + '">'
-        +       status
-        +     '</span>'
-        +   '</div>'
-        +   '<a href="' + overrideUrl1 + '" target="_blank" style="font-size:11px;color:#8FA0B8;text-decoration:underline">Override \u2192</a>'
-        + '</div>';
-    }
-
-    // CAS 3 — CALL en attente: bloc décision retiré (data jamais à jour).
-    return '';
-  }
-
-  function stanRenderStatusBlock() {
-    var container = document.getElementById("stan-status-block");
-    if (!container) return;
-    container.innerHTML = buildStatusBlock(
-      (window.DEAL_CONTEXT && window.DEAL_CONTEXT.status) || DEAL_STATUS || "CALL",
-      (window.DEAL_CONTEXT && window.DEAL_CONTEXT.ceo_decision) || null,
-      (window.DEAL_CONTEXT && window.DEAL_CONTEXT.ceo_note) || null
-    );
-    stanUpdateTopPill();
-  }
-
-  // Display status for the top-right pill = the 4 unified states:
-  //   CEO YES    → "CALL YES"    (green)
-  //   CEO NO     → "CALL NO"     (red)
-  //   CALL, no decision → "⏳ PENDING" (orange)
-  //   CONSIDER / MONITOR / PASS → the real status (amber / blue / red)
-  function stanDisplayStatus() {
-    var ctx = window.DEAL_CONTEXT || {};
-    // Autonomous Stan re-classification trumps any prior ceo_decision so a
-    // deal that flipped to PASS no longer shows \u2713 CALL YES from a stale
-    // historical decision (matches Place Chat priority).
-    if (ctx.status === "CONSIDER" || ctx.status === "MONITOR" || ctx.status === "PASS") return ctx.status;
-    if (ctx.ceo_decision === "YES") return "\u2713 CALL YES";
-    if (ctx.ceo_decision === "NO")  return "\u274c CALL NO";
-    return "\u23f3 CALL PENDING";
-  }
-
-  function stanUpdateTopPill() {
-    var b = document.getElementById("stan-curBadge");
-    if (!b) return;
-    var ds = stanDisplayStatus();
-    // CALL PENDING is never shown — hide on any code path that resolves to it
-    // (covers legacy memos with status="NEW" where the meta-patch never ran).
-    if (ds === "⏳ CALL PENDING") {
-      b.style.display = "none";
-      b.textContent = "";
-      return;
-    }
-    b.style.display = "";
-    var col = PILL_COLORS[ds] || { bg: "#8FA0B8", text: "#fff" };
-    b.textContent = ds;
-    b.className = "stan-tpil";
-    b.style.background = col.bg;
-    b.style.color = col.text;
-    b.style.padding = "4px 12px";
-    // v3 : une pastille, pas une petite capitale espacée — la seule que la
-    // migration de style n'avait pas vue, parce qu'elle est posée en JS et non
-    // dans une chaîne de style.
-    b.style.borderRadius = "999px";
-    b.style.fontSize = "11px";
-    b.style.fontWeight = "700";
-    b.style.whiteSpace = "nowrap";
-  }
-
-  function stanHandleDecision(decision) {
-    _stanPendingDecision = decision;
-    var yesNoBlock = document.getElementById("stan-yes-no-block");
-    if (yesNoBlock) yesNoBlock.style.display = "none";
-
-    var record = window.DEAL_CONTEXT && window.DEAL_CONTEXT.airtable_record;
-    if (!record) { console.error("Stan: no airtable_record in DEAL_CONTEXT"); return; }
-
-    // PATCH immédiat (ceo_decision + ceo_decision_date)
-    fetch(AIRTABLE_BRIDGE_URL + "/stan-state", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        record_id: record,
-        ceo_decision: decision,
-        ceo_decision_date: new Date().toISOString().split("T")[0],
-      }),
-    }).catch(function(e) { console.error("Stan: immediate PATCH failed", e); });
-
-    // Update local context immediately for UX (note box still open)
-    window.DEAL_CONTEXT = Object.assign({}, window.DEAL_CONTEXT || {}, { ceo_decision: decision });
-
-    stanShowNoteBox(decision);
-  }
-
-  function stanShowNoteBox(decision) {
-    var isNo = decision === "NO";
-    var box = document.getElementById("stan-note-box");
-    if (!box) return;
-
-    box.style.display     = "block";
-    box.style.background  = isNo ? "#FDECEC" : "#F7FCF9";
-    box.style.border      = "1px solid " + (isNo ? "#F5C6C8" : "#BFE6CF");
-    box.style.borderRadius = "6px";
-    box.style.padding     = "12px 14px";
-    box.style.marginTop   = "10px";
-
-    box.innerHTML = ''
-      + '<style>#stan-ceo-note::placeholder{font-style:normal;color:#8FA0B8;font-family:Georgia,serif;font-size:13px;}</style>'
-      + '<p style="font-size:13px;font-weight:700;color:' + (isNo ? "#E5484D" : "#0E7F3F") + ';margin:0 0 10px 0;font-family:monospace;">'
-      +   (isNo ? "\u2717 NO saved \u2014 Stan will recalibrate." : "\u2713 YES saved \u2014 Stan is on it.")
-      + '</p>'
-      + '<p style="font-size:12px;color:#4B5E78;margin:0 0 6px 0">Your note (optional)</p>'
-      + '<textarea id="stan-ceo-note" placeholder="' + (isNo ? "e.g. Founders too junior, wrong B2C focus..." : "e.g. API-native, founder ex-Amadeus...") + '" rows="2" style="width:100%;box-sizing:border-box;border:1px solid #E3E8F0;border-radius:4px;padding:8px 10px;font-size:14px;font-family:Georgia,serif;font-style:normal;color:#16233A;line-height:1.55;resize:none;outline:none;background:#fff"></textarea>'
-      + '<div style="display:flex;gap:8px;margin-top:10px">'
-      +   '<button onclick="stanSaveCeoDecision()" style="flex:1;padding:9px 0;background:' + (isNo ? "#E5484D" : "#12A150") + ';color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">Save</button>'
-      +   '<button onclick="stanSkipCeoNote()" style="padding:9px 16px;background:#F9FBFD;color:#61708A;border:1px solid #E3E8F0;border-radius:4px;font-size:12px;cursor:pointer">Skip</button>'
-      + '</div>'
-      + (isNo ? '<p style="font-size:11px;color:#8FA0B8;margin:8px 0 0 0;font-style:italic">One line doubles Stan\'s convergence speed on this angle.</p>' : "");
-
-    setTimeout(function() { var ta = document.getElementById("stan-ceo-note"); if (ta) ta.focus(); }, 80);
-  }
-
-  async function stanSaveCeoDecision() {
-    var noteEl = document.getElementById("stan-ceo-note");
-    var note = noteEl ? noteEl.value.trim() : "";
-    await stanPersistCeoDecision(_stanPendingDecision, note);
-  }
-
-  async function stanSkipCeoNote() {
-    await stanPersistCeoDecision(_stanPendingDecision, "");
-  }
-
-  async function stanPersistCeoDecision(decision, note) {
-    var record = window.DEAL_CONTEXT && window.DEAL_CONTEXT.airtable_record;
-    var company = (window.DEAL_CONTEXT && window.DEAL_CONTEXT.company_name) || "";
-    var origNcl = (window.DEAL_CONTEXT && window.DEAL_CONTEXT.neural_command_line_final) || "";
-
-    if (!record) { console.error("Stan: no airtable_record in DEAL_CONTEXT"); return; }
-
-    var ceoNcl = "";
+  async function handleSubmit(e) {
+    var f = e.target.closest('form[data-form]'); if (!f) return; e.preventDefault();
+    if (running) return; running = true; var submit = f.querySelector('button'); submit.disabled = true;
     try {
-      if (note) {
-        var res = await fetch(STAN_PROXY_URL + "/ceo-signal", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            decision: decision,
-            note: note,
-            company: company,
-            angle_id: (window.DEAL_CONTEXT && window.DEAL_CONTEXT.angle_id) || "",
-            original_ncl: origNcl,
-          }),
-        });
-        if (res.ok) {
-          var data = await res.json();
-          ceoNcl = data.ceo_ncl || "";
-        }
-      } else if (decision === "NO") {
-        ceoNcl = "\ud83d\udd34 CEO_VETO: " + company + " \u00b7 angle:unknown \u00b7 TOXIC_KEYWORD: profile_rejected \u00b7 NARRATIVE_INSIGHT: CEO rejected Stan's top pick without providing a specific reason.";
+      var fd = new FormData(f), type = f.dataset.form, action = f.dataset.action;
+      if (type === 'unlock') {
+        key = String(fd.get('key') || '').trim(); await refresh(true);
+        try { sessionStorage.setItem('ppj-key:' + record, key); } catch (_) {}
+      } else if (type === 'settings') {
+        var cfg = {}; ['exclusivity_days', 'committee_notice_hours', 'board_day'].forEach(function (n) { cfg[n] = fd.get(n) === '' ? null : Number(fd.get(n)); });
+        if (demo) state.settings = cfg; else await api('/command/settings', cfg);
+        content.innerHTML = ''; await refresh(false);
       } else {
-        ceoNcl = origNcl;
-      }
-
-      var fields = {};
-      if (note) fields.ceo_note = note;
-      if (ceoNcl) fields.ceo_ncl = ceoNcl;
-
-      if (Object.keys(fields).length > 0) {
-        fields.record_id = record;
-        await fetch(AIRTABLE_BRIDGE_URL + "/stan-state", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(fields),
-        });
-      }
-    } catch (err) {
-      console.error("Stan: CEO decision note save failed", err);
-    }
-
-    window.DEAL_CONTEXT = Object.assign({}, window.DEAL_CONTEXT || {}, {
-      ceo_decision: decision,
-      ceo_note: note || null,
-      ceo_ncl: ceoNcl || null,
-    });
-
-    stanRenderStatusBlock();
-  }
-
-  function stanEditDecision() {
-    window.DEAL_CONTEXT = Object.assign({}, window.DEAL_CONTEXT || {}, {
-      ceo_decision: null,
-      ceo_note: null,
-    });
-    stanRenderStatusBlock();
-  }
-
-  // Expose for inline onclick handlers
-  window.stanHandleDecision   = stanHandleDecision;
-  window.stanSaveCeoDecision  = stanSaveCeoDecision;
-  window.stanSkipCeoNote      = stanSkipCeoNote;
-  window.stanEditDecision     = stanEditDecision;
-
-  /* ── Task Management ── */
-  window.stanCompleteTask = function(tid) { completeTask(tid); };
-
-  function completeTask(tid) {
-    for (var i = 0; i < PHASES.length; i++) {
-      for (var j = 0; j < PHASES[i].tasks.length; j++) {
-        if (PHASES[i].tasks[j].id === tid) {
-          PHASES[i].tasks[j].done = true;
-          break;
-        }
-      }
-    }
-    renderTimeline();
-    updateProgress();
-    updateNextAction();
-    persistStanState();
-  }
-
-  function toggleTask(pi, ti) {
-    PHASES[pi].tasks[ti].done = !PHASES[pi].tasks[ti].done;
-    renderTimeline();
-    updateProgress();
-    updateNextAction();
-    persistStanState();
-  }
-
-  function calcProgress() {
-    var total = 0, done = 0;
-    PHASES.forEach(function(p) {
-      p.tasks.forEach(function(tk) { if (tk.req) { total++; if (tk.done) done++; } });
-    });
-    return total ? Math.round(done / total * 100) : 0;
-  }
-
-  function getCurrentPhaseIdx() {
-    for (var i = 0; i < PHASES.length; i++) {
-      if (PHASES[i].tasks.filter(function(t) { return t.req && !t.done; }).length > 0) return i;
-    }
-    return PHASES.length - 1;
-  }
-
-  function updateProgress() {
-    var pct = calcProgress(), cp = getCurrentPhaseIdx() + 1;
-    var fill = document.getElementById("stan-rmFill");
-    if (fill) fill.style.width = pct + "%";
-    var pctEl = document.getElementById("stan-rmPct");
-    if (pctEl) pctEl.textContent = pct + "%";
-    var title = document.getElementById("stan-rmTitle");
-    if (title) title.textContent = "Phase " + cp + "/" + PHASES.length + " \u00b7 " + PHASES[cp - 1].name;
-    var p2 = PHASES[cp - 1];
-    var rd = p2.tasks.filter(function(t) { return t.req && t.done; }).length;
-    var rt = p2.tasks.filter(function(t) { return t.req; }).length;
-    var sub = document.getElementById("stan-rmSub");
-    if (sub) sub.textContent = pct + "% " + t("tasks_completed") + " \u00b7 " + (rt - rd) + " " + t("tasks_remaining");
-    renderStatusButtons();
-  }
-
-  function updateNextAction() {
-    var cp = getCurrentPhaseIdx();
-    var nxt = PHASES[cp].tasks.find(function(t) { return !t.done; });
-    var naTxt = document.getElementById("stan-naTxt");
-    if (naTxt) {
-      naTxt.textContent = nxt ? nxt.label : t("phase_complete") + ' "' + PHASES[cp].name + '"';
-    }
-  }
-
-  /* ── Timeline ── */
-  function renderTimeline() {
-    var cp = getCurrentPhaseIdx();
-    var el = document.getElementById("stan-timelineEl");
-    if (!el) return;
-    el.innerHTML = "";
-
-    PHASES.forEach(function(phase, pi) {
-      var isLast = pi === PHASES.length - 1;
-      var rd = phase.tasks.filter(function(t) { return t.req && t.done; }).length;
-      var rt = phase.tasks.filter(function(t) { return t.req; }).length;
-      var allDone = rd === rt;
-      var isComp = allDone && pi < cp;
-      var isCur = pi === cp;
-      var isLocked = pi > cp && phase.locked !== false;
-      if (!expandedPhases.hasOwnProperty(pi)) expandedPhases[pi] = isCur;
-      var isOpen = !!expandedPhases[pi];
-
-      var item = document.createElement("div"); item.className = "stan-tl-item";
-      var lc = document.createElement("div"); lc.className = "stan-tl-line";
-      var dot = document.createElement("div"); dot.className = "stan-tl-dot " + (isComp ? "done" : isCur ? "current" : "locked");
-      lc.appendChild(dot);
-      if (!isLast) { var conn = document.createElement("div"); conn.className = "stan-tl-conn " + (isComp ? "done" : isCur ? "current" : ""); lc.appendChild(conn); }
-      item.appendChild(lc);
-
-      var content = document.createElement("div"); content.className = "stan-tl-content" + (isCur ? " current" : "");
-      var hd = document.createElement("div"); hd.className = "stan-ph-hd" + (isLocked ? " locked" : "");
-      var left = document.createElement("div"); left.className = "stan-ph-left";
-      var chev = document.createElement("span"); chev.className = "stan-ph-chev";
-      chev.textContent = isLocked ? "" : isOpen ? "\u25be" : "\u25b8";
-      var nm = document.createElement("div");
-      nm.className = "stan-ph-nm " + (isComp ? "done" : isCur ? "current" : "locked");
-      nm.textContent = phase.icon + " " + phase.name;
-      left.appendChild(chev); left.appendChild(nm);
-      var bdg = document.createElement("span");
-      bdg.className = "stan-ph-bdg " + (isComp ? "done" : isCur ? "current" : "locked");
-      bdg.textContent = isComp ? "\u2713" : isCur ? (rd + "/" + rt) : "\ud83d\udd12";
-      hd.appendChild(left); hd.appendChild(bdg);
-
-      if (!isLocked) {
-        (function(idx) { hd.onclick = function() { expandedPhases[idx] = !expandedPhases[idx]; renderTimeline(); updateNextAction(); }; })(pi);
-        hd.style.cursor = "pointer";
-      }
-      content.appendChild(hd);
-
-      var sts = document.createElement("div"); sts.className = "stan-ph-sts"; sts.textContent = phase.statuses;
-      content.appendChild(sts);
-
-      if (!isLocked && isOpen) {
-        var tl = document.createElement("div"); tl.className = "stan-task-list open";
-        phase.tasks.forEach(function(tk, ti) {
-          var tiel = document.createElement("div");
-          tiel.className = "stan-task-item" + (tk.done ? " done" : "");
-          tiel.id = "stan-task-" + tk.id;
-          (function(p2, t2) { tiel.onclick = function() { toggleTask(p2, t2); }; })(pi, ti);
-
-          var cb = document.createElement("div"); cb.className = "stan-task-cb";
-          var ck = document.createElement("span"); ck.className = "stan-task-ck"; ck.textContent = "\u2713";
-          cb.appendChild(ck);
-
-          var right = document.createElement("div"); right.className = "stan-task-right";
-          var lbl = document.createElement("div"); lbl.className = "stan-task-lbl";
-          lbl.textContent = tk.label + (tk.auto ? " " + t("auto_label") : "");
-          var meta2 = document.createElement("div"); meta2.className = "stan-task-meta";
-          var req = document.createElement("span");
-          req.className = "stan-t-req " + (tk.req ? "r" : "o");
-          req.textContent = tk.req ? t("mandatory") : t("optional");
-          meta2.appendChild(req);
-
-          if (tk.skill && !tk.done) {
-            var sb2 = document.createElement("button"); sb2.className = "stan-t-stan";
-            sb2.textContent = tk.skillName || "Stan";
-            (function(sk) { sb2.onclick = function(e) { e.stopPropagation(); sc(sk); }; })(tk.skill);
-            meta2.appendChild(sb2);
+        var data = { action: action };
+        if (type === 'add') {
+          ['kind', 'title', 'text', 'url', 'subject'].forEach(function (n) { data[n] = String(fd.get(n) || ''); });
+          var file = fd.get('file');
+          if (file && file.size) {
+            if (file.size > 12 * 1024 * 1024) throw new Error('Fichier limité à 12 Mo');
+            data.filename = file.name; data.mime = file.type;
+            data.blob = await new Promise(function (resolve, reject) { var r = new FileReader(); r.onload = function () { resolve(String(r.result).split(',')[1]); }; r.onerror = reject; r.readAsDataURL(file); });
           }
-          right.appendChild(lbl); right.appendChild(meta2);
-          tiel.appendChild(cb); tiel.appendChild(right);
-          tl.appendChild(tiel);
-        });
-        content.appendChild(tl);
-
-        if (isCur && !isLast) {
-          var pr = document.createElement("div"); pr.className = "stan-ph-prog";
-          var pt = document.createElement("span"); pt.className = "stan-ph-prog-txt";
-          pt.textContent = rd + "/" + rt + " " + t("mandatory");
-          pr.appendChild(pt);
-          if (allDone) {
-            var av = document.createElement("button"); av.className = "stan-ph-adv";
-            av.textContent = t("next_phase");
-            (function(pIdx) {
-              av.onclick = function() {
-                if (PHASES[pIdx + 1]) PHASES[pIdx + 1].locked = false;
-                expandedPhases[pIdx] = false;
-                expandedPhases[pIdx + 1] = true;
-                updateProgress(); renderTimeline(); updateNextAction();
-                addMsg('<span style="font-family:var(--mono);font-size:11px;color:var(--green);">\u2192 ' + PHASES[pIdx + 1].name + ' d\u00e9bloqu\u00e9e.</span>', "ok");
-              };
-            })(pi);
-            pr.appendChild(av);
-          }
-          content.appendChild(pr);
-        }
+        } else { data.note = String(fd.get('note')); data.evidence_ids = fd.getAll('proof'); data.confirmations = fd.getAll('confirmation'); }
+        if (demo) window.__STAN_JOURNEY_DEMO__.command(type, data);
+        else await api(type === 'add' ? '/evidence' : '/command/' + type, data);
+        content.innerHTML = ''; await refresh(false);
       }
-      item.appendChild(content); el.appendChild(item);
-    });
-
-    // Re-highlight next task
-    var cp2 = getCurrentPhaseIdx();
-    var nxt = PHASES[cp2].tasks.find(function(t) { return !t.done; });
-    if (nxt) {
-      var hl = document.getElementById("stan-task-" + nxt.id);
-      if (hl) hl.classList.add("stan-next-hl");
-    }
+      announce(demo ? 'Simulation enregistrée dans la démonstration uniquement.' : 'Enregistré dans le dossier privé.');
+    } catch (error) { announce(error.message, true); }
+    finally { running = false; submit.disabled = false; }
   }
-
-  /* ── Chat ── */
-  function addMsg(html, cls) {
-    var m = document.getElementById("stan-msgs");
-    var d = document.createElement("div");
-    d.className = "stan-msg-s " + (cls || "");
-    d.innerHTML = html;
-    m.appendChild(d);
-    m.scrollTop = m.scrollHeight;
-    return d;
+  async function download(format, action) {
+    if (demo) { window.__STAN_JOURNEY_DEMO__.export(format, action); return; }
+    var response = await api('/export?format=' + format + '&action=' + encodeURIComponent(action || ''));
+    var blob = await response.blob(), url = URL.createObjectURL(blob);
+    var link = el('a', { href: url, download: 'parcours-' + (action || 'dossier') + '.' + (format === 'zip' ? 'zip' : 'pdf') });
+    document.body.appendChild(link); link.click(); link.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
   }
-
-  function addUser(txt) {
-    var m = document.getElementById("stan-msgs");
-    var d = document.createElement("div");
-    d.className = "stan-msg-u";
-    d.textContent = txt;
-    m.appendChild(d);
-    m.scrollTop = m.scrollHeight;
-  }
-
-  function addFups(el, fus) {
-    if (!fus || !fus.length) return;
-    var d = document.createElement("div"); d.className = "stan-fups";
-    fus.forEach(function(f) {
-      var b = document.createElement("button"); b.className = "stan-fup";
-      if (typeof f === "object" && f.label) {
-        b.textContent = f.label;
-        if (f.tab) {
-          (function(tab) { b.onclick = function() { switchTab(tab); }; })(f.tab);
-        } else if (f.skill) {
-          (function(sk) { b.onclick = function() { sc(sk); }; })(f.skill);
-        } else if (f.share) {
-          b.onclick = function() { shareOutput(); };
-        } else if (f.inject) {
-          (function(key) { b.onclick = function() { injectKey(key); }; })(f.inject);
-        } else if (f.directive) {
-          (function(did) { b.onclick = function() { launchDirective(did); }; })(f.directive);
-        } else if (f.fn) {
-          b.onclick = f.fn;
-        } else {
-          (function(txt) { b.onclick = function() { var inp = document.getElementById("stan-chatInput"); inp.value = txt; sendMsg(); }; })(f.label);
-        }
-      } else {
-        var txt2 = typeof f === "string" ? f : "";
-        b.textContent = txt2;
-        (function(t2) { b.onclick = function() { var inp = document.getElementById("stan-chatInput"); inp.value = t2; sendMsg(); }; })(txt2);
-      }
-      d.appendChild(b);
-    });
-    el.appendChild(d);
-  }
-
-  function handleKey(e) {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); }
-  }
-
-  function simAttach(type) {
-    attached.push({ name: type === "pdf" ? "document.pdf" : "fichier.xlsx", type: type });
-    renderAttach();
-    var inp = document.getElementById("stan-chatInput");
-    if (type === "pdf") {
-      inp.value = "";
-      inp.placeholder = t("pdf_placeholder");
-    } else {
-      inp.value = t("link_prefill");
-      inp.placeholder = t("link_placeholder");
-    }
-    inp.focus();
-  }
-
-  function renderAttach() {
-    var b = document.getElementById("stan-attachBar");
-    b.innerHTML = attached.map(function(a, i) {
-      return '<div class="stan-chip">' + (a.type === "pdf" ? "PDF" : "XLSX") + " \u00b7 " + a.name + ' <button data-rm-attach="' + i + '">\u00d7</button></div>';
-    }).join("");
-  }
-
-  /* ── Skill execution ── */
-  async function sc(key) {
-    // Check if it's a directive
-    if (window.DIRECTIVES && window.DIRECTIVES[key]) {
-      launchDirective(key);
-      return;
-    }
-
-    switchTab("chat");
-    var displayName = (window.SKILL_NAMES && window.SKILL_NAMES[key]) || key;
-    addUser(displayName);
-
-    var direct = window.SKILL_DIRECT && window.SKILL_DIRECT[key];
-    var tw = document.getElementById("stan-typingW");
-    tw.classList.add("show");
-    document.getElementById("stan-msgs").scrollTop = 99999;
-
-    if (direct) {
-      try {
-        var memoEl = document.querySelector(".stan-main") || document.body;
-        var memoHtml = memoEl.innerHTML || "";
-
-        var response = await fetch(MODAL_BASE + "stan-skills-fastapi-app.modal.run/skill/" + key, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            company_name: DEAL_CONTEXT.name || "",
-            arr: DEAL_CONTEXT.arr || "",
-            ev: DEAL_CONTEXT.ev || "",
-            lang: window.STAN_LANG || "fr",
-            memo_html: memoHtml
-          })
-        });
-
-        var result = await response.json();
-        tw.classList.remove("show");
-
-        if (result.error) {
-          addMsg("<strong>Erreur :</strong> " + result.error, "");
-          return;
-        }
-
-        if (direct.run) direct.run();
-
-        if (result.output_html && direct.out) {
-          var outData = { title: result.output_title || displayName, html: result.output_html };
-          window.OUT_CONTENT[direct.out] = outData;
-          pendingOut = { key: direct.out, data: outData };
-          saveOutput(direct.out, outData);
-        }
-
-        if (result.task_to_complete) completeTask(result.task_to_complete);
-
-        var el = addMsg(result.chat_html || ("<strong>" + displayName + " \u2014 termin\u00e9.</strong>"), "ok");
-        addFups(el, direct.f || []);
-        document.getElementById("stan-msgs").scrollTop = 99999;
-
-        await persistStanState();
-      } catch (err) {
-        tw.classList.remove("show");
-        addMsg("<strong>Erreur r\u00e9seau.</strong> V\u00e9rifiez la connexion et r\u00e9essayez.", "");
-        console.error("Stan skill error:", err);
-      }
-    } else {
-      setTimeout(function() {
-        tw.classList.remove("show");
-        var el = addMsg(t("fallback_msg"), "ok");
-        addFups(el, [{ label: t("nav_roadmap"), tab: "roadmap" }, { label: t("nav_skills"), tab: "skills" }]);
-        document.getElementById("stan-msgs").scrollTop = 99999;
-      }, 1400);
-    }
-  }
-
-
-  function applyMemoEdits(edits) {
-    var target = document.querySelector(".stan-main") || document.body;
-    var applied = 0;
-    edits.forEach(function(e) {
-      var find = e.find, replace = e.replace;
-      if (!find) return;
-      var walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT, null);
-      var nodes = [], n;
-      while ((n = walker.nextNode())) nodes.push(n);
-      for (var i = 0; i < nodes.length; i++) {
-        var node = nodes[i];
-        if (node.nodeValue && node.nodeValue.indexOf(find) !== -1) {
-          node.nodeValue = node.nodeValue.split(find).join(replace || "");
-          applied++;
-          if (node.parentElement) {
-            var el = node.parentElement;
-            el.style.transition = "background 1.2s ease";
-            var prev = el.style.background;
-            el.style.background = "rgba(240, 227, 188, .5)";
-            setTimeout(function(el, prev) { return function() { el.style.background = prev; }; }(el, prev), 1500);
-          }
-          break;
-        }
-      }
-    });
-    if (applied > 0 && typeof pushCommitToGitHub === "function") {
-      try { pushCommitToGitHub("Chat edit via Stan"); } catch (_) {}
-    }
-    return applied;
-  }
-
-  async function sendMsg() {
-    var inp = document.getElementById("stan-chatInput");
-    var txt = inp.value.trim();
-    if (!txt && !attached.length) return;
-    if (attached.length && !txt) txt = t("analyze_default");
-    inp.value = "";
-    var sendBtn = document.getElementById("stan-sendBtn");
-    if (sendBtn) sendBtn.disabled = true;
-    addUser(txt + (attached.length ? " [\ud83d\udcce " + attached[0].name + "]" : ""));
-    attached = [];
-    renderAttach();
-
-    var tw = document.getElementById("stan-typingW");
-    tw.classList.add("show");
-    document.getElementById("stan-msgs").scrollTop = 99999;
-
+  async function handleClick(e) {
+    var b = e.target.closest('[data-do]'); if (!b) return;
+    var cmd = b.dataset.do, id = b.dataset.id;
     try {
-      var memoEl = document.querySelector(".stan-main") || document.body;
-      var memoHtml = memoEl.innerHTML || "";
-
-      var response = await fetch(MODAL_BASE + "stan-skills-fastapi-app.modal.run/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: txt,
-          company_name: DEAL_CONTEXT.name || "",
-          memo_html: memoHtml
-        })
-      });
-
-      var result = await response.json();
-      tw.classList.remove("show");
-
-      if (result.error) {
-        addMsg("<strong>Erreur :</strong> " + result.error, "");
-      } else {
-        addMsg(result.chat_html || t("fallback_msg"), "ok");
-        if (Array.isArray(result.edits) && result.edits.length) {
-          var applied = applyMemoEdits(result.edits);
-          if (applied > 0) {
-            pushHist("Chat edit : " + applied + " modification(s) appliqu\u00e9e(s)");
-          } else {
-            addMsg("<em>\u26a0\ufe0f Texte \u00e0 remplacer introuvable dans le m\u00e9mo.</em>", "");
-          }
-        }
+      if (cmd === 'close') { close(); return; }
+      if (cmd === 'full') { shell.classList.toggle('ppj-full'); return; }
+      if (cmd === 'roadmap' || cmd === 'history') { pane = cmd; content.innerHTML = ''; render(); return; }
+      if (cmd === 'phase') { filter = id; render(); return; }
+      if (cmd === 'all') { filter = ''; search = ''; render(); return; }
+      if (cmd === 'expand' || cmd === 'goto') { active = active === id && cmd === 'expand' ? '' : id; if (cmd === 'goto') { pane = 'roadmap'; filter = ''; } render(); return; }
+      if (['add', 'attest', 'skip'].includes(cmd)) { form(id, cmd); return; }
+      if (cmd === 'cancel') { content.querySelector('[data-slot="' + id + '"]').innerHTML = ''; return; }
+      if (cmd === 'evidence') {
+        var piece = state.evidence[id]; if (!piece) return;
+        var dialog = el('dialog', { class: 'ppj-dialog' });
+        dialog.innerHTML = '<h3>' + esc(piece.title) + '</h3><p>' + esc(piece.provenance) + ' · ' + date(piece.at) + '</p><pre>' + esc(piece.text || 'Audio conservé. Transcription à importer.') + '</pre>' + (piece.filename && !demo ? button('Télécharger l’original', '', 'original', id) : '') + '<button class="ppj-btn" data-close-piece>Fermer</button>';
+        shell.appendChild(dialog); dialog.querySelector('[data-close-piece]').onclick = function () { dialog.close(); dialog.remove(); }; dialog.showModal(); return;
       }
-    } catch (err) {
-      tw.classList.remove("show");
-      addMsg("<strong>Erreur r\u00e9seau.</strong> V\u00e9rifiez la connexion et r\u00e9essayez.", "");
-      console.error("Stan chat error:", err);
-    }
-
-    if (sendBtn) sendBtn.disabled = false;
-    document.getElementById("stan-msgs").scrollTop = 99999;
-  }
-
-  /* ── History ── */
-  function snapshotMemo() {
-    var target = document.querySelector(".stan-main") || document.getElementById("memo-content");
-    return target ? target.innerHTML : "";
-  }
-
-  function pushHist(msg) {
-    var time = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-    historyItems.unshift({ t: time, msg: msg, snapshot: snapshotMemo() });
-    renderHist();
-    pushCommitToGitHub(msg);
-  }
-
-  function restoreHist(idx) {
-    var h = historyItems[idx];
-    if (!h || !h.snapshot) { alert("Pas de snapshot disponible pour cette entr\u00e9e."); return; }
-    if (!confirm("Restaurer le m\u00e9mo \u00e0 l'\u00e9tat : \"" + h.msg + "\" (" + h.t + ") ?")) return;
-    var target = document.querySelector(".stan-main") || document.getElementById("memo-content");
-    if (target) {
-      target.innerHTML = h.snapshot;
-      pushCommitToGitHub("Restauration : " + h.msg);
-      alert("M\u00e9mo restaur\u00e9.");
-    }
-  }
-
-  function renderHist() {
-    var l = document.getElementById("stan-histList");
-    var e = document.getElementById("stan-histEmpty");
-    if (e && historyItems.length) e.style.display = "none";
-    if (!l) return;
-    l.querySelectorAll(".stan-hist-item").forEach(function(i) { i.remove(); });
-    historyItems.forEach(function(h, idx) {
-      var d = document.createElement("div"); d.className = "stan-hist-item";
-      d.innerHTML =
-        '<div class="stan-hist-t">' + h.t + '</div>' +
-        '<div class="stan-hist-msg">' + h.msg + '</div>' +
-        '<div class="stan-hist-btns">' +
-          '<button class="stan-hb" data-act="diff" data-idx="' + idx + '">' + t("hist_view_diff") + '</button>' +
-          '<button class="stan-hb" data-act="restore" data-idx="' + idx + '">' + t("hist_restore") + '</button>' +
-        '</div>';
-      d.querySelectorAll(".stan-hb").forEach(function(btn) {
-        btn.addEventListener("click", function() {
-          var act = btn.getAttribute("data-act");
-          var i = parseInt(btn.getAttribute("data-idx"), 10);
-          if (act === "restore") restoreHist(i);
-          else if (act === "diff") {
-            var item = historyItems[i];
-            alert("Snapshot du " + item.t + " \u2014 " + (item.snapshot ? item.snapshot.length + " caract\u00e8res" : "aucun snapshot"));
-          }
-        });
-      });
-      l.appendChild(d);
-    });
-  }
-
-  /* ── Outputs ── */
-  function saveOutput(key, data) {
-    var time = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-    var phaseNum = (window.SKILL_PHASE && window.SKILL_PHASE[key]) || getCurrentPhaseIdx() + 1;
-    var phaseName = PHASES[phaseNum - 1] ? PHASES[phaseNum - 1].name : "";
-    savedOutputs.unshift({ key: key, title: data.title, time: time, status: "saved", phase: phaseName, phaseNum: phaseNum });
-    renderOutputs();
-    var b = document.getElementById("stan-outBdg");
-    if (b) { b.style.display = "flex"; b.textContent = savedOutputs.length; }
-    pushHist(data.title + " g\u00e9n\u00e9r\u00e9 \u00b7 Phase " + phaseNum);
-  }
-
-  function renderOutputs() {
-    var l = document.getElementById("stan-outList");
-    var e = document.getElementById("stan-outEmpty");
-    if (e && savedOutputs.length) e.style.display = "none";
-    if (!l) return;
-    l.querySelectorAll(".stan-out-item").forEach(function(i) { i.remove(); });
-    var STANDALONE = window.STANDALONE_OUTPUTS || ["email", "lp", "slides"];
-
-    savedOutputs.forEach(function(o, i) {
-      var isStandalone = STANDALONE.indexOf(o.key) !== -1;
-      var statusTxt = o.status === "inject\u00e9" ? t("injected") :
-                      o.status === "partag\u00e9" ? t("shared") : t("saved");
-      if (isStandalone && o.status !== "partag\u00e9") statusTxt = t("standalone_label");
-      var statusColor = o.status === "inject\u00e9" ? "var(--green)" :
-                        o.status === "partag\u00e9" ? "var(--blue)" : "var(--tl)";
-
-      var injectBtn = isStandalone
-        ? '<button class="stan-ob" style="color:var(--tl);cursor:default;" title="' + t("not_injectable_msg") + '">' + t("not_injectable") + '</button>'
-        : '<button class="stan-ob" data-qi="' + i + '">' + t("inject_memo") + '</button>';
-
-      var d = document.createElement("div"); d.className = "stan-out-item";
-      d.innerHTML =
-        '<div class="stan-out-meta">Phase ' + o.phaseNum + ' \u00b7 ' + o.phase + '</div>' +
-        '<div class="stan-out-title">' + o.title + '</div>' +
-        '<div style="font-family:var(--mono);font-size:11.5px;color:' + statusColor + ';margin-bottom:7px;">' + o.time + ' \u00b7 ' + statusTxt + '</div>' +
-        '<div class="stan-out-btns">' +
-          '<button class="stan-ob pr" data-out-view="' + o.key + '">' + t("view") + '</button>' +
-          '<button class="stan-ob" data-qs="' + i + '">' + t("share_url") + '</button>' +
-          injectBtn +
-        '</div>';
-      l.appendChild(d);
-    });
-  }
-
-  function openOutModal(key) {
-    var d = window.OUT_CONTENT[key]; if (!d) return;
-    pendingOut = { key: key, data: d };
-    var ti = document.getElementById("stan-outTi"); if (ti) ti.textContent = d.title;
-    var ctx = (window.OUT_CONTEXT && window.OUT_CONTEXT[key]) || "";
-    var ctxHtml = ctx ? '<div style="background:var(--off);border-left:2px solid var(--border-l);padding:8px 12px;margin-bottom:16px;font-family:var(--serif);font-style:italic;font-size:13px;color:var(--ts);line-height:1.5;">' + ctx + '</div>' : "";
-    var body = document.getElementById("stan-outBody");
-    if (body) body.innerHTML = ctxHtml + d.html;
-
-    // Reset footer buttons
-    var ft = document.getElementById("stan-outFt");
-    if (ft) {
-      ft.innerHTML =
-        '<button class="stan-mb stan-dark" id="stan-shareBtn">' + t("share_url") + '</button>' +
-        '<button class="stan-mb stan-grn" id="stan-injectBtn">' + t("inject_memo") + '</button>' +
-        '<button class="stan-mb stan-out" data-close="stan-outModal">' + t("close") + '</button>';
-      // Re-wire buttons
-      var shareBtn = document.getElementById("stan-shareBtn");
-      if (shareBtn) shareBtn.onclick = shareOutput;
-      var injBtn = document.getElementById("stan-injectBtn");
-      if (injBtn) injBtn.onclick = injectOutput;
-    }
-
-    openModal("stan-outModal");
-  }
-
-  function shareOutput() {
-    var tok = Math.random().toString(36).slice(2, 10);
-    var url = "https://analysis.proplace.co/output?t=" + tok;
-    if (pendingOut) {
-      var idx = savedOutputs.findIndex(function(o) { return o.key === pendingOut.key; });
-      if (idx >= 0) { savedOutputs[idx].status = "partag\u00e9"; savedOutputs[idx].url = url; }
-      renderOutputs();
-    }
-    openModal("stan-outModal");
-    var urlHtml = '<div style="background:var(--gbg);border:1px solid var(--gbr);padding:12px 16px;margin-bottom:14px;">' +
-      '<div style="font-family:var(--mono);font-size:11.5px;color:var(--green);margin-bottom:6px;">\u2713 ' + t("share_created") + '</div>' +
-      '<a href="' + url + '" target="_blank" style="font-family:var(--mono);font-size:12px;color:var(--blue);display:block;margin-bottom:6px;word-break:break-all;">' + url + '</a>' +
-      '</div>';
-    var body = document.getElementById("stan-outBody");
-    if (body) body.innerHTML = urlHtml + (body.innerHTML || "");
-    pushHist((pendingOut ? pendingOut.data.title : "Output") + " partag\u00e9");
-  }
-
-  function injectOutput() {
-    if (!pendingOut) return;
-    if ((window.STANDALONE_OUTPUTS || []).indexOf(pendingOut.key) !== -1) {
-      // Standalone — explain
-      var msg = '<div style="background:var(--off);border-left:2px solid var(--border);padding:10px 14px;margin-bottom:14px;">' +
-        '<div style="font-family:var(--mono);font-size:11.5px;color:var(--tl);margin-bottom:5px;">' + t("standalone_explain") + '</div>' +
-        '<div style="font-family:var(--serif);font-size:13px;color:var(--ts);">' + t("standalone_detail") + '</div></div>';
-      var body = document.getElementById("stan-outBody");
-      if (body) body.innerHTML = msg + (body.innerHTML || "");
-      return;
-    }
-    askWhereToInject(pendingOut.key);
-  }
-
-  /* ── Injection ── */
-  function injectKey(key) {
-    var target = window.INJECT_TARGET && window.INJECT_TARGET[key];
-    if (!target) {
-      addMsg(t("not_injectable_msg"), "ok");
-      return;
-    }
-
-    var section = findSection(target.selector);
-    // Fallback chain
-    if (!section && target.fallback_id) section = document.getElementById(target.fallback_id);
-    if (!section && target.fallback_anchor) {
-      var anchored = getElementsBetweenComments(target.fallback_anchor + "_START", target.fallback_anchor + "_END");
-      if (anchored.length) section = anchored[0].parentElement || anchored[0];
-    }
-    if (!section) {
-      addMsg("Section cible introuvable dans le m\u00e9mo.", "ok");
-      return;
-    }
-
-    var injectHtml = target.html || (window.OUT_CONTENT[key] && window.OUT_CONTENT[key].html) || "";
-    if (!injectHtml) return;
-
-    // For sub-cells, replace content
-    if (target.is_subcell) {
-      section.innerHTML = injectHtml;
-      section.classList.add("flash");
-      section.scrollIntoView({ behavior: "smooth", block: "center" });
-      setTimeout(function() { section.classList.remove("flash"); }, 2400);
-      pushHist(target.label + " mis \u00e0 jour dans le m\u00e9mo");
-      addMsg('<strong>' + t("injected_confirm") + ' ' + target.label + '.</strong><br><br>' + t("scroll_to_see"), "ok");
-      return;
-    }
-
-    // Append block
-    var existId = "stan-injected-" + key;
-    var block = document.getElementById(existId);
-    if (!block) {
-      block = document.createElement("div");
-      block.id = existId;
-      block.style.cssText = "margin:12px 0;";
-
-      var ctrlBar = document.createElement("div");
-      ctrlBar.style.cssText = "display:flex;gap:6px;align-items:center;padding:3px 0 6px;border-bottom:1px solid var(--border-l);margin-bottom:8px;";
-      var ctrlLbl = document.createElement("span");
-      ctrlLbl.style.cssText = "font-family:var(--mono);font-size:11.5px;color:var(--tl);flex:1;";
-      ctrlLbl.textContent = "Stan \u00b7 " + target.label;
-      var ctrlDel = document.createElement("button");
-      ctrlDel.style.cssText = "font-family:var(--serif);font-size:12px;color:var(--red);background:none;border:none;cursor:pointer;padding:0;";
-      ctrlDel.textContent = t("delete_section");
-      var ctrlHide = document.createElement("button");
-      ctrlHide.style.cssText = "font-family:var(--serif);font-size:12px;color:var(--tl);background:none;border:none;cursor:pointer;padding:0;margin-left:8px;";
-      ctrlHide.textContent = t("hide_section");
-      (function(bid, hBtn) {
-        ctrlDel.onclick = function() { var b2 = document.getElementById(bid); if (b2) b2.style.display = "none"; };
-        ctrlHide.onclick = function() { var b2 = document.getElementById(bid); if (!b2) return; var ic = b2.querySelector(".stan-injected-content"); if (ic) { var hidden = ic.style.display === "none"; ic.style.display = hidden ? "" : "none"; hBtn.textContent = hidden ? t("hide_section") : t("show_section"); } };
-      })(existId, ctrlHide);
-      ctrlBar.appendChild(ctrlLbl); ctrlBar.appendChild(ctrlDel); ctrlBar.appendChild(ctrlHide);
-
-      var innerWrap = document.createElement("div");
-      innerWrap.className = "stan-injected-content";
-      innerWrap.innerHTML = injectHtml;
-
-      block.appendChild(ctrlBar);
-      block.appendChild(innerWrap);
-
-      // Add output link
-      if (pendingOut && window.OUT_CONTENT[pendingOut.key]) {
-        var outKey = pendingOut.key;
-        var linkBar = document.createElement("div");
-        linkBar.style.cssText = "margin-top:8px;padding-top:6px;border-top:1px solid var(--border-l);";
-        var linkBtn = document.createElement("button");
-        linkBtn.style.cssText = "font-family:var(--serif);font-size:12px;font-weight:600;background:none;border:1px solid var(--border);padding:2px 8px;cursor:pointer;color:var(--ts);";
-        linkBtn.textContent = t("view_output_full");
-        (function(k) { linkBtn.onclick = function() { openOutModal(k); }; })(outKey);
-        linkBar.appendChild(linkBtn);
-        block.appendChild(linkBar);
+      if (cmd === 'original') {
+        var original = await (await api('/evidence/' + encodeURIComponent(id) + '/file')).blob();
+        var originalURL = URL.createObjectURL(original), a = el('a', { href: originalURL, download: state.evidence[id].filename });
+        document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(originalURL); }, 30000); return;
       }
-      section.appendChild(block);
-    }
-
-    section.classList.add("flash");
-    section.scrollIntoView({ behavior: "smooth", block: "center" });
-    setTimeout(function() { section.classList.remove("flash"); }, 2400);
-
-    if (pendingOut) {
-      var idx = savedOutputs.findIndex(function(o) { return o.key === pendingOut.key; });
-      if (idx >= 0) savedOutputs[idx].status = "inject\u00e9";
-      renderOutputs();
-    }
-    pushHist((target.label || key) + " inject\u00e9 dans le m\u00e9mo");
-    addMsg('<strong>' + t("injected_confirm") + ' ' + target.label + '.</strong><br><br>' + t("scroll_to_see"), "ok");
-  }
-
-  /* ── Injection Chooser ── */
-  function askWhereToInject(key, htmlContent) {
-    pendingInjectKey = key;
-    pendingInjectHtml = htmlContent || (window.INJECT_TARGET && window.INJECT_TARGET[key] ? window.INJECT_TARGET[key].html : null);
-    selectedInjectTarget = null;
-
-    var sections = window.INJECT_SECTIONS || [];
-    var body = '<div style="font-family:var(--serif);font-style:italic;font-size:13px;color:var(--tl);margin-bottom:12px;">' + t("inject_target_label") + '</div>';
-
-    sections.forEach(function(sec) {
-      var indent = sec.subcell ? "margin-left:16px;" : "";
-      body += '<div class="stan-inj-option" id="stan-inj-opt-' + sec.id + '" data-inject-target="' + sec.id + '" style="' + indent + '">' +
-        '<span class="stan-inj-opt-icon">' + sec.icon + '</span>' +
-        '<div><div class="stan-inj-opt-name">' + sec.label + '</div><div class="stan-inj-opt-desc">' + sec.desc + '</div></div>' +
-      '</div>';
-    });
-
-    var sub = document.getElementById("stan-injectModalSub");
-    if (sub) sub.textContent = key && window.INJECT_TARGET && window.INJECT_TARGET[key] ? "Pour : " + window.INJECT_TARGET[key].label : t("inject_target_label");
-
-    var modalBody = document.getElementById("stan-injectModalBody");
-    if (modalBody) modalBody.innerHTML = body;
-
-    var btn = document.getElementById("stan-injectConfirmBtn");
-    if (btn) { btn.disabled = true; btn.style.opacity = "0.4"; }
-
-    closeModal("stan-outModal");
-    openModal("stan-injectModal");
-
-    // Pre-select default
-    if (key && window.INJECT_TARGET && window.INJECT_TARGET[key]) {
-      setTimeout(function() { selectInjectTarget(window.INJECT_TARGET[key].selector); }, 50);
-    }
-  }
-
-  function selectInjectTarget(sectionId) {
-    selectedInjectTarget = sectionId;
-    document.querySelectorAll(".stan-inj-option").forEach(function(el) { el.classList.remove("selected"); });
-    var opt = document.getElementById("stan-inj-opt-" + sectionId);
-    if (opt) opt.classList.add("selected");
-    var btn = document.getElementById("stan-injectConfirmBtn");
-    if (btn) { btn.disabled = false; btn.style.opacity = "1"; }
-  }
-
-  function confirmInject() {
-    if (!selectedInjectTarget) return;
-    closeModal("stan-injectModal");
-
-    if (selectedInjectTarget === "new-section") {
-      var memoScroll = document.getElementById("memo-content") || document.querySelector(".stan-memo-scroll");
-      var newSec = document.createElement("div");
-      newSec.className = "section-container";
-      newSec.id = "stan-custom-" + Date.now();
-      newSec.innerHTML = '<h2>' + t("section_custom") + '</h2>' + (pendingInjectHtml || "");
-      if (memoScroll) memoScroll.appendChild(newSec);
-      newSec.scrollIntoView({ behavior: "smooth", block: "center" });
-      addMsg('<strong>' + t("new_section") + '</strong>', "ok");
-    } else {
-      if (pendingInjectKey && window.INJECT_TARGET && window.INJECT_TARGET[pendingInjectKey]) {
-        var original = window.INJECT_TARGET[pendingInjectKey];
-        var override = {};
-        for (var k in original) override[k] = original[k];
-        override.selector = selectedInjectTarget;
-        window.INJECT_TARGET["__override__"] = override;
-        injectKey("__override__");
-        delete window.INJECT_TARGET["__override__"];
-      } else if (pendingInjectHtml) {
-        var section = findSection(selectedInjectTarget);
-        if (section) {
-          var block = document.createElement("div");
-          block.id = "stan-injected-paste-" + Date.now();
-          block.innerHTML = pendingInjectHtml;
-          section.appendChild(block);
-          section.classList.add("flash");
-          section.scrollIntoView({ behavior: "smooth", block: "center" });
-          setTimeout(function() { section.classList.remove("flash"); }, 2400);
-          pushHist("R\u00e9sultat coll\u00e9 inject\u00e9");
-          addMsg('<strong>' + t("injected_confirm") + '</strong><br><br>' + t("scroll_to_see"), "ok");
-        }
+      if (cmd === 'handoff' && pendingDossier) {
+        await api('/evidence', { kind: 'committee', action: 'committee', title: 'Dossier comité modifié dans le cockpit', text: pendingDossier.text });
+        pendingDossier = null; active = 'committee'; await refresh(false); announce('Dossier comité réutilisé avec vos modifications.'); return;
       }
-    }
-    pendingInjectKey = null;
-    pendingInjectHtml = null;
-  }
-
-  /* ── Paste modal ── */
-  function openPasteModal(dirId, dirName) {
-    pasteDirectiveId = dirId;
-    pasteDirectiveName = dirName;
-    var area = document.getElementById("stan-pasteResultArea");
-    if (area) area.value = "";
-    openModal("stan-pasteModal");
-  }
-
-  function acceptPastedResult() {
-    var area = document.getElementById("stan-pasteResultArea");
-    var text = area ? area.value.trim() : "";
-    if (!text) return;
-    closeModal("stan-pasteModal");
-
-    var key = "paste-" + Date.now();
-    var title = (pasteDirectiveName || "R\u00e9sultat coll\u00e9") + " \u2014 " + new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-    var html = '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.75;white-space:pre-wrap;">' + text.replace(/</g, "&lt;").replace(/>/g, "&gt;") + '</div>';
-
-    window.OUT_CONTENT[key] = { title: title, html: html };
-    pendingOut = { key: key, data: window.OUT_CONTENT[key] };
-    saveOutput(key, window.OUT_CONTENT[key]);
-
-    switchTab("chat");
-    var el = addMsg('<strong>' + t("paste_saved") + '</strong><br><br>' + t("paste_inject_ask"), "ok");
-    addFups(el, [
-      { label: t("choose_inject"), fn: function() { askWhereToInject(null, html); } },
-      { label: t("see_outputs"), tab: "outputs" }
-    ]);
-  }
-
-  /* ── Directives ── */
-  function launchDirective(dirId) {
-    var dir = window.DIRECTIVES && window.DIRECTIVES[dirId];
-    if (!dir) return;
-    var isCopy = (dir.engine === "copy_claude");
-    var params = dir.params(DEAL_CONTEXT);
-    var prompt = dir.prompt_template(params);
-
-    // Strip technical JSON lines from displayed prompt
-    var displayLines = [];
-    prompt.split("\n").forEach(function(ln) {
-      var isTech = (ln.indexOf("Retourne") !== -1 && ln.indexOf("JSON") !== -1) ||
-                   (ln.indexOf("Format") !== -1 && ln.indexOf("JSON") !== -1);
-      if (!isTech) displayLines.push(ln);
-    });
-    var displayPrompt = displayLines.join("\n").trim();
-
-    // Build params HTML
-    function buildParams() {
-      var h = '<div style="background:var(--off);border:1px solid var(--border);padding:12px 14px;margin-bottom:14px;">';
-      h += '<div style="font-family:var(--mono);font-size:11.5px;color:var(--tl);margin-bottom:8px;">' + t("dir_params") + '</div>';
-      Object.keys(params).forEach(function(k) {
-        if (typeof params[k] === "object") return;
-        h += '<div style="display:grid;grid-template-columns:100px 1fr;gap:6px;align-items:center;padding:5px 0;border-bottom:1px solid var(--border-l);">';
-        h += '<span style="font-family:var(--mono);font-size:11.5px;color:var(--tl);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + k + '</span>';
-        h += '<input id="stan-dp-' + dirId + '-' + k + '" value="' + String(params[k]).replace(/"/g, '&quot;') + '" style="width:100%;min-width:0;font-family:var(--serif);font-size:13px;padding:3px 6px;border:1px solid var(--border);color:var(--navy);box-sizing:border-box;">';
-        h += '</div>';
-      });
-      h += '</div>';
-      return h;
-    }
-
-    var outTi = document.getElementById("stan-outTi");
-    if (outTi) outTi.textContent = dir.name;
-    var html = "";
-
-    if (isCopy) {
-      html += '<div style="display:flex;flex-direction:column;gap:12px;">';
-      html += buildParams();
-      // Step 1
-      html += '<div style="border:2px solid var(--abr);background:#FFFBEB;padding:14px 16px;">' +
-        '<div style="font-family:var(--mono);font-size:11.5px;color:var(--amber);font-weight:700;margin-bottom:6px;">\u2460 ' + t("dir_step1") + '</div>' +
-        '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.6;margin-bottom:12px;">' + t("dir_step1_desc") + '</div>' +
-        '<button id="stan-dir-copy-btn-' + dirId + '" style="font-family:var(--serif);font-size:15px;font-weight:700;background:var(--navy);color:#fff;border:none;padding:11px 24px;cursor:pointer;width:100%;">\ud83d\udccb ' + t("dir_copy_prompt") + '</button></div>';
-      // Step 2
-      html += '<div style="border:2px solid var(--bbr);background:var(--bbg);padding:14px 16px;">' +
-        '<div style="font-family:var(--mono);font-size:11.5px;color:var(--blue);font-weight:700;margin-bottom:6px;">\u2461 ' + t("dir_step2") + '</div>' +
-        '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.6;margin-bottom:10px;">' + t("dir_step2_desc") + '</div>' +
-        '<button onclick="window.open(\'https://claude.ai/new\',\'_blank\')" style="font-family:var(--serif);font-size:14px;font-weight:600;background:var(--blue);color:#fff;border:none;padding:9px 20px;cursor:pointer;margin-right:8px;">' + t("dir_open_claude") + '</button>' +
-        '<button onclick="window.open(\'https://gemini.google.com\',\'_blank\')" style="font-family:var(--serif);font-size:14px;font-weight:600;background:transparent;color:var(--blue);border:1px solid var(--bbr);padding:9px 20px;cursor:pointer;">' + t("dir_open_gemini") + '</button></div>';
-      // Step 3
-      html += '<div style="border:2px solid var(--gbr);background:var(--gbg);padding:14px 16px;">' +
-        '<div style="font-family:var(--mono);font-size:11.5px;color:var(--green);font-weight:700;margin-bottom:6px;">\u2462 ' + t("dir_step3") + '</div>' +
-        '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.6;margin-bottom:10px;">' + t("dir_step3_desc") + '</div>' +
-        '<button id="stan-dir-paste-btn-' + dirId + '" style="font-family:var(--serif);font-size:14px;font-weight:600;background:var(--green);color:#fff;border:none;padding:9px 20px;cursor:pointer;width:100%;">' + t("paste_result") + '</button></div>';
-      // Prompt preview
-      html += '<details style="border:1px solid var(--border-l);"><summary style="font-family:var(--mono);font-size:11.5px;color:var(--tl);padding:8px 12px;cursor:pointer;">' + t("dir_view_prompt") + ' \u25be</summary>' +
-        '<div style="padding:10px 12px;background:var(--off);font-family:var(--mono);font-size:11px;color:var(--tb);line-height:1.65;white-space:pre-wrap;max-height:180px;overflow-y:auto;">' + displayPrompt.replace(/</g, "&lt;").replace(/>/g, "&gt;") + '</div></details>';
-      html += '</div>';
-    } else {
-      html += '<div style="display:flex;flex-direction:column;gap:12px;">';
-      html += buildParams();
-      html += '<div style="border:2px solid var(--gbr);background:#F7FCF9;padding:14px 16px;">' +
-        '<div style="font-family:var(--mono);font-size:11.5px;color:var(--green);font-weight:700;margin-bottom:6px;">\u26a1 ' + t("dir_modal_mode") + '</div>' +
-        '<div style="font-family:var(--serif);font-size:14px;color:var(--tb);line-height:1.6;margin-bottom:14px;">' + dir.description + '</div>' +
-        '<button id="stan-dir-launch-btn-' + dirId + '" style="font-family:var(--serif);font-size:16px;font-weight:700;background:var(--green);color:#fff;border:none;padding:14px 32px;cursor:pointer;width:100%;">\u26a1 ' + t("dir_launch") + '</button></div>';
-      // Copy alt
-      html += '<details style="border:1px solid var(--border-l);"><summary style="font-family:var(--mono);font-size:11.5px;color:var(--tl);padding:8px 12px;cursor:pointer;">' + t("dir_prefer_copy") + ' \u25be</summary>' +
-        '<div style="padding:12px;display:flex;flex-direction:column;gap:8px;">' +
-        '<div style="background:var(--off);padding:8px 10px;font-family:var(--mono);font-size:11px;color:var(--tb);line-height:1.6;white-space:pre-wrap;max-height:140px;overflow-y:auto;">' + displayPrompt.replace(/</g, "&lt;").replace(/>/g, "&gt;") + '</div>' +
-        '<button id="stan-dir-copy-alt-' + dirId + '" style="font-family:var(--serif);font-size:14px;font-weight:600;background:var(--navy);color:#fff;border:none;padding:8px 18px;cursor:pointer;align-self:flex-start;">\ud83d\udccb ' + t("dir_copy_prompt") + '</button>' +
-        '</div></details>';
-      html += '</div>';
-    }
-
-    var outBody = document.getElementById("stan-outBody");
-    if (outBody) outBody.innerHTML = html;
-
-    // Footer
-    var ft = document.getElementById("stan-outFt");
-    if (ft) {
-      ft.innerHTML = '<button class="stan-mb stan-out" data-close="stan-outModal">' + t("close") + '</button>';
-    }
-
-    // Wire buttons after DOM update
-    setTimeout(function() {
-      var copyBtn = document.getElementById("stan-dir-copy-btn-" + dirId);
-      if (copyBtn) copyBtn.onclick = function() {
-        navigator.clipboard.writeText(prompt).catch(function() {
-          var ta = document.createElement("textarea"); ta.value = prompt;
-          document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
-        });
-        copyBtn.textContent = t("dir_copied"); copyBtn.style.background = "var(--green)";
-        pushHist('Prompt "' + dir.name + '" copi\u00e9');
-        setTimeout(function() { copyBtn.textContent = "\ud83d\udccb " + t("dir_copy_prompt"); copyBtn.style.background = "var(--navy)"; }, 3000);
-      };
-
-      var copyAlt = document.getElementById("stan-dir-copy-alt-" + dirId);
-      if (copyAlt) copyAlt.onclick = function() {
-        navigator.clipboard.writeText(prompt).catch(function() {
-          var ta = document.createElement("textarea"); ta.value = prompt;
-          document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
-        });
-        copyAlt.textContent = t("dir_copied"); copyAlt.style.background = "var(--green)";
-        setTimeout(function() { copyAlt.textContent = "\ud83d\udccb " + t("dir_copy_prompt"); copyAlt.style.background = "var(--navy)"; }, 3000);
-      };
-
-      var pasteBtn = document.getElementById("stan-dir-paste-btn-" + dirId);
-      if (pasteBtn) pasteBtn.onclick = function() {
-        closeModal("stan-outModal");
-        openPasteModal(dirId, dir.name);
-      };
-
-      var launchBtn = document.getElementById("stan-dir-launch-btn-" + dirId);
-      if (launchBtn) launchBtn.onclick = async function() {
-        launchBtn.textContent = t("dir_running"); launchBtn.disabled = true; launchBtn.style.opacity = ".6";
-        closeModal("stan-outModal");
-        switchTab("chat");
-        var tw = document.getElementById("stan-typingW"); tw.classList.add("show");
-        addUser(dir.name);
-
-        try {
-          // Re-read params from editable inputs
-          var updatedParams = {};
-          Object.keys(params).forEach(function(k) {
-            if (typeof params[k] === "object") { updatedParams[k] = params[k]; return; }
-            var inp = document.getElementById("stan-dp-" + dirId + "-" + k);
-            updatedParams[k] = inp ? inp.value : params[k];
-          });
-          var updatedPrompt = dir.prompt_template(updatedParams);
-
-          var memoEl = document.querySelector(".stan-main") || document.body;
-          var response = await fetch(MODAL_BASE + "stan-skills-fastapi-app.modal.run/directive/" + dirId, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              company_name: DEAL_CONTEXT.name || "",
-              prompt: updatedPrompt,
-              lang: window.STAN_LANG || "fr",
-              memo_html: memoEl.innerHTML || ""
-            })
-          });
-
-          var result = await response.json();
-          tw.classList.remove("show");
-
-          if (result.error) {
-            addMsg("<strong>Erreur :</strong> " + result.error, "");
-            return;
-          }
-
-          // Save as output
-          if (result.output_html) {
-            var outData = { title: result.output_title || dir.name, html: result.output_html };
-            var outKey = "dir_" + dirId;
-            window.OUT_CONTENT[outKey] = outData;
-            saveOutput(outKey, outData);
-          }
-
-          var msg = '<strong>' + dir.name + ' \u2014 ' + t("dir_result_received") + '</strong><br><br>';
-          if (dir.file_type === "xlsx") msg += t("dir_excel_result");
-          else if (dir.file_type === "pptx") msg += t("dir_pptx_result");
-          else msg += t("dir_generic_result");
-          var el = addMsg(msg, "ok");
-          var fups = [{ label: t("see_outputs"), tab: "outputs" }];
-          if (dir.inject_target) fups.push({ label: t("choose_inject"), fn: function() { askWhereToInject(dirId); } });
-          addFups(el, fups);
-          pushHist("Directive " + dir.name + " lanc\u00e9e");
-          await persistStanState();
-        } catch (err) {
-          tw.classList.remove("show");
-          addMsg("<strong>Erreur r\u00e9seau.</strong> V\u00e9rifiez la connexion et r\u00e9essayez.", "");
-          console.error("Stan directive error:", err);
-        }
-      };
-    }, 50);
-
-    openModal("stan-outModal");
-  }
-
-  /* ── Memo section controls ── */
-  function initMemoControls() {
-    // Add hover controls to section-container elements
-    var sections = document.querySelectorAll(".section-container");
-    sections.forEach(function(sec) {
-      if (!sec.id) return;
-      var ctrl = document.createElement("div");
-      ctrl.className = "stan-sec-controls";
-      ctrl.innerHTML =
-        '<button class="stan-sc-btn" data-action="hide" data-section="' + sec.id + '">' + t("hide_section") + '</button>' +
-        '<button class="stan-sc-btn" data-action="delete" data-section="' + sec.id + '">' + t("delete_section") + '</button>' +
-        '<button class="stan-sc-btn" data-action="edit" data-section="' + sec.id + '">' + t("edit_via_stan") + '</button>';
-      sec.style.position = "relative";
-      sec.appendChild(ctrl);
-    });
-  }
-
-  function hideSection(id) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    var isHidden = el.classList.contains("stan-hidden-sec");
-    el.classList.toggle("stan-hidden-sec");
-    pushHist((isHidden ? t("section_shown") : t("section_hidden")) + " \u2014 " + id);
-  }
-
-  function deleteSection(id) {
-    if (!confirm(t("delete_confirm"))) return;
-    var el = document.getElementById(id);
-    if (!el) return;
-    el.style.display = "none";
-    pushHist(t("section_deleted") + " \u2014 " + id);
-  }
-
-  function editSection(id) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    var title = el.querySelector("h2, .sec-ti, [class*='title']");
-    var sectionName = title ? title.textContent : id;
-    switchTab("chat");
-    openSidebar();
-    var inp = document.getElementById("stan-chatInput");
-    if (inp) { inp.value = t("edit_section_prefix") + sectionName + " : "; inp.focus(); }
-  }
-
-  /* ── Text selection → Chat ── (disabled: text selection in memo no longer auto-fills the chat) */
-  function initTextSelection() {
-    // Intentionally a no-op. Selecting text in the memo should not hijack the
-    // chat input or open the sidebar. Users copy/paste manually if they need to.
-  }
-
-  /* ── Persistence (Airtable bridge) ── */
-  function getCompletedTaskIds() {
-    var ids = [];
-    PHASES.forEach(function(p) { p.tasks.forEach(function(t) { if (t.done) ids.push(t.id); }); });
-    return ids;
-  }
-
-  async function loadStanState() {
-    if (!DEAL_CONTEXT.airtable_record) return;
-    try {
-      var res = await fetch(MODAL_BASE + "airtable-bridge-fastapi-app.modal.run/stan-state?record_id=" + DEAL_CONTEXT.airtable_record);
-      var data = await res.json();
-      // Restore completed tasks
-      if (data.tasks_done) {
-        data.tasks_done.forEach(function(tid) {
-          for (var i = 0; i < PHASES.length; i++) {
-            for (var j = 0; j < PHASES[i].tasks.length; j++) {
-              if (PHASES[i].tasks[j].id === tid) PHASES[i].tasks[j].done = true;
-            }
-          }
-        });
+      if (cmd === 'settings') {
+        content.innerHTML = '<h3>Échéances et conservation</h3><form data-form="settings">' + [['exclusivity_days', 'Exclusivité (jours convenus)'], ['committee_notice_hours', 'Préavis comité (heures)'], ['board_day', 'Premier board (jours après closing)']].map(function (x) { return '<label>' + x[1] + '<input type="number" name="' + x[0] + '" min="0" max="365" value="' + esc(state.settings[x[0]]) + '"></label>'; }).join('') + '<button class="ppj-btn ppj-primary">Enregistrer</button></form><p>Pièces utiles conservées pendant le dossier. Traces techniques : 7 jours. Exportez vos preuves avant toute suppression.</p><div class="ppj-actions">' + button('Exporter les preuves', '', 'export') + button(state.archived ? 'Rouvrir' : 'Archiver', '', state.archived ? 'unarchive' : 'archive') + (state.archived ? button('Supprimer après export', '', 'purge') : '') + button('Retour au parcours', '', 'roadmap') + '</div>'; return;
       }
-      // Restore outputs
-      if (data.outputs_json) {
-        try {
-          var outs = JSON.parse(data.outputs_json);
-          if (Array.isArray(outs)) savedOutputs = outs;
-        } catch(e) {}
+      if (cmd === 'archive' || cmd === 'unarchive') {
+        if (demo) state.archived = cmd === 'archive'; else await api('/command/' + cmd, {});
+        await refresh(false); return;
       }
-      // Restore CEO decision state
-      if (data.ceo_decision || data.ceo_note || data.ceo_decision_date) {
-        window.DEAL_CONTEXT = Object.assign({}, window.DEAL_CONTEXT || {}, {
-          ceo_decision:      data.ceo_decision || null,
-          ceo_note:          data.ceo_note || null,
-          ceo_decision_date: data.ceo_decision_date || null,
-          ceo_ncl:           data.ceo_ncl || null,
-        });
+      if (cmd === 'purge') {
+        if (!window.confirm('Supprimer définitivement les pièces et l’historique de ce dossier archivé ? Exportez-les avant de confirmer.')) return;
+        if (!demo) await api('', { confirm: state.id }, 'DELETE'); state = null; render(); return;
       }
-      // Refresh UI
-      renderTimeline(); updateProgress(); updateNextAction(); renderOutputs();
-      stanRenderStatusBlock();
-    } catch(e) {
-      console.warn("Stan: impossible de charger l\u2019\u00e9tat depuis Airtable", e);
-    }
+      if (cmd === 'export' || cmd === 'pdf') { await download(cmd === 'pdf' ? 'pdf' : 'zip', id); return; }
+      if (cmd === 'run') {
+        b.disabled = true; announce('Préparation des vérifications…');
+        if (demo) { await window.__STAN_JOURNEY_DEMO__.run(id, render); await refresh(false); }
+        else { await api('/actions/' + id + '/run', {}); await refresh(false); }
+        announce(demo ? 'Exécution fictive : aucun appel payant.' : 'Résultat réutilisé ou vérifications lancées. Le film affiche les opérations réelles.');
+      }
+    } catch (error) { announce(error.message, true); b.disabled = false; }
   }
-
-  async function persistStanState() {
-    if (!DEAL_CONTEXT.airtable_record) return;
-    try {
-      await fetch(MODAL_BASE + "airtable-bridge-fastapi-app.modal.run/stan-state", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          record_id: DEAL_CONTEXT.airtable_record,
-          tasks_done: getCompletedTaskIds(),
-          outputs_json: JSON.stringify(savedOutputs)
-        })
-      });
-    } catch(e) {
-      console.warn("Stan: impossible de sauvegarder l\u2019\u00e9tat", e);
-    }
+  window.StanJourney = { open: open, showAction: function (id) { active = id; filter = ''; open('roadmap'); }, getState: function () { return demo ? state : null; } };
+  if (!demo) window.addEventListener('message', function (e) {
+    if (e.source !== window.opener || !['https://proplace.co', 'https://www.proplace.co'].includes(e.origin)) return;
+    if (!e.data || e.data.type !== 'proplace:journey:dossier' || typeof e.data.text !== 'string' || e.data.text.length > 300000) return;
+    pendingDossier = { text: e.data.text }; active = 'committee'; open('roadmap');
+    e.source.postMessage({ type: 'proplace:journey:received' }, e.origin);
+  });
+  if (!demo && window.opener) {
+    ['https://proplace.co', 'https://www.proplace.co'].forEach(function (origin) { window.opener.postMessage({ type: 'proplace:journey:ready' }, origin); });
   }
-
-  /* ── GitHub commits ── */
-  async function pushCommitToGitHub(message) {
-    if (!DEAL_CONTEXT.github_repo || !DEAL_CONTEXT.github_file) return;
-    try {
-      var memoEl = document.getElementById("memo-content") || document.querySelector(".stan-memo-scroll");
-      await fetch(MODAL_BASE + "github-bridge-fastapi-app.modal.run/commit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          repo: DEAL_CONTEXT.github_repo,
-          file: DEAL_CONTEXT.github_file,
-          message: "[Stan] " + message,
-          content: memoEl ? memoEl.innerHTML : ""
-        })
-      });
-    } catch(e) {
-      console.warn("Stan: commit GitHub \u00e9chou\u00e9", e);
-    }
-  }
-
-  /* ── Event delegation ── */
-  function wireEvents() {
-    // FAB
-    document.getElementById("stan-fabBtn").onclick = openSidebar;
-    // Close
-    document.getElementById("stan-close-btn").onclick = closeSidebar;
-    // Guide pill
-    document.getElementById("stan-guidePillBtn").onclick = toggleGuide;
-    // Next action
-    document.getElementById("stan-nextAct").onclick = toggleNextAction;
-
-    // Tabs
-    ["roadmap", "chat", "skills", "outputs", "hist"].forEach(function(name) {
-      var btn = document.getElementById("stan-tab-" + name);
-      if (btn) btn.onclick = function() { switchTab(name, btn); };
-    });
-
-    // External open trigger — used by memo CTAs (Due Diligence, Portfolio Company)
-    // Payload: { tab: "parcours"|"roadmap"|"chat"|..., section?: "due-diligence"|"portfolio-management" }
-    window.addEventListener("stan:open", function(e) {
-      try {
-        var d = (e && e.detail) || {};
-        var tab = d.tab || "roadmap";
-        if (tab === "parcours") tab = "roadmap";
-        openSidebar();
-        switchTab(tab);
-      } catch (err) {
-        console.error("Stan stan:open handler failed:", err);
-      }
-    });
-
-    // Chat input
-    var chatInput = document.getElementById("stan-chatInput");
-    if (chatInput) chatInput.onkeydown = handleKey;
-    // Send
-    var sendBtn = document.getElementById("stan-sendBtn");
-    if (sendBtn) sendBtn.onclick = sendMsg;
-    // Attach buttons
-    var pdfBtn = document.getElementById("stan-btn-pdf");
-    if (pdfBtn) pdfBtn.onclick = function() { simAttach("pdf"); };
-    var linkBtn = document.getElementById("stan-btn-link");
-    if (linkBtn) linkBtn.onclick = function() { simAttach("link"); };
-
-    // Paste accept
-    var pasteAcceptBtn = document.getElementById("stan-pasteAcceptBtn");
-    if (pasteAcceptBtn) pasteAcceptBtn.onclick = acceptPastedResult;
-
-    // Inject confirm
-    var injectConfirmBtn = document.getElementById("stan-injectConfirmBtn");
-    if (injectConfirmBtn) injectConfirmBtn.onclick = confirmInject;
-
-    // Output modal buttons
-    var shareBtn = document.getElementById("stan-shareBtn");
-    if (shareBtn) shareBtn.onclick = shareOutput;
-    var injBtn = document.getElementById("stan-injectBtn");
-    if (injBtn) injBtn.onclick = injectOutput;
-
-    // Delegated events on body
-    document.body.addEventListener("click", function(e) {
-      var target = e.target;
-
-      // Modal close buttons
-      var closeId = target.getAttribute("data-close");
-      if (closeId) { closeModal(closeId); return; }
-
-      // Skill cards
-      var skillCard = target.closest("[data-skill]");
-      if (skillCard) { sc(skillCard.getAttribute("data-skill")); return; }
-
-      // Directive cards
-      var dirCard = target.closest("[data-directive]");
-      if (dirCard) { launchDirective(dirCard.getAttribute("data-directive")); return; }
-
-      // Output view
-      var outView = target.getAttribute("data-out-view");
-      if (outView) { openOutModal(outView); return; }
-
-      // Output share (qs)
-      var qsIdx = target.getAttribute("data-qs");
-      if (qsIdx !== null && qsIdx !== undefined) {
-        var i = parseInt(qsIdx, 10);
-        pendingOut = { key: savedOutputs[i].key, data: window.OUT_CONTENT[savedOutputs[i].key] };
-        openOutModal(savedOutputs[i].key);
-        setTimeout(shareOutput, 50);
-        return;
-      }
-
-      // Output inject (qi)
-      var qiIdx = target.getAttribute("data-qi");
-      if (qiIdx !== null && qiIdx !== undefined) {
-        var j = parseInt(qiIdx, 10);
-        pendingOut = { key: savedOutputs[j].key, data: window.OUT_CONTENT[savedOutputs[j].key] };
-        askWhereToInject(savedOutputs[j].key);
-        return;
-      }
-
-      // Inject target selection
-      var injectTarget = target.closest("[data-inject-target]");
-      if (injectTarget) { selectInjectTarget(injectTarget.getAttribute("data-inject-target")); return; }
-
-      // Remove attachment
-      var rmAttach = target.getAttribute("data-rm-attach");
-      if (rmAttach !== null) { attached.splice(parseInt(rmAttach, 10), 1); renderAttach(); return; }
-
-      // Section controls
-      var scBtn = target.closest("[data-action]");
-      if (scBtn) {
-        var action = scBtn.getAttribute("data-action");
-        var secId = scBtn.getAttribute("data-section");
-        if (action === "hide") hideSection(secId);
-        else if (action === "delete") deleteSection(secId);
-        else if (action === "edit") editSection(secId);
-        return;
-      }
-
-      // Guide nav buttons
-      var guideNav = target.closest(".stan-guide-nav");
-      if (guideNav) {
-        toggleGuide();
-        switchTab(guideNav.getAttribute("data-tab"));
-        return;
-      }
-
-      // Guide close button
-      if (target.classList.contains("stan-guide-close-btn")) {
-        toggleGuide();
-        return;
-      }
-    });
-  }
-
-  /* ══════════════════════════════════════════════════════════════
-     LIEN « OUVRIR LE DEAL FLOW » ET SOMMAIRE MOBILE (04/10)
-     ══════════════════════════════════════════════════════════════ */
-
-  /* Le mémo pointait toujours /cibles/<fonds>/open/, la vue complète. Pour un fonds
-     en essai, c'est l'aperçu qu'il faut ouvrir, et sur la société d'où l'on vient :
-     ?sel= ouvre son panneau, ?only= réduit la liste à elle seule. La vue /open/ reste
-     celle des offres Standard et Entreprise, lue sur /v3/memo-pipeline. */
-  var PP_PROXY = "https://alexandre-79537--proplace-chat-proxy-fastapi-app.modal.run";
-
-  function initFundLink() {
-    var links = document.querySelectorAll("a.sidebar-fund-link[href*='/cibles/']");
-    if (!links.length) return;
-    var name = String((DEAL_CONTEXT && DEAL_CONTEXT.name) || "").trim();
-    var q = name ? "?sel=" + encodeURIComponent(name) + "&only=" + encodeURIComponent(name) : "";
-    var slug = "", bases = [];
-    Array.prototype.forEach.call(links, function(a) {
-      var m = (a.getAttribute("href") || "").match(/^(https?:\/\/[^\/]+(?:\/(?:fr|en))?)\/cibles\/([^\/?#]+)(?:\/open)?\/?(?:[?#].*)?$/);
-      if (!m) return;
-      var base = m[1] + "/cibles/" + m[2] + "/";
-      a.setAttribute("href", base + q);
-      bases.push([a, base]);
-      slug = slug || m[2];
-    });
-    if (!slug || !window.fetch) return;
-    fetch(PP_PROXY + "/v3/memo-pipeline?fund=" + encodeURIComponent(slug))
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(d) {
-        var offre = String((d && d.offre && d.offre.offre) || "").toLowerCase();
-        if (offre !== "standard" && offre !== "entreprise") return;
-        bases.forEach(function(x) { x[0].setAttribute("href", x[1] + "open/" + q); });
-      })
-      .catch(function() {});
-  }
-
-  /* Sous 900 px le menu de gauche passe AU-DESSUS du mémo et défile avec lui : passé
-     le premier écran, plus de sommaire. Cette barre reste collée en haut de la zone
-     de lecture (#memo-content, l'élément qui défile) : la partie en cours, ‹ › pour
-     la précédente ou la suivante, « Sommaire » pour la liste complète du menu.
-     Au-dessus de 900 px elle n'est pas affichée. Le style vit ICI et non dans
-     _base.css : la barre et son style arrivent ensemble, jamais l'un sans l'autre. */
-  var MTOC_CSS =
-    ".pp-mtoc{display:none}" +
-    "@media (max-width:900px){" +
-    ".pp-mtoc{display:flex;align-items:center;gap:6px;position:-webkit-sticky;position:sticky;top:0;z-index:950;" +
-    "background:#fff;border-bottom:1px solid #E3E8F0;padding:8px 10px 10px;" +
-    "box-shadow:0 2px 10px rgba(15,29,51,.06);font-family:'Instrument Sans',system-ui,sans-serif}" +
-    ".pp-mtoc button{font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}" +
-    ".pp-mtoc-open{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;" +
-    "border-radius:999px;border:1px solid #0E7F3F;background:#E7F6EE;color:#0E7F3F;font-size:13px!important;font-weight:700}" +
-    ".pp-mtoc-cur{flex:1 1 auto;min-width:0;font-size:13px;font-weight:600;color:#16233A;line-height:1.3;" +
-    "white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
-    ".pp-mtoc-step{flex:0 0 auto;width:36px;height:36px;border-radius:999px;border:1px solid #E3E8F0;" +
-    "background:#fff;color:#16233A;font-size:20px!important;line-height:1;padding:0}" +
-    ".pp-mtoc-step:disabled{opacity:.35;cursor:default}" +
-    ".pp-mtoc-prog{position:absolute;left:0;right:0;bottom:0;height:3px;background:#EEF2F7}" +
-    ".pp-mtoc-prog i{display:block;height:100%;width:0;background:#0E7F3F;transition:width .15s}" +
-    "#memo-content [id]{scroll-margin-top:64px}" +
-    "}" +
-    ".pp-mtoc-panel{position:fixed;inset:0;z-index:10002;background:rgba(15,29,51,.45);display:flex;" +
-    "align-items:flex-end;font-family:'Instrument Sans',system-ui,sans-serif}" +
-    ".pp-mtoc-panel[hidden]{display:none}" +
-    ".pp-mtoc-sheet{width:100%;max-height:82vh;max-height:82dvh;background:#fff;border-radius:16px 16px 0 0;" +
-    "display:flex;flex-direction:column;box-shadow:0 -8px 30px rgba(15,29,51,.2)}" +
-    ".pp-mtoc-hd{display:flex;align-items:center;gap:10px;padding:14px 16px 10px;border-bottom:1px solid #EEF2F7}" +
-    ".pp-mtoc-hd b{flex:1;min-width:0;font-size:16px;color:#16233A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
-    ".pp-mtoc-x{width:36px;height:36px;border-radius:999px;border:1px solid #E3E8F0;background:#fff;color:#16233A;" +
-    "font-size:20px;line-height:1;cursor:pointer;padding:0}" +
-    ".pp-mtoc-list{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 10px calc(16px + env(safe-area-inset-bottom,0px))}" +
-    ".pp-mtoc-h{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#8FA0B8;margin:14px 8px 4px}" +
-    ".pp-mtoc-it{display:block;width:100%;text-align:left;border:0;background:transparent;border-radius:10px;" +
-    "padding:11px 10px;font:inherit;font-size:15px;font-weight:600;color:#16233A;line-height:1.35;cursor:pointer}" +
-    ".pp-mtoc-it.on{background:#E7F6EE;color:#0E7F3F}" +
-    ".pp-mtoc-top{color:#61708A;font-weight:500}";
-
-  function initMobileToc() {
-    var sc = document.getElementById("memo-content");
-    var side = document.querySelector(".main-wrapper > .sidebar") || document.querySelector(".sidebar");
-    if (!sc || !side || document.getElementById("pp-mtoc")) return;
-    var items = [];
-    var navs = side.querySelectorAll("a.nav-item[href^='#']");
-    Array.prototype.forEach.call(navs, function(a) {
-      var id = "";
-      try { id = decodeURIComponent(a.getAttribute("href").slice(1)); } catch (e) { return; }
-      var el = id && document.getElementById(id);
-      if (el) items.push({ a: a, el: el, label: (a.textContent || "").replace(/\s+/g, " ").trim() });
-    });
-    if (items.length < 2) return;
-    var fr = !/^en/i.test(String((DEAL_CONTEXT && DEAL_CONTEXT.lang) || document.documentElement.lang || "fr"));
-    var L = fr
-      ? { toc: "Sommaire", prev: "Partie précédente", next: "Partie suivante", close: "Fermer", top: "↑ Haut du mémo" }
-      : { toc: "Contents", prev: "Previous part", next: "Next part", close: "Close", top: "↑ Top of the memo" };
-    var dealName = String((DEAL_CONTEXT && DEAL_CONTEXT.name) || "").trim();
-
-    var st = document.createElement("style");
-    st.id = "pp-mtoc-css";
-    st.textContent = MTOC_CSS;
-    document.head.appendChild(st);
-
-    var bar = document.createElement("div");
-    bar.id = "pp-mtoc";
-    bar.className = "pp-mtoc";
-    var open = document.createElement("button");
-    open.type = "button";
-    open.className = "pp-mtoc-open";
-    open.setAttribute("aria-haspopup", "dialog");
-    open.textContent = "☰ " + L.toc;
-    var curEl = document.createElement("span");
-    curEl.className = "pp-mtoc-cur";
-    function stepBtn(d, label, glyph) {
-      var b = document.createElement("button");
-      b.type = "button";
-      b.className = "pp-mtoc-step";
-      b.setAttribute("aria-label", label);
-      b.title = label;
-      b.textContent = glyph;
-      b.addEventListener("click", function() { go(Math.max(0, Math.min(items.length - 1, cur + d))); });
-      return b;
-    }
-    var prev = stepBtn(-1, L.prev, "‹");
-    var next = stepBtn(1, L.next, "›");
-    var prog = document.createElement("span");
-    prog.className = "pp-mtoc-prog";
-    var fill = document.createElement("i");
-    prog.appendChild(fill);
-    bar.appendChild(open);
-    bar.appendChild(curEl);
-    bar.appendChild(prev);
-    bar.appendChild(next);
-    bar.appendChild(prog);
-    sc.insertBefore(bar, sc.firstChild);
-
-    var panel = document.createElement("div");
-    panel.id = "pp-mtoc-panel";
-    panel.className = "pp-mtoc-panel";
-    panel.setAttribute("role", "dialog");
-    panel.setAttribute("aria-modal", "true");
-    panel.setAttribute("aria-label", L.toc);
-    panel.hidden = true;
-    var sheet = document.createElement("div");
-    sheet.className = "pp-mtoc-sheet";
-    var hd = document.createElement("div");
-    hd.className = "pp-mtoc-hd";
-    var ttl = document.createElement("b");
-    ttl.textContent = L.toc + (dealName ? " · " + dealName : "");
-    var x = document.createElement("button");
-    x.type = "button";
-    x.className = "pp-mtoc-x";
-    x.setAttribute("aria-label", L.close);
-    x.textContent = "×";
-    hd.appendChild(ttl);
-    hd.appendChild(x);
-    var list = document.createElement("div");
-    list.className = "pp-mtoc-list";
-    var topBtn = document.createElement("button");
-    topBtn.type = "button";
-    topBtn.className = "pp-mtoc-it pp-mtoc-top";
-    topBtn.textContent = L.top;
-    topBtn.addEventListener("click", function() { close(); sc.scrollTo({ top: 0, behavior: "smooth" }); });
-    list.appendChild(topBtn);
-    var rows = [];
-    Array.prototype.forEach.call(side.querySelectorAll(".sb-nav-heading, a.nav-item[href^='#']"), function(n) {
-      if (n.classList.contains("sb-nav-heading")) {
-        var h = document.createElement("div");
-        h.className = "pp-mtoc-h";
-        h.textContent = (n.textContent || "").trim();
-        list.appendChild(h);
-        return;
-      }
-      for (var i = 0; i < items.length; i++) {
-        if (items[i].a !== n) continue;
-        var b = document.createElement("button");
-        b.type = "button";
-        b.className = "pp-mtoc-it";
-        b.textContent = items[i].label;
-        (function(k) { b.addEventListener("click", function() { close(); go(k); }); })(i);
-        list.appendChild(b);
-        rows[i] = b;
-        return;
-      }
-    });
-    sheet.appendChild(hd);
-    sheet.appendChild(list);
-    panel.appendChild(sheet);
-    document.body.appendChild(panel);
-
-    var cur = -2;
-    function setCur(i) {
-      if (i === cur) return;
-      cur = i;
-      curEl.textContent = i >= 0 ? items[i].label : (dealName || L.toc);
-      prev.disabled = i <= 0;
-      next.disabled = i >= items.length - 1;
-      rows.forEach(function(r, k) { if (r) r.classList.toggle("on", k === i); });
-    }
-    function go(i) {
-      var it = items[i];
-      if (!it) return;
-      var top = it.el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - bar.offsetHeight - 8;
-      sc.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
-      setCur(i);
-    }
-    function close() {
-      panel.hidden = true;
-      open.focus();
-    }
-    open.addEventListener("click", function() {
-      panel.hidden = false;
-      var r = rows[cur];
-      if (r && r.scrollIntoView) r.scrollIntoView({ block: "center" });
-      x.focus();
-    });
-    x.addEventListener("click", close);
-    panel.addEventListener("click", function(e) { if (e.target === panel) close(); });
-    document.addEventListener("keydown", function(e) { if (e.key === "Escape" && !panel.hidden) close(); });
-
-    var ticking = false;
-    function measure() {
-      ticking = false;
-      if (!bar.offsetHeight) return;
-      var lim = sc.getBoundingClientRect().top + bar.offsetHeight + 24, idx = -1, best = -Infinity;
-      for (var i = 0; i < items.length; i++) {
-        var t = items[i].el.getBoundingClientRect().top;
-        if (t <= lim && t > best) { best = t; idx = i; }
-      }
-      setCur(idx);
-      fill.style.width = Math.min(100, sc.scrollTop / Math.max(1, sc.scrollHeight - sc.clientHeight) * 100) + "%";
-    }
-    function onScroll() {
-      if (ticking) return;
-      ticking = true;
-      (window.requestAnimationFrame || setTimeout)(measure);
-    }
-    sc.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    measure();
-    if (cur === -2) setCur(-1);
-  }
-
-  /* ══════════════════════════════════════════════════════════════
-     INIT
-     ══════════════════════════════════════════════════════════════ */
-  function init() {
-    var layout = wrapLayout();
-    var sidebar = buildSidebar(layout);
-    try { initFundLink(); } catch (e) { console.error("Stan fund link failed:", e); }
-    try { initMobileToc(); } catch (e) { console.error("Stan mobile toc failed:", e); }
-
-    loadAssets(function() {
-      // Wire the essential events FIRST so FAB/close always work
-      // even if a later step throws.
-      try { wireEvents(); } catch (e) { console.error("Stan wireEvents failed:", e); }
-
-      try {
-        PHASES = (window.PHASES_BY_STATUS && window.PHASES_BY_STATUS[DEAL_STATUS]) ||
-                 (window.PHASES_BY_STATUS && window.PHASES_BY_STATUS["CALL"]) || [];
-
-        buildSkillsTab();
-        buildWelcomeMessage();
-        buildGuide();
-        mapMemoSections();
-        initMemoControls();
-        initTextSelection();
-
-        renderTimeline();
-        updateProgress();
-        updateNextAction();
-        renderStatusButtons();
-        stanRenderStatusBlock();
-        stanUpdateTopPill();
-
-        loadStanState();
-      } catch (e) {
-        console.error("Stan init failed:", e);
-      }
-
-    });
-  }
-
-  // Start when DOM is ready
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
-    init();
-  }
-
-})();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build); else build();
+}());
