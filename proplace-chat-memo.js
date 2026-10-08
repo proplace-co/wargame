@@ -13,7 +13,8 @@
   var demo = !!window.__STAN_JOURNEY_DEMO__;
   var state = null, pane = 'roadmap', active = '', filter = '', search = '', poll = null, running = false, pendingResult = '';
   var selected = new Set(), key = '', accessToken = '', memberSession = '', accessPending = null, shell, content, statusLine, fab, opened = false, pendingDossier = null, reconnectNeeded = false, reconnectNotice;
-  var loginFrame = null, loginChannel = '', loginDialog = null, loginOpener = null;
+  var loginFrame = null, loginChannel = '', loginDialog = null, loginOpener = null, loginTimer = null;
+  var openingDossier = null, connectionProgress;
   var states = { ready: 'À préparer', running: 'En cours', awaiting_evidence: 'Pièces attendues', review: 'À valider',
     validated: 'Validé', failed: 'À reprendre', not_applicable: 'Non applicable' };
   var esc = function (v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); };
@@ -50,10 +51,18 @@
     reconnectNotice.hidden = false;
   }
   function closeAccountPopup() {
+    clearTimeout(loginTimer); loginTimer = null;
     if (loginDialog) loginDialog.remove();
     loginDialog = null; loginFrame = null; loginChannel = '';
     if (loginOpener && loginOpener.isConnected) loginOpener.focus();
     loginOpener = null;
+  }
+  function accountFrameReady() {
+    if (!loginDialog) return;
+    clearTimeout(loginTimer); loginTimer = null;
+    loginDialog.querySelector('.ppj-login-loading').hidden = true;
+    loginFrame.removeAttribute('aria-hidden'); loginFrame.removeAttribute('tabindex');
+    loginFrame.classList.remove('ppj-login-waiting');
   }
   function openAccountPopup() {
     if (demo || loginDialog) return;
@@ -66,9 +75,27 @@
     loginDialog = el('div', { class: 'ppj-login-panel', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Connexion à Proplace' });
     var closeButton = el('button', { class: 'ppj-login-close', type: 'button', 'aria-label': 'Fermer la connexion' }, '×');
     closeButton.onclick = closeAccountPopup;
+    var card = el('div', { class: 'ppj-login-card' });
+    var loading = el('div', { class: 'ppj-login-loading' });
+    loading.innerHTML = '<div role="status" aria-live="polite"><strong>Ouverture de la connexion…</strong>' +
+      '<p>Votre mémo reste ouvert pendant le chargement.</p></div>' +
+      '<div class="ppj-loading-bar" role="progressbar" aria-label="Chargement de la connexion"></div>';
+    var retry = el('button', { class: 'ppj-btn', type: 'button' }, 'Réessayer'); retry.hidden = true;
+    retry.onclick = function () { closeAccountPopup(); openAccountPopup(); };
+    loading.appendChild(retry);
     loginFrame = el('iframe', { title: 'Compte Proplace — email et choix du fonds', src: url.href,
+      class: 'ppj-login-waiting', 'aria-hidden': 'true', tabindex: '-1',
       sandbox: 'allow-scripts allow-forms allow-same-origin', referrerpolicy: 'strict-origin-when-cross-origin' });
-    loginDialog.append(closeButton, loginFrame); document.body.appendChild(loginDialog);
+    // The app handshake can arrive before the full page load (fonts/images).
+    // onload also supports account pages still served from an older cache.
+    var createdFrame = loginFrame;
+    loginFrame.onload = function () { if (loginFrame === createdFrame) accountFrameReady(); };
+    card.append(loginFrame, loading); loginDialog.append(closeButton, card); document.body.appendChild(loginDialog);
+    loginTimer = setTimeout(function () {
+      if (!loginDialog || loading.hidden) return;
+      loading.querySelector('p').textContent = 'Le chargement prend plus de temps que prévu. Vous pouvez réessayer ou fermer cette fenêtre.';
+      retry.hidden = false;
+    }, 12000);
     loginDialog.addEventListener('keydown', function (event) {
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeAccountPopup(); }
     });
@@ -91,7 +118,7 @@
     if (memberSession) key = '';
     if (!memberSession && !key) throw new Error('Connectez votre compte Proplace pour ouvrir ce dossier privé.');
     if (!accessPending) accessPending = (async function () {
-      var result = await (await api(key ? '/access' : '/connection', {})).json();
+      var result = await accountJSON(key ? '/access' : '/connection', {});
       accessToken = result.access_token;
       if (typeof result.fund === 'string') context.fund = result.fund;
       try { sessionStorage.setItem('ppj-access:' + record, accessToken); } catch (_) {}
@@ -99,9 +126,19 @@
     }());
     try { await accessPending; } finally { accessPending = null; }
   }
-  async function api(path, data, method) {
+  async function accountJSON(path, data) {
+    // Bound the complete account/open response; never abort a paid action or save.
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, 45000);
+    try { return await (await api(path, data, undefined, controller.signal)).json(); }
+    catch (error) {
+      if (controller.signal.aborted) throw new Error('L’ouverture du dossier prend trop de temps. Réessayez la connexion.');
+      throw error;
+    } finally { clearTimeout(timer); }
+  }
+  async function api(path, data, method, signal) {
     if (demo) throw new Error('La démonstration ne peut pas appeler un service de production.');
-    var res = await fetch(API + '/deals/' + encodeURIComponent(record) + path, { method: method || (data ? 'POST' : 'GET'), headers: headers(), body: data ? JSON.stringify(data) : undefined, credentials: 'omit' });
+    var res = await fetch(API + '/deals/' + encodeURIComponent(record) + path, { method: method || (data ? 'POST' : 'GET'), headers: headers(), body: data ? JSON.stringify(data) : undefined, credentials: 'omit', signal: signal });
     if (!res.ok) {
       if (res.status === 401) {
         accessToken = ''; try { sessionStorage.removeItem('ppj-access:' + record); } catch (_) {}
@@ -115,9 +152,23 @@
   async function refresh(initial) {
     if (demo) { state = window.__STAN_JOURNEY_DEMO__.state; render(); return; }
     await connectAccount();
-    state = await (await api(initial ? '/open' : '', initial ? {} : undefined)).json();
+    state = initial ? await accountJSON('/open', {}) : await (await api('')).json();
     render();
     schedule();
+  }
+  async function openDossier() {
+    if (demo) return refresh(true);
+    if (openingDossier) return openingDossier;
+    connectionProgress.hidden = false;
+    shell.querySelectorAll('[data-do=connect]').forEach(function (b) { b.disabled = true; });
+    announce('Connexion à votre compte et ouverture du dossier…');
+    var slow = setTimeout(function () { announce('L’ouverture prend plus de temps que prévu. La connexion est toujours en cours…'); }, 12000);
+    openingDossier = refresh(true);
+    try { await openingDossier; announce('Dossier privé ouvert depuis votre compte.'); }
+    finally {
+      clearTimeout(slow); openingDossier = null; connectionProgress.hidden = true;
+      shell.querySelectorAll('[data-do=connect]').forEach(function (b) { b.disabled = false; });
+    }
   }
   function schedule() {
     clearTimeout(poll);
@@ -135,7 +186,7 @@
     // A cached legacy editor may initialize just before this production widget.
     // The supported dossier workflow now owns edits; remove its obsolete UI.
     ['plEditor', 'plModal'].forEach(function (id) { var old = document.getElementById(id); if (old) old.remove(); });
-    var css = el('link', { rel: 'stylesheet', href: assetBase + 'stan-journey.css?v=5' }); document.head.appendChild(css);
+    var css = el('link', { rel: 'stylesheet', href: assetBase + 'stan-journey.css?v=6' }); document.head.appendChild(css);
     fab = el('button', { id: 'stan-fabBtn', type: 'button', class: 'ppj-fab' + (demo ? ' ppj-demo-fab' : ''), 'aria-label': 'Stan Beta — ouvrir Parcours' }, 'Stan β · Parcours');
     fab.onclick = function () { open('roadmap'); };
     shell = el('aside', { id: 'stan-sidebar', class: 'ppj-shell', 'aria-label': 'Parcours du dossier' }); shell.hidden = true;
@@ -144,10 +195,11 @@
       '<div>' + button('⤢', '', 'full') + button('×', '', 'close') + '</div></header>' +
       (demo ? '<div class="ppj-demo">Démonstration · dossier fictif · aucun envoi ni crédit consommé</div>' : '') +
       '<nav class="ppj-tabs" aria-label="Vues du dossier"><button id="stan-tab-roadmap" type="button" data-do="roadmap">Parcours</button><button id="stan-tab-hist" type="button" data-do="history">Historique</button></nav>' +
-      '<p class="ppj-status" role="status" aria-live="polite"></p><section class="ppj-notice ppj-reconnect" hidden aria-label="Reprendre l’accès au dossier">' +
+      '<p class="ppj-status" role="status" aria-live="polite"></p><div class="ppj-connection-progress ppj-loading-bar" role="progressbar" aria-label="Ouverture du dossier privé" hidden></div><section class="ppj-notice ppj-reconnect" hidden aria-label="Reprendre l’accès au dossier">' +
       '<strong>Votre accès privé doit être renouvelé.</strong><p>Vos résultats et votre saisie restent affichés pendant la connexion.</p>' +
       button('Se reconnecter à Proplace', 'ppj-primary', 'connect') + '</section><main class="ppj-content"></main>';
     content = shell.querySelector('main'); statusLine = shell.querySelector('[role=status]');
+    connectionProgress = shell.querySelector('.ppj-connection-progress');
     reconnectNotice = shell.querySelector('.ppj-reconnect');
     document.body.append(shell, fab);
     shell.addEventListener('click', handleClick);
@@ -176,7 +228,7 @@
       } catch (_) { /* Private browsing */ }
       if (fromCockpit) { open('roadmap'); announce('Ouverture du dossier privé depuis votre cockpit…'); }
     }
-    if (demo || key || accessToken || memberSession) refresh(true).catch(function (e) { announce(e.message, true); render(); });
+    if (demo || key || accessToken || memberSession) openDossier().catch(function (e) { announce(e.message, true); render(); });
     window.dispatchEvent(new Event('stan:ready'));
     if (!demo && window.opener) {
       ['https://proplace.co', 'https://www.proplace.co'].forEach(function (origin) { window.opener.postMessage({ type: 'proplace:journey:ready' }, origin); });
@@ -319,7 +371,7 @@
         var recorded = e.run_id && state.runs[e.run_id];
         return '<li class="stan-hist-item"><time>' + date(e.at) + '</time><strong>' + esc(e.text) + '</strong><small>' + esc(e.actor) + '</small>' +
           (e.action ? button('Voir l’étape', 'ppj-quiet', 'goto', e.action) : '') +
-          (recorded ? '<details><summary>▶ Revoir les opérations enregistrées</summary>' + trace(recorded) + '</details>' : '') + '</li>';
+          (recorded ? '<details class="ppj-run"><summary role="button"><span class="ppj-film-icon" aria-hidden="true">▶</span><span>Revoir les opérations enregistrées</span></summary>' + trace(recorded) + '</details>' : '') + '</li>';
       }).join('') + '</ol></section>';
   }
   function form(action, type) {
@@ -388,11 +440,12 @@
     try {
       if (cmd === 'close') { close(); return; }
       if (cmd === 'connect') {
+        if (openingDossier) return;
         memberSession = readMemberSession(); accessToken = '';
         if (memberSession) key = '';
         if (!memberSession && !key) { openAccountPopup(); return; }
         b.disabled = true;
-        try { await refresh(true); announce('Dossier privé ouvert depuis votre compte.'); }
+        try { await openDossier(); }
         catch (error) { if (error.status === 401 || error.status === 403) openAccountPopup(); throw error; }
         finally { b.disabled = false; }
         return;
@@ -462,11 +515,12 @@
   if (!demo) window.addEventListener('message', function (e) {
     if (loginFrame && e.source === loginFrame.contentWindow && e.origin === 'https://proplace.co'
         && e.data && e.data.channel === loginChannel) {
+      if (e.data.type === 'proplace:journey:login-ready') { accountFrameReady(); return; }
       if (e.data.type === 'proplace:journey:cancelled') { closeAccountPopup(); return; }
       if (e.data.type === 'proplace:journey:authenticated' && typeof e.data.session === 'string'
           && e.data.session.length < 1800 && e.data.session.indexOf('ppin1~') === 0) {
         memberSession = e.data.session; accessToken = ''; key = ''; closeAccountPopup();
-        refresh(true).then(function () { announce('Dossier privé ouvert depuis votre compte.'); })
+        openDossier()
           .catch(function (error) { announce(error.message, true); render(); });
         return;
       }
@@ -475,7 +529,7 @@
     if (e.data && e.data.type === 'proplace:journey:access') {
       if (typeof e.data.session === 'string' && e.data.session.length < 1800) memberSession = e.data.session;
       if (typeof e.data.key === 'string' && e.data.key.length < 300) key = e.data.key;
-      accessToken = ''; open('roadmap'); refresh(true).catch(function (error) { announce(error.message, true); }); return;
+      accessToken = ''; open('roadmap'); openDossier().catch(function (error) { announce(error.message, true); }); return;
     }
     if (!e.data || e.data.type !== 'proplace:journey:dossier' || typeof e.data.text !== 'string' || e.data.text.length > 300000) return;
     pendingDossier = { text: e.data.text }; active = 'committee'; open('roadmap');
