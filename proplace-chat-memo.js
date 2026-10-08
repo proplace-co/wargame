@@ -13,6 +13,7 @@
   var demo = !!window.__STAN_JOURNEY_DEMO__;
   var state = null, pane = 'roadmap', active = '', filter = '', search = '', poll = null, running = false, pendingResult = '';
   var selected = new Set(), key = '', accessToken = '', memberSession = '', accessPending = null, shell, content, statusLine, fab, opened = false, pendingDossier = null, reconnectNeeded = false, reconnectNotice;
+  var loginFrame = null, loginChannel = '', loginDialog = null, loginOpener = null;
   var states = { ready: 'À préparer', running: 'En cours', awaiting_evidence: 'Pièces attendues', review: 'À valider',
     validated: 'Validé', failed: 'À reprendre', not_applicable: 'Non applicable' };
   var esc = function (v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); };
@@ -47,7 +48,31 @@
     if (!reconnectNotice || !state) return;
     // Outside the content: retained results and unsaved forms remain intact.
     reconnectNotice.hidden = false;
-    reconnectNotice.querySelector('a').href = accountUrl();
+  }
+  function closeAccountPopup() {
+    if (loginDialog) loginDialog.remove();
+    loginDialog = null; loginFrame = null; loginChannel = '';
+    if (loginOpener && loginOpener.isConnected) loginOpener.focus();
+    loginOpener = null;
+  }
+  function openAccountPopup() {
+    if (demo || loginDialog) return;
+    var bytes = new Uint8Array(16); crypto.getRandomValues(bytes);
+    loginChannel = Array.from(bytes).map(function (n) { return n.toString(16).padStart(2, '0'); }).join('');
+    var url = new URL(accountUrl());
+    url.searchParams.set('popup', '1'); url.searchParams.set('embed', '1'); url.searchParams.set('channel', loginChannel);
+    url.searchParams.set('return_origin', location.origin);
+    loginOpener = document.activeElement;
+    loginDialog = el('div', { class: 'ppj-login-panel', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Connexion à Proplace' });
+    var closeButton = el('button', { class: 'ppj-login-close', type: 'button', 'aria-label': 'Fermer la connexion' }, '×');
+    closeButton.onclick = closeAccountPopup;
+    loginFrame = el('iframe', { title: 'Compte Proplace — email et choix du fonds', src: url.href,
+      sandbox: 'allow-scripts allow-forms allow-same-origin', referrerpolicy: 'strict-origin-when-cross-origin' });
+    loginDialog.append(closeButton, loginFrame); document.body.appendChild(loginDialog);
+    loginDialog.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeAccountPopup(); }
+    });
+    closeButton.focus();
   }
   function connectionRestored() {
     reconnectNeeded = false;
@@ -63,9 +88,9 @@
   async function connectAccount() {
     if (demo || accessToken) return;
     memberSession = memberSession || readMemberSession();
-    if (!memberSession && !key) throw new Error('Connectez-vous à votre compte Proplace, puis cliquez sur Reprendre avec mon compte.');
+    if (!memberSession && !key) throw new Error('Connectez votre compte Proplace pour ouvrir ce dossier privé.');
     if (!accessPending) accessPending = (async function () {
-      var result = await (await api('/access', {})).json();
+      var result = await (await api(key ? '/access' : '/connection', {})).json();
       accessToken = result.access_token;
       if (typeof result.fund === 'string') context.fund = result.fund;
       try { sessionStorage.setItem('ppj-access:' + record, accessToken); } catch (_) {}
@@ -81,7 +106,8 @@
         accessToken = ''; try { sessionStorage.removeItem('ppj-access:' + record); } catch (_) {}
         requireConnection();
       }
-      var error = await res.json().catch(function () { return {}; }); throw new Error(error.error || error.detail || 'Service indisponible');
+      var error = await res.json().catch(function () { return {}; });
+      var failure = new Error(error.error || error.detail || 'Service indisponible'); failure.status = res.status; throw failure;
     }
     return res;
   }
@@ -105,8 +131,11 @@
   }
   function close() { opened = false; shell.hidden = true; fab.hidden = false; clearTimeout(poll); fab.focus(); }
   function build() {
-    var css = el('link', { rel: 'stylesheet', href: assetBase + 'stan-journey.css?v=3' }); document.head.appendChild(css);
-    fab = el('button', { id: 'stan-fabBtn', type: 'button', class: 'ppj-fab', 'aria-label': 'Stan Beta — ouvrir Parcours' }, 'Stan β · Parcours');
+    // A cached legacy editor may initialize just before this production widget.
+    // The supported dossier workflow now owns edits; remove its obsolete UI.
+    ['plEditor', 'plModal'].forEach(function (id) { var old = document.getElementById(id); if (old) old.remove(); });
+    var css = el('link', { rel: 'stylesheet', href: assetBase + 'stan-journey.css?v=4' }); document.head.appendChild(css);
+    fab = el('button', { id: 'stan-fabBtn', type: 'button', class: 'ppj-fab' + (demo ? ' ppj-demo-fab' : ''), 'aria-label': 'Stan Beta — ouvrir Parcours' }, 'Stan β · Parcours');
     fab.onclick = function () { open('roadmap'); };
     shell = el('aside', { id: 'stan-sidebar', class: 'ppj-shell', 'aria-label': 'Parcours du dossier' }); shell.hidden = true;
     shell.innerHTML = '<div class="ppj-resize" role="separator" tabindex="0" aria-label="Largeur du panneau" aria-orientation="vertical"></div>' +
@@ -115,8 +144,8 @@
       (demo ? '<div class="ppj-demo">Démonstration · dossier fictif · aucun envoi ni crédit consommé</div>' : '') +
       '<nav class="ppj-tabs" aria-label="Vues du dossier"><button id="stan-tab-roadmap" type="button" data-do="roadmap">Parcours</button><button id="stan-tab-hist" type="button" data-do="history">Historique</button></nav>' +
       '<p class="ppj-status" role="status" aria-live="polite"></p><section class="ppj-notice ppj-reconnect" hidden aria-label="Reprendre l’accès au dossier">' +
-      '<strong>Votre accès privé doit être renouvelé.</strong><p>Vos résultats et votre saisie restent affichés. Reconnectez-vous puis reprenez ici.</p>' +
-      '<a class="ppj-btn ppj-primary" href="' + esc(accountUrl()) + '" target="_blank" rel="noopener">Se reconnecter à Proplace</a>' + button('Reprendre avec mon compte', '', 'connect') + '</section><main class="ppj-content"></main>';
+      '<strong>Votre accès privé doit être renouvelé.</strong><p>Vos résultats et votre saisie restent affichés pendant la connexion.</p>' +
+      button('Se reconnecter à Proplace', 'ppj-primary', 'connect') + '</section><main class="ppj-content"></main>';
     content = shell.querySelector('main'); statusLine = shell.querySelector('[role=status]');
     reconnectNotice = shell.querySelector('.ppj-reconnect');
     document.body.append(shell, fab);
@@ -161,12 +190,9 @@
     if (!state) {
       content.innerHTML = '<section class="ppj-welcome"><span class="ppj-eyebrow">DE L’ÉVALUATION AU CLOSING</span><h3>Un dossier, toutes les prochaines actions.</h3>' +
         '<p>Retrouvez vos preuves, analyses, décisions et documents dans un espace privé. Toutes les étapes restent consultables.</p>' +
-        '<p>Connectez-vous avec l’adresse email rattachée à votre fonds. Vos documents et validations sont ouverts depuis votre compte, sans clé à copier.</p>' +
-        '<a class="ppj-btn ppj-primary" href="' + esc(accountUrl()) + '" target="_blank" rel="noopener">Se connecter à Proplace</a>' +
-        button('Reprendre avec mon compte', '', 'connect') +
-        '<p class="ppj-muted">Après connexion, revenez dans cet onglet et reprenez le dossier. Depuis votre cockpit, « Ouvrir Parcours » transmet directement l’accès.</p>' +
-        '<details><summary>Accès administrateur existant</summary><p>Si Proplace vous a déjà fourni un lien de cockpit ou d’éditeur avec <code>?k=…</code>, la valeur après <code>k=</code> est votre clé d’accès existante.</p>' +
-        '<form data-form="unlock"><label>Clé du lien administrateur<input name="key" type="password" autocomplete="off" required></label><button class="ppj-btn">Ouvrir avec cette clé</button></form></details></section>';
+        '<p>Utilisez votre compte Proplace. La même connexion par email permet de choisir votre fonds et d’ouvrir les dossiers qui vous sont rattachés.</p>' +
+        button('Se connecter à Proplace', 'ppj-primary', 'connect') +
+        '<p class="ppj-muted">Déjà connecté ? Votre session sera reprise automatiquement. Vos documents restent dans cet onglet.</p></section>';
       return;
     }
     var scroll = content.scrollTop;
@@ -319,10 +345,7 @@
     if (running) return; running = true; var submit = f.querySelector('button'); submit.disabled = true;
     try {
       var fd = new FormData(f), type = f.dataset.form, action = f.dataset.action;
-      if (type === 'unlock') {
-        key = String(fd.get('key') || '').trim(); accessToken = ''; await refresh(true);
-        try { sessionStorage.setItem('ppj-key:' + record, key); } catch (_) {}
-      } else if (type === 'settings') {
+      if (type === 'settings') {
         var cfg = {}; ['exclusivity_days', 'committee_notice_hours', 'board_day'].forEach(function (n) { cfg[n] = fd.get(n) === '' ? null : Number(fd.get(n)); });
         if (demo) state.settings = cfg; else await api('/command/settings', cfg);
         content.innerHTML = ''; await refresh(false);
@@ -363,7 +386,16 @@
     var cmd = b.dataset.do, id = b.dataset.id;
     try {
       if (cmd === 'close') { close(); return; }
-      if (cmd === 'connect') { memberSession = readMemberSession(); accessToken = ''; b.disabled = true; await refresh(true); announce('Dossier privé ouvert depuis votre compte.'); return; }
+      if (cmd === 'connect') {
+        memberSession = readMemberSession(); accessToken = '';
+        if (memberSession) key = '';
+        if (!memberSession && !key) { openAccountPopup(); return; }
+        b.disabled = true;
+        try { await refresh(true); announce('Dossier privé ouvert depuis votre compte.'); }
+        catch (error) { if (error.status === 401 || error.status === 403) openAccountPopup(); throw error; }
+        finally { b.disabled = false; }
+        return;
+      }
       if (cmd === 'full') { shell.classList.toggle('ppj-full'); return; }
       if (cmd === 'roadmap' || cmd === 'history') { pane = cmd; content.innerHTML = ''; render(); return; }
       if (cmd === 'phase') { filter = id; render(); return; }
@@ -427,6 +459,17 @@
   }
   window.StanJourney = { open: open, showAction: function (id) { active = id; filter = ''; open('roadmap'); }, getState: function () { return demo ? state : null; } };
   if (!demo) window.addEventListener('message', function (e) {
+    if (loginFrame && e.source === loginFrame.contentWindow && e.origin === 'https://proplace.co'
+        && e.data && e.data.channel === loginChannel) {
+      if (e.data.type === 'proplace:journey:cancelled') { closeAccountPopup(); return; }
+      if (e.data.type === 'proplace:journey:authenticated' && typeof e.data.session === 'string'
+          && e.data.session.length < 1800 && e.data.session.indexOf('ppin1~') === 0) {
+        memberSession = e.data.session; accessToken = ''; key = ''; closeAccountPopup();
+        refresh(true).then(function () { announce('Dossier privé ouvert depuis votre compte.'); })
+          .catch(function (error) { announce(error.message, true); render(); });
+        return;
+      }
+    }
     if (e.source !== window.opener || !['https://proplace.co', 'https://www.proplace.co'].includes(e.origin)) return;
     if (e.data && e.data.type === 'proplace:journey:access') {
       if (typeof e.data.session === 'string' && e.data.session.length < 1800) memberSession = e.data.session;
