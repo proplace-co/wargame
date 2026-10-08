@@ -47,7 +47,7 @@
   }
   function close() { opened = false; shell.hidden = true; fab.hidden = false; clearTimeout(poll); fab.focus(); }
   function build() {
-    var css = el('link', { rel: 'stylesheet', href: assetBase + 'stan-journey.css?v=1' }); document.head.appendChild(css);
+    var css = el('link', { rel: 'stylesheet', href: assetBase + 'stan-journey.css?v=2' }); document.head.appendChild(css);
     fab = el('button', { id: 'stan-fabBtn', type: 'button', class: 'ppj-fab', 'aria-label': 'Stan Beta — ouvrir Parcours' }, 'Stan β · Parcours');
     fab.onclick = function () { open('roadmap'); };
     shell = el('aside', { id: 'stan-sidebar', class: 'ppj-shell', 'aria-label': 'Parcours du dossier' }); shell.hidden = true;
