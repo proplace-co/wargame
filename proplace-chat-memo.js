@@ -135,7 +135,7 @@
     // A cached legacy editor may initialize just before this production widget.
     // The supported dossier workflow now owns edits; remove its obsolete UI.
     ['plEditor', 'plModal'].forEach(function (id) { var old = document.getElementById(id); if (old) old.remove(); });
-    var css = el('link', { rel: 'stylesheet', href: assetBase + 'stan-journey.css?v=4' }); document.head.appendChild(css);
+    var css = el('link', { rel: 'stylesheet', href: assetBase + 'stan-journey.css?v=5' }); document.head.appendChild(css);
     fab = el('button', { id: 'stan-fabBtn', type: 'button', class: 'ppj-fab' + (demo ? ' ppj-demo-fab' : ''), 'aria-label': 'Stan Beta — ouvrir Parcours' }, 'Stan β · Parcours');
     fab.onclick = function () { open('roadmap'); };
     shell = el('aside', { id: 'stan-sidebar', class: 'ppj-shell', 'aria-label': 'Parcours du dossier' }); shell.hidden = true;
@@ -247,7 +247,7 @@
     html += '<div class="ppj-actions">' + (item.status === 'running' ? '<span class="ppj-live">● Préparation des documents en cours</span>' : button(result && !item.stale ? 'Actualiser les documents' : esc(label), 'ppj-primary', 'run', a.id)) +
       button('Ajouter une pièce / note', '', 'add', a.id) + button('Valider', '', 'attest', a.id) + button('Non applicable', 'ppj-quiet', 'skip', a.id) + '</div>';
     var run = state.runs[item.run_id];
-    if (run) html += '<details class="ppj-run"' + (item.status === 'running' ? ' open' : '') + '><summary>' + (run.trace_expired ? 'Trace détaillée expirée' : '▶ Film des vérifications') + '</summary>' + trace(run) + '</details>';
+    if (run) html += '<details class="ppj-run"' + (item.status === 'running' ? ' open' : '') + '><summary role="button"><span class="ppj-film-icon" aria-hidden="true">▶</span><span>' + (run.trace_expired ? 'Trace détaillée expirée' : 'Film des vérifications') + '</span></summary>' + trace(run) + '</details>';
     if (result) {
       html += '<div class="ppj-result"><h4>Vos documents</h4><p>' + esc(result.summary) + '</p>';
       if (!demo && result.required_inputs && result.required_inputs.length) {
