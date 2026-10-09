@@ -80,23 +80,23 @@
     var today = new Date(); today.setHours(0, 0, 0, 0);
     var ago = Math.round((today.getTime() - latest) / 86400000), streak = 0;
     if (ago <= 1) for (var d = new Date(latest); days[d.getTime()]; d.setDate(d.getDate() - 1)) streak++;
-    return (streak >= 2 ? '<span class="ppj-streak">🔥 ' + streak + ' jours d’affilée</span>' : '') +
+    return (streak >= 2 ? '<span class="ppj-streak">' + streak + ' jours d’activité consécutifs</span>' : '') +
       '<span>Dernière avancée ' + (ago <= 0 ? 'aujourd’hui' : ago === 1 ? 'hier' : 'il y a ' + ago + ' jours') + '</span>';
   }
   function closingTarget() {
     var value = ((state.context.action_inputs || {}).loi || {}).closing_target, at = value ? Date.parse(value) : NaN;
     if (!at) return '';
     var days = Math.ceil((at - Date.now()) / 86400000);
-    return '<span class="ppj-target">🎯 Closing visé le ' + esc(new Date(at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })) + (days >= 0 ? ' · J-' + days : ' · date passée') + '</span>';
+    return '<span class="ppj-target">Closing visé le ' + esc(new Date(at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })) + (days >= 0 ? ' · J-' + days : ' · date passée') + '</span>';
   }
   function cheerLine(plan) {
     if (!plan.total) return 'Votre route vers le closing.';
-    if (plan.left === 0) return 'Closing atteint : toutes les étapes sont cochées !';
-    if (plan.done === 0) return 'C’est parti : cochez votre première étape.';
-    if (plan.pct < 25) return 'Le dossier prend forme. Gardez le rythme.';
-    if (plan.pct < 50) return 'Belle avancée : le closing se rapproche.';
-    if (plan.pct < 75) return 'Plus de la moitié du chemin. Ne lâchez rien !';
-    return 'Dernière ligne droite avant le closing !';
+    if (plan.left === 0) return 'Toutes les étapes du closing sont cochées.';
+    if (plan.done === 0) return 'Le dossier est ouvert : première étape, la qualification.';
+    if (plan.pct < 25) return 'Le dossier prend forme.';
+    if (plan.pct < 50) return 'Le closing se rapproche.';
+    if (plan.pct < 75) return 'Plus de la moitié du parcours est accomplie.';
+    return 'Dernière ligne droite avant le closing.';
   }
   function quickWins(plan) {
     var wins = [], why = { review: 'Brouillon prêt : relisez-le, puis cochez l’étape', stale: 'Nouvelles pièces : actualisez avant de cocher', failed: 'À reprendre : relancez la préparation' };
@@ -118,8 +118,8 @@
     var closingFresh = fresh.filter(function (id) { return afterIds().indexOf(id) < 0; });
     var milestone = plan.closing.find(function (m) { return m.total && m.done === m.total && m.steps.some(function (a) { return closingFresh.indexOf(a.id) >= 0; }); });
     cheer(!closingFresh.length ? '✓ Étape cochée : ' + title + ' · gestion après closing.'
-      : plan.left === 0 ? '🏆 Closing : toutes les étapes sont cochées. Bravo !'
-        : milestone ? '🎖 Jalon franchi : ' + milestone.label + ' · plus que ' + plan.left + ' étape' + (plan.left > 1 ? 's' : '') + ' avant le closing.'
+      : plan.left === 0 ? '🤝 Closing : toutes les étapes sont cochées.'
+        : milestone ? 'Jalon franchi : ' + milestone.label + ' · plus que ' + plan.left + ' étape' + (plan.left > 1 ? 's' : '') + ' avant le closing.'
           : '✓ Étape cochée : ' + title + ' · plus que ' + plan.left + ' avant le closing.');
     return fresh;
   }
@@ -301,7 +301,7 @@
     // A cached legacy editor may initialize just before this production widget.
     // The supported dossier workflow now owns edits; remove its obsolete UI.
     ['plEditor', 'plModal'].forEach(function (id) { var old = document.getElementById(id); if (old) old.remove(); });
-    var css = el('link', { rel: 'stylesheet', href: assetBase + 'stan-journey.css?v=7' }); document.head.appendChild(css);
+    var css = el('link', { rel: 'stylesheet', href: assetBase + 'stan-journey.css?v=8' }); document.head.appendChild(css);
     fab = el('button', { id: 'stan-fabBtn', type: 'button', class: 'ppj-fab' + (demo ? ' ppj-demo-fab' : ''), 'aria-label': 'Stan Beta — ouvrir Parcours' }, 'Stan β · Parcours');
     fab.onclick = function () { open('roadmap'); };
     shell = el('aside', { id: 'stan-sidebar', class: 'ppj-shell', 'aria-label': 'Parcours du dossier' }); shell.hidden = true;
@@ -420,7 +420,7 @@
       html += '<button type="button" class="ppj-chip ppj-c-' + st + (filter === m.id ? ' ppj-selected' : '') + '" data-do="phase" data-id="' + m.id + '" aria-pressed="' + (filter === m.id) + '"' +
         ' title="' + esc('Jalon ' + (i + 1) + ' · ' + m.label + ' · ' + m.done + '/' + m.total) + '" aria-label="' + esc('Jalon ' + (i + 1) + ' : ' + m.label + ', ' + m.done + ' sur ' + m.total + ' étapes cochées') + '">' + (st === 'done' ? '✓' : i + 1) + '</button>';
     });
-    html += '<span class="ppj-link' + (plan.left === 0 ? ' ppj-lit' : '') + '" aria-hidden="true"></span><span class="ppj-chip ppj-c-trophy' + (plan.left === 0 ? ' ppj-c-done' : '') + '" role="img" aria-label="Closing">🏆</span>';
+    html += '<span class="ppj-link' + (plan.left === 0 ? ' ppj-lit' : '') + '" aria-hidden="true"></span><span class="ppj-chip ppj-c-trophy' + (plan.left === 0 ? ' ppj-c-done' : '') + '" role="img" aria-label="Closing">🤝</span>';
     plan.after.forEach(function (m) {
       html += '<button type="button" class="ppj-chip ppj-c-after' + (filter === m.id ? ' ppj-selected' : '') + '" data-do="phase" data-id="' + m.id + '" aria-pressed="' + (filter === m.id) + '" title="' + esc('Après le closing · ' + m.label) + '" aria-label="' + esc('Après le closing : ' + m.label) + '">100 j</button>';
     });
@@ -438,14 +438,14 @@
   }
   function finish(plan) {
     var won = plan.total && plan.left === 0;
-    return '<li class="ppj-finish' + (won ? ' ppj-won' : '') + '"><span class="ppj-trophy" aria-hidden="true">🏆</span><div><b>' + (won ? 'Closing : toutes les étapes sont cochées' : 'Closing') + '</b>' +
-      '<small>' + (won ? 'Bravo ! La gestion de la participation commence.' : 'Plus que ' + plan.left + ' étape' + (plan.left > 1 ? 's' : '') + ' à cocher pour y arriver.') + '</small></div></li>';
+    return '<li class="ppj-finish' + (won ? ' ppj-won' : '') + '"><span class="ppj-trophy" aria-hidden="true">🤝</span><div><b>' + (won ? 'Closing : toutes les étapes sont cochées' : 'Closing') + '</b>' +
+      '<small>' + (won ? 'La gestion de la participation peut commencer.' : 'Plus que ' + plan.left + ' étape' + (plan.left > 1 ? 's' : '') + ' à cocher pour y arriver.') + '</small></div></li>';
   }
   function afterSequence(plan, open) {
     var done = 0, total = 0;
     plan.after.forEach(function (m) { done += m.done; total += m.total; });
     return '<section class="ppj-after' + (open ? ' ppj-after-open' : '') + '"><button type="button" class="ppj-after-head" data-do="after" aria-expanded="' + open + '">' +
-      '<span class="ppj-after-icon" aria-hidden="true">🧭</span><span class="ppj-after-text"><span class="ppj-after-kicker">Séquence 2 · après le closing</span><b>Gérer la participation</b>' +
+      '<span class="ppj-after-icon" aria-hidden="true">J+100</span><span class="ppj-after-text"><span class="ppj-after-kicker">Séquence 2 · après le closing</span><b>Gérer la participation</b>' +
       '<small>' + plan.after.map(function (m) { return esc(m.label); }).join(' · ') + ' · ' + done + '/' + total + ' étapes</small></span><span class="ppj-after-chev" aria-hidden="true">' + (open ? '▴' : '▾') + '</span></button>' +
       '<div class="ppj-after-body"' + (open ? '' : ' hidden') + '><p class="ppj-muted">Une autre séquence : le pilotage après la signature. Elle ne compte pas dans l’objectif closing ; vous pouvez déjà la préparer.</p>' +
       '<ol class="ppj-trail">' + plan.after.map(function (m, i) { return milestone(m, i + 1, plan); }).join('') + '</ol></div></section>';
