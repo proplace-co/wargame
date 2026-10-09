@@ -15,7 +15,7 @@
   var selected = new Set(), key = '', accessToken = '', memberSession = '', accessPending = null, shell, content, statusLine, fab, opened = false, pendingDossier = null, reconnectNeeded = false, reconnectNotice;
   var loginFrame = null, loginChannel = '', loginDialog = null, loginOpener = null, loginTimer = null;
   var openingDossier = null, connectionProgress;
-  var states = { ready: 'À préparer', running: 'En cours', awaiting_evidence: 'Pièces attendues', review: 'À valider',
+  var states = { ready: 'À faire', running: 'En cours', awaiting_evidence: 'Pièces attendues', review: 'À valider',
     validated: 'Validé', failed: 'À reprendre', not_applicable: 'Non applicable' };
   var esc = function (v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); };
   var date = function (n) { return new Date(n * 1000).toLocaleString(context.lang === 'en' ? 'en-GB' : 'fr-FR'); };
@@ -24,6 +24,121 @@
   function el(tag, attrs, text) { var e = document.createElement(tag); Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); }); if (text != null) e.textContent = text; return e; }
   function button(label, cls, action, id) { return '<button type="button" class="ppj-btn ' + (cls || '') + '" data-do="' + action + '"' + (id ? ' data-id="' + esc(id) + '"' : '') + '>' + label + '</button>'; }
   function announce(text, error) { statusLine.textContent = text; statusLine.classList.toggle('ppj-error', !!error); }
+  // 09/10 — le Parcours se joue comme une quête : un objectif (le closing), des jalons
+  // à franchir et des étapes à cocher une à une, avec leurs preuves. La gestion après
+  // closing (plan 100 jours, reporting) est une seconde séquence, hors objectif.
+  var AFTER_CLOSING = ['portfolio'], DONE = ['validated', 'not_applicable'];
+  var PROGRESS = ['validation', 'not_applicable', 'evidence', 'inputs', 'prepared', 'started'];
+  var icon = function (body) { return '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">' + body + '</svg>'; };
+  var dot = function (x, r) { return '<circle cx="' + x + '" cy="8" r="' + r + '" fill="currentColor" stroke="none"/>'; };
+  // Done, not applicable, draft to validate, evidence awaited, to redo, to refresh; running spins.
+  var stepIcons = { done: icon('<path d="M3.5 8.5l3 3 6-7"/>'), skipped: icon('<path d="M4 8h8"/>'), review: icon(dot(8, 2.7)),
+    waiting: icon(dot(3.8, 1.3) + dot(8, 1.3) + dot(12.2, 1.3)), failed: icon('<path d="M8 3.6v5.2"/>' + '<circle cx="8" cy="12.2" r="1.2" fill="currentColor" stroke="none"/>'),
+    stale: icon('<path d="M12.6 9.4A4.8 4.8 0 1 1 11.2 4.6"/><path d="M12.4 2.6v3.2H9.2"/>'), running: '', todo: '' };
+  var knownDone = null, afterOpen = null, toast = null, toastTimer = null;
+  function isDone(id) { var item = state.actions[id]; return !!item && DONE.indexOf(item.status) >= 0 && !item.stale; }
+  function stepState(id) {
+    var item = state.actions[id];
+    if (item.stale) return 'stale';
+    return ({ validated: 'done', not_applicable: 'skipped', review: 'review', running: 'running', awaiting_evidence: 'waiting', failed: 'failed' })[item.status] || 'todo';
+  }
+  function afterIds() { return state.catalog.actions.filter(function (a) { return AFTER_CLOSING.indexOf(a.phase) >= 0; }).map(function (a) { return a.id; }); }
+  function closingPlan() {
+    var catalog = state.catalog;
+    var milestones = Object.keys(catalog.phases).map(function (p) {
+      var steps = catalog.actions.filter(function (a) { return a.phase === p; });
+      var counted = steps.filter(function (a) { return !a.optional; });
+      return { id: p, label: catalog.phases[p], after: AFTER_CLOSING.indexOf(p) >= 0, steps: steps,
+        total: counted.length, done: counted.filter(function (a) { return isDone(a.id); }).length };
+    });
+    var closing = milestones.filter(function (m) { return !m.after; }), after = milestones.filter(function (m) { return m.after; });
+    var total = 0, done = 0, unfinished = function (m) { return m.done < m.total; };
+    closing.forEach(function (m) { total += m.total; done += m.done; });
+    // The suggested step follows the visible trail: phase order, prerequisites met first.
+    var candidates = [];
+    (closing.some(unfinished) ? closing : after).forEach(function (m) {
+      m.steps.forEach(function (a) { if (!a.optional && !isDone(a.id)) candidates.push(a); });
+    });
+    var next = candidates.find(function (a) { var item = state.actions[a.id]; return item.status !== 'running' && !(item.dependencies || []).length; }) || candidates[0] || null;
+    return { closing: closing, after: after, total: total, done: done, left: total - done,
+      pct: total ? Math.round(done * 100 / total) : 0, current: closing.find(unfinished) || after.find(unfinished) || null, next: next };
+  }
+  function ring(pct) {
+    var c = 2 * Math.PI * 30;
+    return '<svg class="ppj-ring" viewBox="0 0 72 72" role="img" aria-label="' + pct + ' % du chemin vers le closing"><defs><linearGradient id="ppj-ring-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4ADE80"/><stop offset="1" stop-color="#12A150"/></linearGradient></defs>' +
+      '<circle class="ppj-ring-track" cx="36" cy="36" r="30"/><circle class="ppj-ring-fill" cx="36" cy="36" r="30" stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + (c * (1 - pct / 100)).toFixed(1) + '" transform="rotate(-90 36 36)"/>' +
+      '<text x="36" y="41" text-anchor="middle">' + pct + '%</text></svg>';
+  }
+  function momentum() {
+    var days = {}, latest = 0;
+    (state.events || []).forEach(function (e) {
+      if (PROGRESS.indexOf(e.kind) < 0 || !e.at) return;
+      var day = new Date(e.at * 1000); day.setHours(0, 0, 0, 0);
+      days[day.getTime()] = true; latest = Math.max(latest, day.getTime());
+    });
+    if (!latest) return '';
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var ago = Math.round((today.getTime() - latest) / 86400000), streak = 0;
+    if (ago <= 1) for (var d = new Date(latest); days[d.getTime()]; d.setDate(d.getDate() - 1)) streak++;
+    return (streak >= 2 ? '<span class="ppj-streak">🔥 ' + streak + ' jours d’affilée</span>' : '') +
+      '<span>Dernière avancée ' + (ago <= 0 ? 'aujourd’hui' : ago === 1 ? 'hier' : 'il y a ' + ago + ' jours') + '</span>';
+  }
+  function closingTarget() {
+    var value = ((state.context.action_inputs || {}).loi || {}).closing_target, at = value ? Date.parse(value) : NaN;
+    if (!at) return '';
+    var days = Math.ceil((at - Date.now()) / 86400000);
+    return '<span class="ppj-target">🎯 Closing visé le ' + esc(new Date(at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })) + (days >= 0 ? ' · J-' + days : ' · date passée') + '</span>';
+  }
+  function cheerLine(plan) {
+    if (!plan.total) return 'Votre route vers le closing.';
+    if (plan.left === 0) return 'Closing atteint : toutes les étapes sont cochées !';
+    if (plan.done === 0) return 'C’est parti : cochez votre première étape.';
+    if (plan.pct < 25) return 'Le dossier prend forme. Gardez le rythme.';
+    if (plan.pct < 50) return 'Belle avancée : le closing se rapproche.';
+    if (plan.pct < 75) return 'Plus de la moitié du chemin. Ne lâchez rien !';
+    return 'Dernière ligne droite avant le closing !';
+  }
+  function quickWins(plan) {
+    var wins = [], why = { review: 'Brouillon prêt : relisez-le, puis cochez l’étape', stale: 'Nouvelles pièces : actualisez avant de cocher', failed: 'À reprendre : relancez la préparation' };
+    ['review', 'stale', 'failed'].forEach(function (wanted) {
+      plan.closing.concat(plan.after).forEach(function (m) {
+        m.steps.forEach(function (a) {
+          if (wins.length < 3 && stepState(a.id) === wanted && !(plan.next && plan.next.id === a.id)) wins.push({ a: a, state: wanted, why: why[wanted] });
+        });
+      });
+    });
+    return wins;
+  }
+  function celebrate() {
+    var catalog = state.catalog, done = catalog.actions.filter(function (a) { return isDone(a.id); }).map(function (a) { return a.id; });
+    var fresh = knownDone ? done.filter(function (id) { return knownDone.indexOf(id) < 0; }) : [];
+    knownDone = done;
+    if (!fresh.length) return fresh;
+    var plan = closingPlan(), title = (catalog.actions.find(function (a) { return a.id === fresh[fresh.length - 1]; }) || {}).title || '';
+    var closingFresh = fresh.filter(function (id) { return afterIds().indexOf(id) < 0; });
+    var milestone = plan.closing.find(function (m) { return m.total && m.done === m.total && m.steps.some(function (a) { return closingFresh.indexOf(a.id) >= 0; }); });
+    cheer(!closingFresh.length ? '✓ Étape cochée : ' + title + ' · gestion après closing.'
+      : plan.left === 0 ? '🏆 Closing : toutes les étapes sont cochées. Bravo !'
+        : milestone ? '🎖 Jalon franchi : ' + milestone.label + ' · plus que ' + plan.left + ' étape' + (plan.left > 1 ? 's' : '') + ' avant le closing.'
+          : '✓ Étape cochée : ' + title + ' · plus que ' + plan.left + ' avant le closing.');
+    return fresh;
+  }
+  function cheer(text) {
+    if (!toast) return;
+    toast.textContent = text; toast.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { toast.hidden = true; }, 4500);
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var layer = el('div', { class: 'ppj-confetti', 'aria-hidden': 'true' }), colors = ['#16965e', '#4ADE80', '#E8B93C', '#31599f', '#F08A5D'];
+    for (var i = 0; i < 18; i++) {
+      var piece = el('i'), angle = i / 18 * 2 * Math.PI, reach = 80 + (i % 3) * 45;
+      piece.style.setProperty('--dx', Math.round(Math.cos(angle) * reach) + 'px');
+      piece.style.setProperty('--dy', Math.round(Math.sin(angle) * reach + 70) + 'px');
+      piece.style.setProperty('--r', (i * 53) + 'deg');
+      piece.style.background = colors[i % colors.length]; piece.style.animationDelay = (i % 4) * 40 + 'ms';
+      layer.appendChild(piece);
+    }
+    shell.appendChild(layer); setTimeout(function () { layer.remove(); }, 1800);
+  }
   function readAccountData() {
     try {
       var cookie = document.cookie.split('; ').find(function (c) { return c.indexOf('proplace_auth=') === 0; });
@@ -186,7 +301,7 @@
     // A cached legacy editor may initialize just before this production widget.
     // The supported dossier workflow now owns edits; remove its obsolete UI.
     ['plEditor', 'plModal'].forEach(function (id) { var old = document.getElementById(id); if (old) old.remove(); });
-    var css = el('link', { rel: 'stylesheet', href: assetBase + 'stan-journey.css?v=6' }); document.head.appendChild(css);
+    var css = el('link', { rel: 'stylesheet', href: assetBase + 'stan-journey.css?v=7' }); document.head.appendChild(css);
     fab = el('button', { id: 'stan-fabBtn', type: 'button', class: 'ppj-fab' + (demo ? ' ppj-demo-fab' : ''), 'aria-label': 'Stan Beta — ouvrir Parcours' }, 'Stan β · Parcours');
     fab.onclick = function () { open('roadmap'); };
     shell = el('aside', { id: 'stan-sidebar', class: 'ppj-shell', 'aria-label': 'Parcours du dossier' }); shell.hidden = true;
@@ -201,6 +316,8 @@
     content = shell.querySelector('main'); statusLine = shell.querySelector('[role=status]');
     connectionProgress = shell.querySelector('.ppj-connection-progress');
     reconnectNotice = shell.querySelector('.ppj-reconnect');
+    // Celebrations live outside the redrawn content and after the status line.
+    toast = el('div', { class: 'ppj-toast', role: 'status', 'aria-live': 'polite' }); toast.hidden = true; shell.appendChild(toast);
     document.body.append(shell, fab);
     shell.addEventListener('click', handleClick);
     shell.addEventListener('submit', handleSubmit);
@@ -248,9 +365,10 @@
         '<p class="ppj-muted">Déjà connecté ? Votre session sera reprise automatiquement. Vos documents restent dans cet onglet.</p></section>';
       return;
     }
-    var scroll = content.scrollTop;
+    var scroll = content.scrollTop, fresh = celebrate();
     content.innerHTML = pane === 'history' ? history() : roadmap();
     content.scrollTop = scroll;
+    fresh.forEach(function (id) { var checked = content.querySelector('#stan-action-' + id); if (checked) checked.classList.add('ppj-just-done'); });
     if (pendingResult && pane === 'roadmap' && active === pendingResult && state.actions[pendingResult].status !== 'running' && state.actions[pendingResult].result) {
       var prepared = content.querySelector('#stan-action-' + pendingResult + ' .ppj-result');
       if (prepared) prepared.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -263,29 +381,82 @@
     };
   }
   function roadmap() {
-    var catalog = state.catalog, total = catalog.actions.filter(function (a) { return !a.optional; }).length;
-    var done = catalog.actions.filter(function (a) { return !a.optional && ['validated', 'not_applicable'].includes(state.actions[a.id].status) && !state.actions[a.id].stale; }).length;
-    var next = catalog.actions.find(function (a) { return a.id === state.next; });
-    var html = (pendingDossier ? '<div class="ppj-notice">Votre dossier comité modifié est prêt à être réutilisé. ' + button('Importer dans cette étape', '', 'handoff') + '</div>' : '') + '<section class="ppj-overview"><div class="ppj-overview-top"><b>' + done + ' / ' + total + ' étapes traitées</b><span>' + euro(state.budget.spent) + ' / 5 €</span></div>' +
-      '<progress max="' + total + '" value="' + done + '"></progress><p>' + (next ? 'Prochaine action : <strong>' + esc(next.title) + '</strong><br><small>Priorité aux contrôles ouverts dont les prérequis sont disponibles.</small>' : 'Examinez les résultats et les décisions restantes.') + '</p>' +
-      '<small>' + euro(state.budget.remaining == null ? 5 - state.budget.spent - state.budget.reserved : state.budget.remaining) + ' disponibles · ' + euro(state.budget.reserved) + ' réservés · mémo et experts hors budget</small></section>' +
-      '<div class="ppj-toolbar"><input name="search" type="search" value="' + esc(search) + '" placeholder="Rechercher une action…" aria-label="Rechercher une action">' + button('Tout voir', '', 'all') + '</div>' +
-      '<div class="ppj-phase-nav">' + Object.keys(catalog.phases).map(function (p) { return button(esc(catalog.phases[p]), filter === p ? 'ppj-selected' : '', 'phase', p); }).join('') + '</div>' +
-      '<p class="ppj-muted">Toutes les actions sont accessibles. Les prérequis encadrent la validation, jamais la consultation.</p>';
-    Object.keys(catalog.phases).forEach(function (phase) {
-      if (filter && filter !== phase) return;
-      html += '<section class="ppj-phase" data-phase="' + phase + '"><h3>' + esc(catalog.phases[phase]) + '</h3>';
-      catalog.actions.filter(function (a) { return a.phase === phase; }).forEach(function (a) { html += card(a); });
-      html += '</section>';
-    });
+    var plan = closingPlan(), afterSteps = afterIds();
+    var showAfter = afterSteps.indexOf(active) >= 0 || AFTER_CLOSING.indexOf(filter) >= 0 || (afterOpen === null ? plan.left === 0 : afterOpen);
+    var lastPhase = plan.closing.length ? plan.closing[plan.closing.length - 1].id : '';
+    var html = (pendingDossier ? '<div class="ppj-notice">Votre dossier comité modifié est prêt à être réutilisé. ' + button('Importer dans cette étape', '', 'handoff') + '</div>' : '') +
+      quest(plan) + stepper(plan) +
+      '<div class="ppj-toolbar"><input name="search" type="search" value="' + esc(search) + '" placeholder="Rechercher une étape…" aria-label="Rechercher une étape">' + button('Tout voir', '', 'all') + '</div>' +
+      '<p class="ppj-muted">Chaque étape se coche avec ses preuves. Les étapes grisées restent consultables : ouvrez-les pour préparer la suite.</p>';
+    if (AFTER_CLOSING.indexOf(filter) < 0) {
+      html += '<ol class="ppj-trail">';
+      plan.closing.forEach(function (m, i) { if (!filter || filter === m.id) html += milestone(m, i + 1, plan); });
+      if (!filter || filter === lastPhase) html += finish(plan);
+      html += '</ol>';
+    }
+    if (plan.after.length && (!filter || AFTER_CLOSING.indexOf(filter) >= 0)) html += afterSequence(plan, showAfter);
     html += '<footer class="ppj-footer">' + button('Exporter le dossier d’audit', '', 'export') + button('Réglages et conservation', '', 'settings') + '</footer>';
     return html;
   }
-  function card(a) {
+  function quest(plan) {
+    var next = plan.next, wins = quickWins(plan), meta = momentum() + closingTarget();
+    var remaining = state.budget.remaining == null ? 5 - state.budget.spent - state.budget.reserved : state.budget.remaining;
+    return '<section class="ppj-overview ppj-quest"><div class="ppj-quest-top">' + ring(plan.pct) +
+      '<div class="ppj-quest-text"><span class="ppj-quest-kicker">Objectif closing</span><h3>' + esc(cheerLine(plan)) + '</h3>' +
+      '<p class="ppj-quest-stats"><b>' + plan.done + ' / ' + plan.total + '</b> étapes cochées' + (plan.left ? ' · plus que <b>' + plan.left + '</b> avant le closing' : '') + '</p>' +
+      (meta ? '<p class="ppj-quest-meta">' + meta + '</p>' : '') + '</div></div>' +
+      (next ? button('<span>▶ ' + (plan.left ? 'Prochaine étape' : 'Après le closing') + ' : ' + esc(next.title) + '</span><span aria-hidden="true">→</span>', 'ppj-primary ppj-next-cta', 'goto', next.id) : '') +
+      (wins.length ? '<div class="ppj-missions"><span class="ppj-missions-t">À cocher maintenant</span>' + wins.map(function (w) {
+        return '<button type="button" class="ppj-mission" data-do="goto" data-id="' + w.a.id + '"><span class="ppj-tick" data-state="' + w.state + '" aria-hidden="true">' + stepIcons[w.state] + '</span>' +
+          '<span class="ppj-mission-text"><b>' + esc(w.a.title) + '</b><small>' + w.why + '</small></span><span aria-hidden="true">→</span></button>';
+      }).join('') + '</div>' : '') +
+      '<small class="ppj-quest-budget">Budget Stan : ' + euro(remaining) + ' disponibles sur 5 € · ' + euro(state.budget.reserved) + ' réservés · mémo et experts hors budget</small></section>';
+  }
+  function stepper(plan) {
+    var html = '<nav class="ppj-phase-nav ppj-stepper" aria-label="Jalons jusqu’au closing">';
+    plan.closing.forEach(function (m, i) {
+      var st = m.total && m.done === m.total ? 'done' : m === plan.current ? 'current' : 'todo';
+      if (i) html += '<span class="ppj-link' + (plan.closing[i - 1].done === plan.closing[i - 1].total ? ' ppj-lit' : '') + '" aria-hidden="true"></span>';
+      html += '<button type="button" class="ppj-chip ppj-c-' + st + (filter === m.id ? ' ppj-selected' : '') + '" data-do="phase" data-id="' + m.id + '" aria-pressed="' + (filter === m.id) + '"' +
+        ' title="' + esc('Jalon ' + (i + 1) + ' · ' + m.label + ' · ' + m.done + '/' + m.total) + '" aria-label="' + esc('Jalon ' + (i + 1) + ' : ' + m.label + ', ' + m.done + ' sur ' + m.total + ' étapes cochées') + '">' + (st === 'done' ? '✓' : i + 1) + '</button>';
+    });
+    html += '<span class="ppj-link' + (plan.left === 0 ? ' ppj-lit' : '') + '" aria-hidden="true"></span><span class="ppj-chip ppj-c-trophy' + (plan.left === 0 ? ' ppj-c-done' : '') + '" role="img" aria-label="Closing">🏆</span>';
+    plan.after.forEach(function (m) {
+      html += '<button type="button" class="ppj-chip ppj-c-after' + (filter === m.id ? ' ppj-selected' : '') + '" data-do="phase" data-id="' + m.id + '" aria-pressed="' + (filter === m.id) + '" title="' + esc('Après le closing · ' + m.label) + '" aria-label="' + esc('Après le closing : ' + m.label) + '">100 j</button>';
+    });
+    var current = plan.current;
+    return html + '</nav><p class="ppj-stepper-caption">' + (current && !current.after ? 'Jalon ' + (plan.closing.indexOf(current) + 1) + ' sur ' + plan.closing.length + ' · <b>' + esc(current.label) + '</b>'
+      : '<b>Closing atteint</b> · séquence suivante : ' + esc((plan.after[0] || {}).label || 'gestion de la participation')) + '</p>';
+  }
+  function milestone(m, index, plan) {
+    var st = m.total && m.done === m.total ? 'done' : m === plan.current ? 'current' : 'todo';
+    var html = '<li class="ppj-milestone ppj-ms-' + st + '" data-phase="' + m.id + '"><span class="ppj-node" aria-hidden="true">' + (st === 'done' ? '✓' : index) + '</span>' +
+      '<div class="ppj-ms-head"><div class="ppj-ms-title"><span class="ppj-ms-kicker">' + (m.after ? 'Séquence 2' : 'Jalon ' + index) + (st === 'done' ? ' · franchi' : st === 'current' ? ' · en cours' : '') + '</span><h3>' + esc(m.label) + '</h3></div>' +
+      '<span class="ppj-ms-count">' + m.done + '/' + m.total + '</span></div><span class="ppj-ms-bar" aria-hidden="true"><i style="width:' + (m.total ? Math.round(m.done * 100 / m.total) : 0) + '%"></i></span>';
+    m.steps.forEach(function (a) { html += card(a, plan); });
+    return html + '</li>';
+  }
+  function finish(plan) {
+    var won = plan.total && plan.left === 0;
+    return '<li class="ppj-finish' + (won ? ' ppj-won' : '') + '"><span class="ppj-trophy" aria-hidden="true">🏆</span><div><b>' + (won ? 'Closing : toutes les étapes sont cochées' : 'Closing') + '</b>' +
+      '<small>' + (won ? 'Bravo ! La gestion de la participation commence.' : 'Plus que ' + plan.left + ' étape' + (plan.left > 1 ? 's' : '') + ' à cocher pour y arriver.') + '</small></div></li>';
+  }
+  function afterSequence(plan, open) {
+    var done = 0, total = 0;
+    plan.after.forEach(function (m) { done += m.done; total += m.total; });
+    return '<section class="ppj-after' + (open ? ' ppj-after-open' : '') + '"><button type="button" class="ppj-after-head" data-do="after" aria-expanded="' + open + '">' +
+      '<span class="ppj-after-icon" aria-hidden="true">🧭</span><span class="ppj-after-text"><span class="ppj-after-kicker">Séquence 2 · après le closing</span><b>Gérer la participation</b>' +
+      '<small>' + plan.after.map(function (m) { return esc(m.label); }).join(' · ') + ' · ' + done + '/' + total + ' étapes</small></span><span class="ppj-after-chev" aria-hidden="true">' + (open ? '▴' : '▾') + '</span></button>' +
+      '<div class="ppj-after-body"' + (open ? '' : ' hidden') + '><p class="ppj-muted">Une autre séquence : le pilotage après la signature. Elle ne compte pas dans l’objectif closing ; vous pouvez déjà la préparer.</p>' +
+      '<ol class="ppj-trail">' + plan.after.map(function (m, i) { return milestone(m, i + 1, plan); }).join('') + '</ol></div></section>';
+  }
+  function card(a, plan) {
     var item = state.actions[a.id], result = item.result, openNow = active === a.id;
     var ids = item.evidence_ids || [], missing = item.missing || [];
-    var html = '<article class="ppj-card' + (openNow ? ' ppj-open' : '') + '" id="stan-action-' + a.id + '"><button class="ppj-card-head" data-do="expand" data-id="' + a.id + '" aria-expanded="' + openNow + '">' +
-      '<span><strong>' + esc(a.title) + '</strong><small>' + (a.optional ? 'Facultatif · ' : '') + (missing.length ? missing.length + ' élément(s) à compléter' : ids.length + ' pièce(s) disponible(s)') + '</small></span>' +
+    var s = stepState(a.id), upNext = !!(plan && plan.next && plan.next.id === a.id);
+    var html = '<article class="ppj-card ppj-step ppj-s-' + s + (s === 'done' || s === 'skipped' ? ' ppj-done' : '') + (upNext ? ' ppj-is-next' : '') + (openNow ? ' ppj-open' : '') + '" id="stan-action-' + a.id + '"><button class="ppj-card-head" data-do="expand" data-id="' + a.id + '" aria-expanded="' + openNow + '">' +
+      '<span class="ppj-tick" data-state="' + s + '" aria-hidden="true">' + stepIcons[s] + '</span>' +
+      '<span class="ppj-step-text"><strong>' + esc(a.title) + '</strong><small>' + (upNext ? '<em class="ppj-next-tag">Prochaine étape</em>' : '') + (a.optional ? 'Facultatif · ' : '') + (missing.length ? missing.length + ' élément(s) à compléter' : ids.length + ' pièce(s) disponible(s)') + '</small></span>' +
       '<span class="ppj-badge ppj-' + item.status + '">' + (item.stale ? 'À actualiser' : states[item.status] || esc(item.status)) + '</span></button>';
     if (!openNow) return html + '</article>';
     html += '<div class="ppj-card-body">';
@@ -297,7 +468,7 @@
     if (item.dependencies && item.dependencies.length) html += '<p class="ppj-notice">Pour valider : ' + item.dependencies.map(function (id) { return esc(state.catalog.actions.find(function (x) { return x.id === id; }).title); }).join(', ') + '. Vous pouvez déjà préparer cette étape.</p>';
     var label = a.id === 'loi' && state.context.mode === 'VC' ? 'Préparer le term sheet' : actionLabels[a.id] || 'Préparer le livrable';
     html += '<div class="ppj-actions">' + (item.status === 'running' ? '<span class="ppj-live">● Préparation des documents en cours</span>' : button(result && !item.stale ? 'Actualiser les documents' : esc(label), 'ppj-primary', 'run', a.id)) +
-      button('Ajouter une pièce / note', '', 'add', a.id) + button('Valider', '', 'attest', a.id) + button('Non applicable', 'ppj-quiet', 'skip', a.id) + '</div>';
+      button('Ajouter une pièce / note', '', 'add', a.id) + button('✓ Valider l’étape', 'ppj-check-btn', 'attest', a.id) + button('Non applicable', 'ppj-quiet', 'skip', a.id) + '</div>';
     var run = state.runs[item.run_id];
     if (run) html += '<details class="ppj-run"' + (item.status === 'running' ? ' open' : '') + '><summary role="button"><span class="ppj-film-icon" aria-hidden="true">▶</span><span>' + (run.trace_expired ? 'Trace détaillée expirée' : 'Film des vérifications') + '</span></summary>' + trace(run) + '</details>';
     if (result) {
@@ -452,9 +623,21 @@
       }
       if (cmd === 'full') { shell.classList.toggle('ppj-full'); return; }
       if (cmd === 'roadmap' || cmd === 'history') { pane = cmd; content.innerHTML = ''; render(); return; }
-      if (cmd === 'phase') { filter = id; render(); return; }
+      if (cmd === 'phase') { filter = filter === id ? '' : id; render(); return; }
       if (cmd === 'all') { filter = ''; search = ''; render(); return; }
-      if (cmd === 'expand' || cmd === 'goto') { active = active === id && cmd === 'expand' ? '' : id; if (cmd === 'goto') { pane = 'roadmap'; filter = ''; } render(); return; }
+      if (cmd === 'after') {
+        var shown = b.getAttribute('aria-expanded') === 'true';
+        afterOpen = !shown;
+        if (shown) { if (afterIds().indexOf(active) >= 0) active = ''; if (AFTER_CLOSING.indexOf(filter) >= 0) filter = ''; }
+        render(); return;
+      }
+      if (cmd === 'expand' || cmd === 'goto') {
+        active = active === id && cmd === 'expand' ? '' : id; if (cmd === 'goto') { pane = 'roadmap'; filter = ''; }
+        render();
+        var step = cmd === 'goto' && content.querySelector('#stan-action-' + id);
+        if (step && step.scrollIntoView) step.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        return;
+      }
       if (cmd === 'inputs') { inputsForm(id); return; }
       if (cmd === 'deliverable' || cmd === 'copy-document') {
         var documentId = b.dataset.document, format = b.dataset.format;
