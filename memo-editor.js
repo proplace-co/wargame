@@ -44,7 +44,7 @@
     title: 'Versions du mémo', sections: 'sections'
   };
   var state = { head: null, role: '', email: '', editing: false, open: null, preview: 0 };
-  window.PPMemoEditor = { version: 4, state: state };
+  window.PPMemoEditor = { version: 5, state: state };
 
   function el(tag, attrs, text) {
     var node = document.createElement(tag);
@@ -385,39 +385,51 @@
     ask: 'Ask Stan for the best next action',
     askWhy: 'Stan reads the whole memo, its versions, your exchanges and this journey, then picks the action with the most impact now — and does it.',
     computing: 'Stan is studying the memo, its history and this journey… (1 to 3 min)',
-    uncertainty: 'Key uncertainty', doIt: 'Let’s do it', asAgent: '🛠️ Make it an agent', other: 'Another idea',
-    recompute: 'Recompute the next action', step: 'Moves forward: ', running: 'Stan is on it: ',
-    done: function (t) { return 'Done: ' + t; }, see: 'See the result', nextOne: 'Next action',
+    whyNow: 'Why now', settles: 'What it settles', doIt: 'Let’s do it', more: 'Other options',
+    asAgent: '🛠️ Make it an agent', asAgentWhy: function (eur) { return 'Stan codes an agent for this task, tries it on this deal (≈ ' + eur + ' €) and keeps it in the Library for your next deals.'; },
+    other: '🔀 Another idea', otherWhy: 'See Stan’s alternative action.',
+    recompute: '↻ Recompute', recomputeWhy: function (eur) { return 'Stan reconsiders the deal from scratch (≈ ' + eur + ' €).'; },
+    reasoning: 'Stan’s reasoning', inMemo: 'In the memo: ', step: 'Parcours step: ',
+    catchUp: 'Already done in practice, to check in the Parcours:', running: 'Stan is on it: ', runningHint: 'about 1 to 3 min — the result will appear here.',
+    readyK: 'Ready', copy: 'Copy', copied: 'Copied ✓', openChat: 'Open in Chat', nextOne: '▶ Next action',
+    yourTurn: 'Your turn: ', attached: function (s) { return 'Filed in the Parcours, step “' + s + '”.'; },
+    defaultDraftStep: 'Review, adjust and send it; then add the reply to the Parcours.',
+    validateProposals: function (n) { return n + ' memo change(s) to approve in Chat.'; }, validateAgent: 'Approve the agent in Chat to share it with every fund.',
     stale: function (n) { return 'Proposed on version ' + n + ': the memo has changed since.'; },
     types: { draft: '✉️ Ready-to-use draft', research: '🔎 Sourced research', memo: '📝 Memo update',
       agent: '🧩 Library agent', build_agent: '🛠️ Custom agent to code' },
-    est: function (eur, min) { return '≈ ' + eur + ' € · ~' + min + ' min'; },
-    asAgentWhy: function (eur) { return 'Stan codes an agent for this task, tries it on this deal (≈ ' + eur + ' €) and stores it in the Library for your next deals.'; },
+    est: function (eur) { return '≈ ' + eur + ' €'; },
     confirm: function (eur) { return 'Estimated cost: ' + eur + ' € (above 5 €). Go ahead?'; }, confirmBtn: 'Confirm', cancel: 'Cancel',
-    copy: 'Copy', copied: 'Copied ✓', check: 'Check before use: ', impact: 'Impact on the decision: ', sources: 'Sources',
+    check: 'Check before use: ', impact: 'Impact on the decision: ', sources: 'Sources',
     signals: { 'continuer': 'Continue', 'à confirmer': 'To confirm', 'arrêter': 'Stop' }, failed: 'Stan could not finish: ',
     did: 'Let’s do it: ', didAgent: 'Make it an agent: ', alt: function (i, n) { return 'Alternative ' + i + ' of ' + n; },
-    ready: function (t) { return '✅ ' + t + ': the result is in Chat.'; }, open: 'Open', started: 'Stan is on it — follow it in Parcours, the result will land in Chat.'
+    ready: function (t) { return '✅ ' + t + ': ready.'; }, open: 'Open', started: 'Stan is on it — follow it in Parcours, the result will land in Chat.'
   } : {
     kicker: 'Prochaine action · Stan', loading: 'Chargement…',
     ask: 'Demander à Stan la meilleure prochaine action',
     askWhy: 'Stan lit tout le mémo, ses versions, vos échanges et ce Parcours, puis choisit l’action qui a le plus d’impact maintenant — et la réalise.',
     computing: 'Stan étudie le mémo, son historique et ce Parcours… (1 à 3 min)',
-    uncertainty: 'Incertitude clé', doIt: 'Faisons-le', asAgent: '🛠️ En faire un agent', other: 'Autre idée',
-    recompute: 'Recalculer la prochaine action', step: 'Fait avancer : ', running: 'Stan s’en occupe : ',
-    done: function (t) { return 'Fait : ' + t; }, see: 'Voir le résultat', nextOne: 'Action suivante',
+    whyNow: 'Pourquoi maintenant', settles: 'Ce que ça tranche', doIt: 'Faisons-le', more: 'Autres options',
+    asAgent: '🛠️ En faire un agent', asAgentWhy: function (eur) { return 'Stan code un agent pour cette tâche, l’essaie sur ce dossier (≈ ' + eur + ' €) et le garde dans la Librairie pour vos prochains dossiers.'; },
+    other: '🔀 Autre idée', otherWhy: 'Voir l’action alternative de Stan.',
+    recompute: '↻ Recalculer', recomputeWhy: function (eur) { return 'Stan reprend le dossier depuis le début (≈ ' + eur + ' €).'; },
+    reasoning: 'Le raisonnement de Stan', inMemo: 'Dans le mémo : ', step: 'Étape du Parcours : ',
+    catchUp: 'Déjà fait dans les faits, à cocher dans le Parcours :', running: 'Stan s’en occupe : ', runningHint: 'environ 1 à 3 min — le résultat s’affichera ici.',
+    readyK: 'C’est prêt', copy: 'Copier', copied: 'Copié ✓', openChat: 'Ouvrir dans le Chat', nextOne: '▶ Action suivante',
+    yourTurn: 'À vous : ', attached: function (s) { return 'Classé dans le Parcours, étape « ' + s + ' ».'; },
+    defaultDraftStep: 'Relisez, adaptez puis envoyez ; ajoutez ensuite la réponse au Parcours.',
+    validateProposals: function (n) { return n + ' modification(s) du mémo à valider dans le Chat.'; }, validateAgent: 'Validez l’agent dans le Chat pour le partager avec tous les fonds.',
     stale: function (n) { return 'Proposée sur la version ' + n + ' : le mémo a changé depuis.'; },
     types: { draft: '✉️ Livrable prêt à l’emploi', research: '🔎 Recherche sourcée', memo: '📝 Mise à jour du mémo',
       agent: '🧩 Agent de la Librairie', build_agent: '🛠️ Agent sur mesure à coder' },
-    est: function (eur, min) { return '≈ ' + eur + ' € · ~' + min + ' min'; },
-    asAgentWhy: function (eur) { return 'Stan code un agent pour cette tâche, l’essaie sur ce dossier (≈ ' + eur + ' €) et le range dans la Librairie pour vos prochains dossiers.'; },
+    est: function (eur) { return '≈ ' + eur + ' €'; },
     confirm: function (eur) { return 'Coût estimé : ' + eur + ' € (au-delà de 5 €). On y va ?'; }, confirmBtn: 'Confirmer', cancel: 'Annuler',
-    copy: 'Copier', copied: 'Copié ✓', check: 'À vérifier avant usage : ', impact: 'Ce que cela change pour la décision : ', sources: 'Sources',
+    check: 'À vérifier avant usage : ', impact: 'Ce que cela change pour la décision : ', sources: 'Sources',
     signals: { 'continuer': 'Continuer', 'à confirmer': 'À confirmer', 'arrêter': 'Arrêter' }, failed: 'Stan n’a pas pu terminer : ',
     did: 'Faisons-le : ', didAgent: 'En faire un agent : ', alt: function (i, n) { return 'Alternative ' + i + ' sur ' + n; },
-    ready: function (t) { return '✅ ' + t + ' : le résultat est dans le Chat.'; }, open: 'Ouvrir', started: 'Stan s’en occupe : suivi dans le Parcours, résultat dans le Chat.'
+    ready: function (t) { return '✅ ' + t + ' : c’est prêt.'; }, open: 'Ouvrir', started: 'Stan s’en occupe : suivi dans le Parcours, résultat dans le Chat.'
   };
-  var nba = { box: null, data: null, head: 0, index: 0, loaded: false, runs: {}, cost: 0, agentCost: 0, done: null };
+  var nba = { box: null, data: null, head: 0, index: 0, loaded: false, runs: {}, cost: 0, agentCost: 0, more: false };
   function fmtEur(x) {
     return Number(x || 0).toLocaleString(en ? 'en-GB' : 'fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
@@ -427,11 +439,26 @@
     node.classList.add('ppme-hl');
     setTimeout(function () { node.classList.remove('ppme-hl'); }, 3500);
   }
-  // « [conviction#3] » dans un texte de Stan : un renvoi cliquable vers le bloc du mémo
+  // Les renvois « [conviction#3] », « [conviction#89-90] » d'un texte de Stan : retirés des
+  // textes courts de la carte, regroupés en liens « Dans le mémo » sous le raisonnement.
+  var CITE = /\[([A-Za-z0-9][\w-]*)#(\d+)(?:\s*[-–,]\s*\d+)*\]/g;
+  function uncite(text) {
+    return String(text || '').replace(CITE, '').replace(/\(\s*[,;]?\s*\)/g, '').replace(/\s+([,.)])/g, '$1')
+      .replace(/\(\s+/g, '(').replace(/\s{2,}/g, ' ').trim();
+  }
+  function citedSections(text) {
+    var seen = {}, out = [], m;
+    CITE.lastIndex = 0;
+    while ((m = CITE.exec(String(text || '')))) {
+      if (!seen[m[1]] && document.getElementById(m[1])) { seen[m[1]] = 1; out.push({ section: m[1], index: parseInt(m[2], 10) }); }
+    }
+    return out;
+  }
+  // dans le chat, un renvoi reste cliquable à sa place
   function citedText(text, tag, cls) {
     var node = el(tag, cls ? { class: cls } : {});
-    String(text || '').split(/(\[[A-Za-z0-9][\w-]*#\d+\])/).forEach(function (part) {
-      var m = /^\[([A-Za-z0-9][\w-]*)#(\d+)\]$/.exec(part);
+    String(text || '').split(/(\[[A-Za-z0-9][\w-]*#\d+(?:\s*[-–,]\s*\d+)*\])/).forEach(function (part) {
+      var m = /^\[([A-Za-z0-9][\w-]*)#(\d+)/.exec(part);
       if (!m || !document.getElementById(m[1])) { node.appendChild(document.createTextNode(part)); return; }
       var b = el('button', { type: 'button', class: 'ppme-cite' }, sectionTitle(m[1]));
       b.onclick = function () { highlight(blockNode({ section: m[1], index: parseInt(m[2], 10) })); };
@@ -455,62 +482,141 @@
     b.onclick = function () { onclick(b); };
     return b;
   }
+  function labeled(label, text, cls) {
+    var p = el('p', { class: cls || 'ppme-why' });
+    p.appendChild(el('strong', {}, label + ' : '));
+    p.appendChild(document.createTextNode(text));
+    return p;
+  }
+  function option(label, hint, onclick) {
+    var b = el('button', { type: 'button', class: 'ppme-option' });
+    b.appendChild(el('strong', {}, label));
+    b.appendChild(el('small', {}, hint));
+    b.onclick = function () { onclick(b); };
+    return b;
+  }
+  // l'étape du Parcours : le Parcours l'ouvre lui-même (data-do="goto")
+  function stepLink(id, label, title) {
+    return el('button', { type: 'button', class: 'ppme-step', 'data-do': 'goto', 'data-id': id, title: title || '' }, label + ' →');
+  }
+  function preview(m) {
+    if (m.kind === 'deliverable') return m.text || '';
+    var lines = [m.text || ''];
+    (m.findings || []).slice(0, 4).forEach(function (f) { lines.push('• ' + f.text); });
+    if (m.deliverable && m.deliverable.content) lines.push(m.deliverable.content);
+    return lines.filter(Boolean).join('\n');
+  }
+  function yourTurn(m) {
+    if (m.kind === 'deliverable') return m.next_step || N.defaultDraftStep;
+    if (m.kind === 'memo_update') return (m.proposals || []).length ? N.validateProposals(m.proposals.length) : '';
+    if (m.kind === 'agent_draft') return m.error ? '' : N.validateAgent;
+    return m.decision_impact ? N.impact + m.decision_impact : '';
+  }
+  // le résultat de la dernière action, dans la carte : ce qui est prêt et ce qui reste à faire
+  function renderDone(box, done) {
+    var m = done.message || {};
+    var d = el('div', { class: 'ppme-done' });
+    d.appendChild(el('span', { class: 'ppme-done-k' }, '✅ ' + N.readyK));
+    d.appendChild(el('strong', { class: 'ppme-act-title' }, m.title || (m.agent && m.agent.name) || done.title));
+    if (m.error) d.appendChild(el('p', { class: 'ppme-stale' }, N.failed + m.error));
+    var text = preview(m);
+    if (text) d.appendChild(el('div', { class: 'ppme-result' }, text));
+    d.appendChild(bar([
+      m.kind === 'deliverable' ? btn(N.copy, function (b) {
+        navigator.clipboard.writeText(m.text || '').then(function () { b.textContent = N.copied; });
+      }) : null,
+      btn(N.openChat, function () { openStan('chat'); })
+    ]));
+    var todo = yourTurn(m);
+    if (todo) d.appendChild(labeled('👉 ' + N.yourTurn.replace(/\s*:\s*$/, ''), todo, 'ppme-todo'));
+    if (done.attached) d.appendChild(el('p', { class: 'ppme-attached' }, '📎 ' + N.attached(done.attached)));
+    box.appendChild(d);
+  }
   function renderNba() {
     var box = nba.box;
     if (!box) return;
     box.innerHTML = '';
-    var n = nba.data && nba.data.nba;
+    var n = nba.data && nba.data.nba, done = nba.data && nba.data.done;
     box.classList.toggle('ppme-has-nba', !!n);          // elle prend la place de « Prochaine étape »
-    box.appendChild(el('span', { class: 'ppme-kicker' }, '🎯 ' + N.kicker));
-    var runs = Object.keys(nba.runs).map(function (k) { return nba.runs[k]; });
-    runs.forEach(function (r) { if (r.op !== 'propose') box.appendChild(el('p', { class: 'ppme-nba-run' }, '⏳ ' + N.running + (r.title || ''))); });
-    if (nba.done) {
-      var done = el('div', { class: 'ppme-nba-done' });
-      done.appendChild(el('span', {}, '✅ ' + N.done(nba.done.title)));
-      done.appendChild(btn(N.see, function () { openStan('chat'); }));
-      box.appendChild(done);
+    var head = el('div', { class: 'ppme-nba-head' });
+    head.appendChild(el('span', { class: 'ppme-kicker' }, '🎯 ' + N.kicker));
+    if (n) {
+      var chips = el('span', { class: 'ppme-nba-meta' });
+      chips.appendChild(el('span', { class: 'ppme-chip' }, n.stage_label || n.stage));
+      chips.appendChild(el('span', { class: 'ppme-chip sig-' + signalClass(n.signal), title: uncite(n.signal_reason) }, N.signals[n.signal] || n.signal));
+      head.appendChild(chips);
     }
+    box.appendChild(head);
+    var runs = Object.keys(nba.runs).map(function (k) { return nba.runs[k]; });
+    runs.forEach(function (r) {
+      if (r.op === 'propose') return;
+      var line = el('div', { class: 'ppme-nba-run' });
+      line.appendChild(el('strong', {}, '⏳ ' + N.running + (r.title || '')));
+      line.appendChild(el('small', {}, N.runningHint));
+      box.appendChild(line);
+    });
     if (!nba.loaded) { box.appendChild(el('p', { class: 'ppme-wait' }, N.loading)); return; }
     if (runs.some(function (r) { return r.op === 'propose'; })) { box.appendChild(el('p', { class: 'ppme-wait' }, N.computing)); return; }
     if (!n) {
       box.appendChild(el('p', { class: 'ppme-why' }, N.askWhy));
-      box.appendChild(bar([btn(N.ask + (nba.cost ? ' · ≈ ' + fmtEur(nba.cost) + ' €' : ''), proposeNext, 'ppme-go')]));
+      box.appendChild(btn('▶ ' + N.ask + (nba.cost ? ' · ' + N.est(fmtEur(nba.cost)) : ''), proposeNext, 'ppme-go ppme-cta'));
       return;
     }
     var acts = nbaActions(), i = nba.index % acts.length, a = acts[i];
-    var meta = el('div', { class: 'ppme-nba-meta' });
-    meta.appendChild(el('span', { class: 'ppme-chip' }, n.stage_label || n.stage));
-    meta.appendChild(el('span', { class: 'ppme-chip sig-' + signalClass(n.signal), title: n.signal_reason || '' }, N.signals[n.signal] || n.signal));
-    if (i) meta.appendChild(el('span', { class: 'ppme-chip' }, N.alt(i, acts.length - 1)));
-    box.appendChild(meta);
-    if (n.uncertainty && !i) {
-      var u = citedText(n.uncertainty, 'p', 'ppme-unc');
-      u.insertBefore(el('strong', {}, N.uncertainty + ' : '), u.firstChild);
-      box.appendChild(u);
+    var finished = !!done && done.action_id === a.id;
+    if (finished) {
+      renderDone(box, done);
+      box.appendChild(btn(N.nextOne + (nba.cost ? ' · ' + N.est(fmtEur(nba.cost)) : ''), proposeNext, 'ppme-go ppme-cta'));
+    } else if (!runs.some(function (r) { return r.action_id === a.id; })) {
+      var main = el('div', { class: 'ppme-main' });
+      main.appendChild(el('span', { class: 'ppme-act-type' }, (i ? N.alt(i, acts.length - 1) + ' · ' : '') + (N.types[a.type] || a.type)
+        + (a.agent_name ? ' · ' + a.agent_name : '')));
+      main.appendChild(el('strong', { class: 'ppme-act-title' }, a.title));
+      if (a.why) main.appendChild(labeled(N.whyNow, uncite(a.why)));
+      if (n.uncertainty && !i) main.appendChild(labeled(N.settles, uncite(n.uncertainty)));
+      box.appendChild(main);
+      box.appendChild(btn('▶ ' + N.doIt + ' · ' + N.est(fmtEur(a.est_eur)), function (b) { runAction(a, false, b, 'do'); }, 'ppme-go ppme-cta'));
     }
-    box.appendChild(el('span', { class: 'ppme-act-type' }, (N.types[a.type] || a.type) + (a.agent_name ? ' · ' + a.agent_name : '')));
-    box.appendChild(el('strong', { class: 'ppme-act-title' }, a.title));
-    if (a.why) box.appendChild(citedText(a.why, 'p', 'ppme-why'));
-    var foot = el('p', { class: 'ppme-est' });
-    if (a.parcours_step) {
-      // l'étape du Parcours que cette action fait avancer : le Parcours l'ouvre (data-do="goto")
-      foot.appendChild(el('button', { type: 'button', class: 'ppme-step', 'data-do': 'goto', 'data-id': a.parcours_step },
-        N.step + (a.parcours_title || a.parcours_step) + ' →'));
-      foot.appendChild(document.createTextNode(' · '));
+    var links = el('div', { class: 'ppme-links' });
+    if (a.parcours_step && !finished) links.appendChild(stepLink(a.parcours_step, N.step + (a.parcours_title || a.parcours_step)));
+    var more = el('button', { type: 'button', class: 'ppme-more', 'aria-expanded': String(nba.more) }, N.more + (nba.more ? ' ▴' : ' ▾'));
+    more.onclick = function () { nba.more = !nba.more; renderNba(); };
+    links.appendChild(more);
+    box.appendChild(links);
+    if (nba.more) {
+      var opts = el('div', { class: 'ppme-options' });
+      if (!finished && ['draft', 'research', 'memo'].indexOf(a.type) >= 0) {
+        opts.appendChild(option(N.asAgent, N.asAgentWhy(fmtEur(nba.agentCost)), function (b) { runAction(a, false, b, 'agent'); }));
+      }
+      if (acts.length > 1) opts.appendChild(option(N.other, N.otherWhy, function () { nba.index++; nba.more = false; renderNba(); }));
+      opts.appendChild(option(N.recompute, N.recomputeWhy(fmtEur(nba.cost)), function () { nba.more = false; proposeNext(); }));
+      box.appendChild(opts);
     }
-    foot.appendChild(document.createTextNode(N.est(fmtEur(a.est_eur), a.est_minutes || 5)));
-    box.appendChild(foot);
-    var head = Math.max(nba.head || 0, (state.head && state.head.n) || 0);
-    if (nba.data.base && head > nba.data.base) box.appendChild(el('p', { class: 'ppme-stale' }, N.stale(nba.data.base)));
-    var finished = nba.done && nba.done.action_id === a.id;
-    var codable = ['draft', 'research', 'memo'].indexOf(a.type) >= 0;
-    box.appendChild(bar([
-      finished ? btn(N.nextOne + (nba.cost ? ' · ≈ ' + fmtEur(nba.cost) + ' €' : ''), proposeNext, 'ppme-go')
-        : btn(N.doIt, function (b) { runAction(a, false, b, 'do'); }, 'ppme-go'),
-      !finished && codable ? btn(N.asAgent, function (b) { runAction(a, false, b, 'agent'); }, '', N.asAgentWhy(fmtEur(nba.agentCost))) : null,
-      acts.length > 1 ? btn(N.other, function () { nba.index++; renderNba(); }) : null,
-      btn('↻', proposeNext, 'ppme-icon', N.recompute)
-    ]));
+    if (!finished && (a.detail || n.signal_reason)) {
+      var det = el('details', { class: 'ppme-detail' });
+      det.appendChild(el('summary', {}, N.reasoning));
+      if (n.signal_reason) det.appendChild(el('p', {}, uncite(n.signal_reason)));
+      if (a.detail) det.appendChild(el('p', {}, uncite(a.detail)));
+      var secs = citedSections([a.detail, a.why, n.uncertainty, n.signal_reason].join(' '));
+      if (secs.length) {
+        var refs = el('p', { class: 'ppme-refs' }, N.inMemo);
+        secs.forEach(function (s) {
+          var b = el('button', { type: 'button', class: 'ppme-cite' }, sectionTitle(s.section));
+          b.onclick = function () { highlight(blockNode(s)); };
+          refs.appendChild(b);
+        });
+        det.appendChild(refs);
+      }
+      box.appendChild(det);
+    }
+    if ((n.catch_up || []).length) {
+      var cu = el('div', { class: 'ppme-catchup' });
+      cu.appendChild(el('span', {}, '📋 ' + N.catchUp));
+      n.catch_up.forEach(function (c) { cu.appendChild(stepLink(c.parcours_step, c.title, c.confirm)); });
+      box.appendChild(cu);
+    }
+    var head2 = Math.max(nba.head || 0, (state.head && state.head.n) || 0);
+    if (nba.data.base && head2 > nba.data.base) box.appendChild(el('p', { class: 'ppme-stale' }, N.stale(nba.data.base)));
   }
   function loadNext() {
     renderNba();
@@ -528,7 +634,6 @@
   }
   function proposeNext() {
     nba.runs.pending = { op: 'propose' };
-    nba.done = null;
     renderNba();
     api('/next', 'POST', {}).then(function (j) {
       delete nba.runs.pending;
@@ -548,13 +653,16 @@
           if (s.state === 'running' && ++tries < 450) { poll(); return; }
           delete nba.runs[rid];
           if (s.state === 'done' && s.next) {
-            nba.data = s.next; nba.index = 0; nba.done = null; nba.head = Math.max(nba.head, s.next.base || 0);
+            nba.data = s.next; nba.index = 0; nba.more = false; nba.head = Math.max(nba.head, s.next.base || 0);
           } else if (s.state === 'done') {
             if (s.message && chat.loaded) renderMessage(s.message);
-            nba.done = { title: info.title || '', action_id: info.action_id || '' };
+            if (info.action_id && nba.data) {
+              nba.data.done = { action_id: info.action_id, title: info.title || '', attached: s.attached || '', message: s.message || {} };
+            }
+            if (s.attached && window.StanJourney && window.StanJourney.reload) window.StanJourney.reload();
             // la carte du Parcours ou le Chat le montrent déjà : sinon, on prévient
             if (!shown(nba.box) && !(chat.loaded && shown(chat.list))) {
-              toast(N.ready(info.title || ''), [{ label: N.open, run: function () { openStan('chat'); } }]);
+              toast(N.ready(info.title || ''), [{ label: N.open, run: function () { openStan(info.action_id ? 'roadmap' : 'chat'); } }]);
             }
             if (s.op === 'build' || s.op === 'agent') { lib.data = null; if (lib.box && !lib.box.hidden) loadLibrary(); }
           } else {
@@ -581,7 +689,8 @@
       if (j.needs_confirm) { confirmIn(nba.box, j.est_eur, function () { runAction(a, true, null, mode); }); return; }
       if (!j.ok) { toast(N.failed + (j.detail || j.error || j.status)); return; }
       if (chat.loaded) (j.messages || []).forEach(renderMessage);
-      nba.done = null;
+      nba.more = false;
+      if (nba.data) nba.data.done = null;
       track(j.run_id, { op: mode === 'agent' ? 'build' : a.type, title: a.title, action_id: a.id });
     }).catch(function (e) { if (button) button.disabled = false; toast(N.failed + e); });
   }
@@ -595,6 +704,7 @@
     };
     box.appendChild(copy);
     if (m.notes) box.appendChild(el('p', { class: 'ppme-why' }, N.check + m.notes));
+    if (m.next_step) box.appendChild(el('p', { class: 'ppme-why' }, '👉 ' + N.yourTurn + m.next_step));
   }
   function renderResearch(box, m, title) {
     var byN = {};
@@ -957,7 +1067,7 @@
       '.ppj-shell .ppme-est{font-size:12px;color:#61708A;margin:4px 0 0}',
       '.ppj-shell .ppme-stale{font-size:12px;color:#7A5A00;margin:8px 0 0}',
       '.ppme-bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px}',
-      '.ppme-bar button,.ppme-nba-done button{border:1px solid #d9e5dd;background:#fff;color:#294137;border-radius:999px;padding:7px 13px;font:700 12px/1.3 system-ui;cursor:pointer}',
+      '.ppme-bar button{border:1px solid #d9e5dd;background:#fff;color:#294137;border-radius:999px;padding:7px 13px;font:700 12px/1.3 system-ui;cursor:pointer}',
       '.ppme-bar button:hover{background:#edf6f0}',
       '.ppme-bar .ppme-go{background:#12A150;color:#fff;border-color:#12A150}',
       '.ppme-bar .ppme-go:hover{background:#0E8A44}',
@@ -972,9 +1082,35 @@
       '.ppj-shell .ppme-improve textarea{margin:0}',
       // la prochaine action de Stan, dans la carte « Objectif closing » du Parcours
       '.ppj-quest:has(.ppme-nba.ppme-has-nba) .ppj-next-cta{display:none}',
-      '.ppme-nba{margin-top:14px;padding:12px 14px;border-radius:12px;background:#ffffff12;border:1px solid #ffffff2e;color:#fff;font-size:12.5px;line-height:1.45}',
-      '.ppme-nba .ppme-kicker{display:block;margin-bottom:6px;font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:#8FD8AF}',
-      '.ppme-nba-meta{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}',
+      '.ppme-nba{margin-top:14px;padding:14px 16px;border-radius:14px;background:#ffffff12;border:1px solid #ffffff2e;color:#fff;font-size:12.5px;line-height:1.55}',
+      '.ppme-nba-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 10px;margin-bottom:12px}',
+      '.ppme-nba .ppme-kicker{font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:#8FD8AF}',
+      '.ppme-nba-meta{display:flex;gap:6px;flex-wrap:wrap}',
+      '.ppme-main{margin:0 0 14px}',
+      '.ppj-shell .ppj-quest .ppme-nba p{margin:0 0 8px;line-height:1.55}',
+      '.ppme-nba .ppme-why strong,.ppme-nba .ppme-todo strong{color:#fff;font-weight:600}',
+      '.ppme-nba .ppme-cta{display:flex;width:100%;justify-content:center;align-items:center;gap:8px;margin:0;padding:12px 16px;border:1px solid #12A150;border-radius:12px;background:#12A150;color:#fff;font:700 13.5px/1.3 system-ui;cursor:pointer;box-shadow:0 4px 14px #12A15055}',
+      '.ppme-nba .ppme-cta:hover{background:#0E8A44;border-color:#0E8A44}',
+      '.ppme-nba .ppme-cta:disabled{opacity:.6;cursor:wait}',
+      '.ppme-links{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px;margin-top:12px}',
+      '.ppme-more{border:0;background:none;padding:0;color:#C5D4DF;font:600 12px system-ui;cursor:pointer}',
+      '.ppme-more:hover{color:#fff}',
+      '.ppme-options{display:grid;gap:6px;margin-top:10px}',
+      '.ppme-option{display:block;width:100%;text-align:left;padding:10px 12px;border:1px solid #ffffff24;border-radius:10px;background:#ffffff0f;color:#fff;font:inherit;cursor:pointer}',
+      '.ppme-option:hover{background:#ffffff1c}',
+      '.ppme-option:disabled{opacity:.55;cursor:wait}',
+      '.ppme-option strong{display:block;font-size:12.5px;color:#fff}',
+      '.ppme-refs .ppme-cite{margin:2px 6px 2px 0}',
+      '.ppme-option small{display:block;margin-top:2px;font-size:11.5px;line-height:1.45;color:#C5D4DF}',
+      '.ppme-detail{margin-top:12px;padding-top:10px;border-top:1px solid #ffffff1f}',
+      '.ppj-shell .ppj-quest .ppme-detail>summary{font-size:12px!important;font-weight:600;color:#C5D4DF;cursor:pointer}',
+      '.ppj-shell .ppj-quest .ppme-detail p{margin:8px 0 0;color:#C5D4DF;font-size:12px}',
+      '.ppme-catchup{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin-top:12px;padding-top:10px;border-top:1px solid #ffffff1f;font-size:12px;color:#C5D4DF}',
+      '.ppme-catchup>span{flex-basis:100%}',
+      '.ppme-done-k{display:block;margin-bottom:4px;font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:#8FD8AF}',
+      '.ppme-result{max-height:240px;overflow:auto;white-space:pre-wrap;margin:8px 0 2px;padding:10px 12px;border:1px solid #ffffff1f;border-radius:10px;background:#ffffff10;color:#fff;font-size:12.5px;line-height:1.55}',
+      '.ppj-shell .ppj-quest .ppme-todo{margin:12px 0 0;color:#E8F0F5}',
+      '.ppj-shell .ppj-quest .ppme-attached{margin:6px 0 12px;color:#C9F5DA;font-size:12px}',
       '.ppme-nba .ppme-chip{font-size:11px;font-weight:700;border-radius:999px;padding:2px 9px;background:#ffffff1f;color:#fff}',
       '.ppme-nba .ppme-chip.sig-go{background:#12A15055;color:#C9F5DA}',
       '.ppme-nba .ppme-chip.sig-wait{background:#E0A52655;color:#FFE6B0}',
@@ -982,17 +1118,18 @@
       '.ppj-shell .ppj-quest .ppme-nba p{margin:0 0 6px}',
       '.ppj-shell .ppme-nba .ppme-unc,.ppj-shell .ppme-nba .ppme-why{color:#C5D4DF;font-size:12.5px}',
       '.ppme-nba .ppme-unc strong{color:#fff}',
-      '.ppme-nba .ppme-act-type{display:block;font-size:11px;font-weight:700;color:#8FD8AF}',
-      '.ppme-nba .ppme-act-title{display:block;margin:2px 0 4px;font-size:15px;line-height:1.3;color:#fff}',
+      '.ppme-nba .ppme-act-type{display:block;margin-bottom:4px;font-size:11px;font-weight:700;color:#8FD8AF}',
+      '.ppme-nba .ppme-act-title{display:block;margin:0 0 10px;font-size:16px;line-height:1.35;color:#fff}',
       '.ppj-shell .ppme-nba .ppme-est{font-size:11.5px;color:#9FB3C2}',
       '.ppme-nba .ppme-step{border:0;background:none;padding:0;color:#8FD8AF;font:600 11.5px system-ui;text-decoration:underline;cursor:pointer;text-align:left}',
       '.ppj-shell .ppme-nba .ppme-stale{color:#FFE6B0}',
       '.ppj-shell .ppme-nba .ppme-wait{color:#C5D4DF}',
       '.ppme-nba .ppme-cite{background:#ffffff1f;color:#fff}',
-      '.ppj-shell .ppme-nba-run{color:#C9F5DA;font-weight:600}',
-      '.ppme-nba-done{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 8px;padding:8px 10px;border-radius:10px;background:#12A15033;color:#C9F5DA;font-weight:600}',
-      '.ppme-nba .ppme-bar button,.ppme-nba-done button{border-color:#ffffff33;background:#ffffff14;color:#fff}',
-      '.ppme-nba .ppme-bar button:hover,.ppme-nba-done button:hover{background:#ffffff26}',
+      '.ppme-nba-run{margin:0 0 12px;padding:10px 12px;border-radius:10px;background:#ffffff12}',
+      '.ppme-nba-run strong{display:block;color:#C9F5DA}',
+      '.ppme-nba-run small{display:block;margin-top:2px;color:#9FB3C2;font-size:11.5px}',
+      '.ppme-nba .ppme-bar button{border-color:#ffffff33;background:#ffffff14;color:#fff}',
+      '.ppme-nba .ppme-bar button:hover{background:#ffffff26}',
       '.ppme-nba .ppme-bar .ppme-go{background:#12A150;border-color:#12A150;box-shadow:0 4px 14px #12A15055}',
       '.ppme-nba .ppme-icon{min-width:34px;padding:7px 10px}',
       '.ppme-nba .ppme-confirm{background:#ffffff1a;color:#fff}',

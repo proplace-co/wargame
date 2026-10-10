@@ -15,7 +15,7 @@
   if (!demo && !document.getElementById('ppme-script')) {
     var memoEditor = document.createElement('script');
     memoEditor.id = 'ppme-script';
-    memoEditor.src = assetBase + 'memo-editor.js?v=4';
+    memoEditor.src = assetBase + 'memo-editor.js?v=5';
     memoEditor.defer = true;
     document.head.appendChild(memoEditor);
   }
@@ -440,11 +440,13 @@
     }
     if (plan.after.length && (!filter || AFTER_CLOSING.indexOf(filter) >= 0)) html += afterSequence(plan, showAfter);
     html += '<footer class="ppj-footer">' + button('Exporter le dossier d’audit', '', 'export') + button('Réglages et conservation', '', 'settings') + '</footer>';
+    // 10/10 — le budget d'analyse ne s'affiche plus en vitrine : une note discrète, une fois engagé
+    var used = (state.budget.spent || 0) + (state.budget.reserved || 0);
+    if (used > 0) html += '<p class="ppj-muted ppj-budget-note">Analyses du Parcours engagées sur ce dossier : ' + euro(used) + '.</p>';
     return html;
   }
   function quest(plan) {
     var next = plan.next, wins = quickWins(plan), meta = momentum() + closingTarget();
-    var remaining = state.budget.remaining == null ? 5 - state.budget.spent - state.budget.reserved : state.budget.remaining;
     return '<section class="ppj-overview ppj-quest"><div class="ppj-quest-top">' + ring(plan.pct) +
       '<div class="ppj-quest-text"><span class="ppj-quest-kicker">Objectif closing</span><h3>' + esc(cheerLine(plan)) + '</h3>' +
       '<p class="ppj-quest-stats"><b>' + plan.done + ' / ' + plan.total + '</b> étapes cochées' + (plan.left ? ' · plus que <b>' + plan.left + '</b> avant le closing' : '') + '</p>' +
@@ -454,8 +456,7 @@
       (wins.length ? '<div class="ppj-missions"><span class="ppj-missions-t">À cocher maintenant</span>' + wins.map(function (w) {
         return '<button type="button" class="ppj-mission" data-do="goto" data-id="' + w.a.id + '"><span class="ppj-tick" data-state="' + w.state + '" aria-hidden="true">' + stepIcons[w.state] + '</span>' +
           '<span class="ppj-mission-text"><b>' + esc(w.a.title) + '</b><small>' + w.why + '</small></span><span aria-hidden="true">→</span></button>';
-      }).join('') + '</div>' : '') +
-      '<small class="ppj-quest-budget">Budget Stan : ' + euro(remaining) + ' disponibles sur 5 € · ' + euro(state.budget.reserved) + ' réservés · mémo et experts hors budget</small></section>';
+      }).join('') + '</div>' : '') + '</section>';
   }
   function stepper(plan) {
     var html = '<nav class="ppj-phase-nav ppj-stepper" aria-label="Jalons jusqu’au closing">';
@@ -740,7 +741,10 @@
       }
     } catch (error) { announce(error.message, true); b.disabled = false; }
   }
-  window.StanJourney = { open: open, addView: addView, addSlot: addSlot, showAction: function (id) { active = id; filter = ''; open('roadmap'); }, getState: function () { return demo ? state : null; } };
+  window.StanJourney = { open: open, addView: addView, addSlot: addSlot,
+    // une pièce déposée par Stan (prochaine action) : le Parcours se met à jour
+    reload: function () { if (!demo && state && !openingDossier) refresh(false).catch(function () {}); },
+    showAction: function (id) { active = id; filter = ''; open('roadmap'); }, getState: function () { return demo ? state : null; } };
   if (!demo) window.addEventListener('message', function (e) {
     if (loginFrame && e.source === loginFrame.contentWindow && e.origin === 'https://proplace.co'
         && e.data && e.data.channel === loginChannel) {
