@@ -11,6 +11,14 @@
   var API = 'https://alexandre-79537--stan-journey-web.modal.run';
   var record = context.airtable_record || context.deal_id;
   var demo = !!window.__STAN_JOURNEY_DEMO__;
+  // 10/10 — mémo modifiable par l'équipe du fonds (versions privées) : un seul chargement
+  if (!demo && !document.getElementById('ppme-script')) {
+    var memoEditor = document.createElement('script');
+    memoEditor.id = 'ppme-script';
+    memoEditor.src = assetBase + 'memo-editor.js?v=1';
+    memoEditor.defer = true;
+    document.head.appendChild(memoEditor);
+  }
   var state = null, pane = 'roadmap', active = '', filter = '', search = '', poll = null, running = false, pendingResult = '';
   var selected = new Set(), key = '', accessToken = '', memberSession = '', accessPending = null, shell, content, statusLine, fab, opened = false, pendingDossier = null, reconnectNeeded = false, reconnectNotice;
   var loginFrame = null, loginChannel = '', loginDialog = null, loginOpener = null, loginTimer = null;
