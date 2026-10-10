@@ -44,7 +44,7 @@
     title: 'Versions du mémo', sections: 'sections'
   };
   var state = { head: null, role: '', email: '', editing: false, open: null, preview: 0 };
-  window.PPMemoEditor = { version: 5, state: state };
+  window.PPMemoEditor = { version: 6, state: state };
 
   function el(tag, attrs, text) {
     var node = document.createElement(tag);
@@ -967,6 +967,56 @@
     SJ.open(chat.list ? view : 'roadmap');
   }
 
+  /* ── Dossier comité : la version ACTUELLE du mémo, en PDF A4 (10/10) ───────────────
+   * La page affiche déjà la dernière version de l'équipe ; l'impression en retire la
+   * barre latérale et les panneaux, ouvre les parties repliées et pose une page de garde. */
+  var P = en ? {
+    btn: '📄 PDF', title: 'Committee pack: the current version of the memo, as an A4 PDF', kicker: 'INVESTMENT COMMITTEE PACK',
+    version: function (n, who, at) { return 'Version ' + n + ' — edited by ' + who + (at ? ', ' + at : ''); },
+    published: function (at) { return 'Memo published' + (at ? ' — ' + at : ''); },
+    file: function (name, n) { return 'Committee pack — ' + name + (n ? ' — v' + n : ''); }
+  } : {
+    btn: '📄 PDF', title: 'Dossier comité : la version actuelle du mémo, en PDF A4', kicker: 'DOSSIER COMITÉ',
+    version: function (n, who, at) { return 'Version ' + n + ' — modifiée par ' + who + (at ? ', le ' + at : ''); },
+    published: function (at) { return 'Mémo publié' + (at ? ' — ' + at : ''); },
+    file: function (name, n) { return 'Dossier comité — ' + name + (n ? ' — v' + n : ''); }
+  };
+  function imagesReady(root, ms) {
+    var waiting = Array.prototype.filter.call(root.querySelectorAll('img'), function (i) { return !i.complete; });
+    var loads = waiting.map(function (i) {
+      return new Promise(function (ok) { i.addEventListener('load', ok, { once: true }); i.addEventListener('error', ok, { once: true }); });
+    });
+    return Promise.race([Promise.all(loads), new Promise(function (ok) { setTimeout(ok, ms); })]);
+  }
+  function printPack() {
+    var named = document.querySelector('.sidebar-company-name');
+    var name = String(ctx.name || ctx.company_name || (named && named.textContent) || '').trim();
+    var head = state.head || {};
+    var cover = el('section', { class: 'ppme-print-cover' });
+    cover.appendChild(el('span', { class: 'ppme-print-k' }, 'PROPLACE · ' + P.kicker));
+    cover.appendChild(el('h1', {}, name));
+    if (head.n) cover.appendChild(el('p', {}, head.kind === 'generated' ? P.published(when(head.at)) : P.version(head.n, shortWho(head.by), when(head.at))));
+    area.insertBefore(cover, area.firstChild);
+    // comme le dossier comité du cockpit : l'analyse d'abord, la fiche contact en dernier
+    var contact = document.getElementById('fiche-contact') || document.getElementById('fiche-attaque');
+    var place = contact && { parent: contact.parentNode, next: contact.nextSibling };
+    if (contact) area.appendChild(contact);
+    var closed = Array.prototype.filter.call(area.querySelectorAll('details'), function (d) { return !d.open; });
+    closed.forEach(function (d) { d.open = true; });
+    Array.prototype.forEach.call(area.querySelectorAll('img[loading="lazy"]'), function (i) { i.loading = 'eager'; });
+    var title = document.title;
+    document.title = P.file(name, head.n);
+    function restore() {
+      cover.remove();
+      if (place) place.parent.insertBefore(contact, place.next);
+      closed.forEach(function (d) { d.open = false; });
+      document.title = title;
+      window.removeEventListener('afterprint', restore);
+    }
+    window.addEventListener('afterprint', restore);
+    imagesReady(area, 8000).then(function () { window.print(); });
+  }
+
   function buildPill() {
     if (document.querySelector('.ppme-pill')) return;
     var pill = el('div', { class: 'ppme-pill' });
@@ -982,8 +1032,11 @@
       decorate();
     };
     versions.onclick = openVersions;
+    var pdf = el('button', { type: 'button', title: P.title, 'aria-label': P.title }, P.btn);
+    pdf.onclick = printPack;
     pill.appendChild(edit);
     pill.appendChild(versions);
+    pill.appendChild(pdf);
     document.body.appendChild(pill);
   }
   function checkAccess() {
@@ -1135,7 +1188,25 @@
       '.ppme-nba .ppme-confirm{background:#ffffff1a;color:#fff}',
       // la pilule du mémo s'efface quand le panneau Stan couvre toute la page
       '@media (max-width:650px){body:has(#stan-sidebar:not([hidden])) .ppme-pill{display:none}.ppme-pill{left:12px;bottom:74px}.ppme-pill button{padding:7px 11px;font-size:12px}}',
-      'body:has(#stan-sidebar.ppj-full:not([hidden])) .ppme-pill{display:none}'
+      'body:has(#stan-sidebar.ppj-full:not([hidden])) .ppme-pill{display:none}',
+      // le dossier comité imprimé : la version actuelle, sans barre latérale ni panneaux
+      '.ppme-print-cover{display:none}',
+      '@media print{@page{size:A4;margin:14mm 12mm 16mm}'
+        + 'html,body{background:#fff!important}'
+        + '.sidebar,.ppme-pill,.ppme-ui,.ppme-toast,.ppme-modal,.ppme-badge,.ppme-edit,#stan-sidebar,#stan-fabBtn,.ppj-shell,.ppj-fab,[id^="pp-rdv"],[class^="pp-rdv"]{display:none!important}'
+        + '.main-wrapper{display:block!important;margin:0!important;padding:0!important}'
+        + '.content-area{margin:0!important;padding:0!important;width:auto!important;max-width:none!important;overflow:visible!important}'
+        + '.section-container{box-shadow:none!important;break-inside:auto}'
+        + 'h1,h2,h3,h4,.section-title{break-after:avoid}'
+        + 'img,table,figure,svg,canvas,blockquote{break-inside:avoid}'
+        + '#due-diligence,#portfolio-management{display:none!important}'
+        + 'table{width:100%!important;max-width:100%!important;table-layout:auto!important}'
+        + 'td,th{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word}'
+        + '.section-container,.section-container *{overflow:visible!important}'
+        + '.ppme-print-cover{display:block!important;margin:0 0 10mm;padding:0 0 6mm;border-bottom:2px solid #12A150}'
+        + '.ppme-print-cover h1{font-size:26px;margin:4px 0 6px}'
+        + '.ppme-print-cover p{margin:0;color:#4B5E78;font-size:12px}'
+        + '.ppme-print-k{font-size:10px;letter-spacing:.16em;font-weight:700;color:#0E6B37}}'
     ].join('\n');
     document.head.appendChild(css);
   }
