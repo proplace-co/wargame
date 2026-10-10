@@ -257,11 +257,18 @@
     while (b.parentElement && b.parentElement !== sec && b.parentElement.children.length === 1 && b.parentElement.matches(WRAP)) b = b.parentElement;
     return b;
   }
+  // un îlot dans une ligne de texte (le lien « cliquant ici › » qui ouvre Stan) : le bloc, c'est
+  // le paragraphe qui le contient ; un îlot qui occupe sa ligne (la carte mentale) est un bloc
+  function islandBlock(island, sec) {
+    var outer = island.parentElement && island.parentElement.closest(BLOC);
+    var inline = /^inline/.test(window.getComputedStyle(island).display);
+    return inline && outer && outer !== sec && sec.contains(outer) ? englobant(outer, sec) : island;
+  }
   function blockOf(node, sec) {
     var b = node && node.closest ? node.closest(BLOC) : null;
     if (!b || !sec.contains(b) || b === sec) return null;
     var island = b.closest('[data-pp-island]');
-    if (island && sec.contains(island)) return island;
+    if (island && sec.contains(island)) return islandBlock(island, sec);
     return englobant(b, sec);
   }
   function finOf(node, sec) {
@@ -995,7 +1002,7 @@
       var outer = cand && cand.closest('table, ul, ol');
       if (outer && sec.contains(outer)) cand = outer;
       var island = cand && cand.closest('[data-pp-island]');
-      if (island) cand = island;
+      if (island && sec.contains(island)) cand = islandBlock(island, sec);
       if (!cand || cand === sec || !sec.contains(cand)) {
         var title = t.closest('.section-title');
         return title && sec.contains(title) ? { ref: title, after: true } : null;
