@@ -15,7 +15,7 @@
   if (!demo && !document.getElementById('ppme-script')) {
     var memoEditor = document.createElement('script');
     memoEditor.id = 'ppme-script';
-    memoEditor.src = assetBase + 'memo-editor.js?v=9';
+    memoEditor.src = assetBase + 'memo-editor.js?v=10';
     memoEditor.defer = true;
     document.head.appendChild(memoEditor);
   }
@@ -348,7 +348,7 @@
     // A cached legacy editor may initialize just before this production widget.
     // The supported dossier workflow now owns edits; remove its obsolete UI.
     ['plEditor', 'plModal'].forEach(function (id) { var old = document.getElementById(id); if (old) old.remove(); });
-    var css = el('link', { rel: 'stylesheet', href: assetBase + 'stan-journey.css?v=10' }); document.head.appendChild(css);
+    var css = el('link', { rel: 'stylesheet', href: assetBase + 'stan-journey.css?v=11' }); document.head.appendChild(css);
     fab = el('button', { id: 'stan-fabBtn', type: 'button', class: 'ppj-fab' + (demo ? ' ppj-demo-fab' : ''), 'aria-label': 'Stan Beta — ouvrir Parcours' }, 'Stan β · Parcours');
     fab.onclick = function () { open('roadmap'); };
     shell = el('aside', { id: 'stan-sidebar', class: 'ppj-shell', 'aria-label': 'Parcours du dossier' }); shell.hidden = true;

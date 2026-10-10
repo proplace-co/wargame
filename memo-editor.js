@@ -22,6 +22,9 @@
   if (!/^rec[a-zA-Z0-9]{10,30}$/.test(record)) return;
   var API = (window.__PP_MEMO_EDITS_API__ || 'https://alexandre-79537--memo-edits-fastapi-app.modal.run') + '/memos/' + record;
   var en = (document.documentElement.lang || 'fr').toLowerCase().indexOf('en') === 0;
+  // 10/10 — l'onglet Mémo du cockpit montre CETTE page, intégrée (?embed=cockpit) : même éditeur,
+  // sans barre latérale ni bouton Stan ; le contenu du dossier passe dans la barre (☰ Plan)
+  var EMBED = /[?&]embed=cockpit(&|$)/.test(location.search);
   var T = en ? {
     error: 'Could not save: ', close: 'Close',
     memoK: 'The memo', directHint: 'The memo is edited right in the page, like the committee pack: editing bar at the top, dossier contents on the left. Every save is a version.',
@@ -48,7 +51,7 @@
     conflict: function (by) { return 'Le mémo a été modifié par ' + by + ' entre-temps : rechargez la dernière version.'; }
   };
   var state = { head: null, role: '', email: '', company: '', fund: '', preview: 0 };
-  window.PPMemoEditor = { version: 8, state: state };
+  window.PPMemoEditor = { version: 8, state: state, embed: EMBED };
 
   function el(tag, attrs, text) {
     var node = document.createElement(tag);
@@ -182,7 +185,7 @@
     reading: 'Preview — the memo as your readers see it.', island: 'Chart or code from the original memo: it can be moved or removed, not edited here.',
     conflict: function (who, what) { return who + ' changed ' + what + ' in the meantime.'; }, plan: 'the outline of the memo',
     theirs: 'Take their version', mine: 'Keep mine', open: '↗ Open', editLink: '✎ Edit', unlink: '✕ Unlink',
-    versionsHint: 'All versions: Stan panel, History tab', leave: 'Changes are still being saved.'
+    versionsHint: 'All versions: Stan panel, History tab', leave: 'Changes are still being saved.', outline: 'Outline'
   } : {
     bar: 'Édition du mémo', rail: 'Contenu du dossier', railHint: 'Cochée = dans le PDF · glissez ⋮⋮ pour réordonner · cliquez pour y aller',
     cover: 'Page de garde', addSection: '＋ Ajouter une section', addAfter: 'Ajouter une section après',
@@ -205,7 +208,7 @@
     reading: 'Aperçu — le mémo tel que le lisent vos lecteurs.', island: 'Graphique ou code du mémo d’origine : il se déplace ou se retire, il ne se modifie pas ici.',
     conflict: function (who, what) { return who + ' a modifié ' + what + ' entre-temps.'; }, plan: 'le plan du mémo',
     theirs: 'Prendre sa version', mine: 'Garder la mienne', open: '↗ Ouvrir', editLink: '✎ Modifier', unlink: '✕ Retirer le lien',
-    versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'Des modifications sont encore en cours d’enregistrement.'
+    versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'Des modifications sont encore en cours d’enregistrement.', outline: 'Plan'
   };
   var BLOC = ['[data-pp-island]', '.pp-team-note', '.table-container', '.memo-table-fallback', 'table', '.swot-item', '.sg-box',
     '.neg-gauge', '.neg-verdict', '.neg-args', '.disclaimer-box', '.takeaway-box', '.angle-deep-dive', '.scen-logic-grid',
@@ -330,6 +333,7 @@
       enterEditing();
       window.scrollTo(0, y);
       renderMemoBox();
+      tellCockpit(j);
       return true;
     }).catch(function () { doc.loading = false; return false; });
   }
@@ -571,9 +575,18 @@
     return doc.saving;
   }
   // l'état du serveur après un enregistrement (ou une resynchronisation)
+  function tellCockpit(h) {
+    if (!EMBED || window.parent === window || !h || !h.n) return;
+    var m = /^(https:\/\/(www\.)?proplace\.co|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)(\/|$)/.exec(document.referrer || '');
+    if (!m) return;
+    try {
+      window.parent.postMessage({ type: 'proplace:memo:saved', record: record, n: h.n, by: h.by || '', at: h.at || '', kind: h.kind || '' }, m[1]);
+    } catch (_) { /* fenêtre parente fermée */ }
+  }
   function adoptServer(j) {
     state.head = j;
     setPageVersion(j.n);
+    tellCockpit(j);
     doc.hashes = j.hashes || doc.hashes;
     doc.order = j.order || doc.order;
     Object.keys(j.print || {}).forEach(function (id) {
@@ -676,6 +689,7 @@
         return x;
       };
       var sep = function (cls) { into.appendChild(el('span', { class: 'ppme-sep ' + (cls || '') })); };
+      if (EMBED) { add('plan', '☰ ' + D.outline, D.rail, 'ppme-planbtn'); sep(); }
       add('bold', '<b>G</b>', D.bold, 'ppme-edonly');
       add('italic', '<i>I</i>', D.italic, 'ppme-edonly');
       add('list', '• ' + D.listLbl, D.list, 'ppme-edonly');
@@ -701,9 +715,14 @@
       });
       b.addEventListener('click', barClick);
       doc.bar = b;
+      // la barre suit SA largeur (page du mémo, onglet du cockpit) : étroite, deux lignes nettes
+      if (window.ResizeObserver) new ResizeObserver(fitBar).observe(b);
     }
     if (doc.bar.parentNode !== area || area.firstChild !== doc.bar) area.insertBefore(doc.bar, area.firstChild);
     updateBar();
+  }
+  function fitBar() {
+    if (doc.bar) doc.bar.classList.toggle('ppme-narrow', doc.bar.clientWidth < 920 && window.innerWidth > 640);
   }
   function barHint(text) {
     var h = doc.bar && doc.bar.querySelector('.ppme-hintx');
@@ -741,6 +760,7 @@
     if (cmd === 'undo') { undo(); return; }
     if (cmd === 'redo') { redo(); return; }
     if (cmd === 'status') { if (doc.state === 'error') save(); else openVersions(); return; }
+    if (cmd === 'plan') { doc.railOpen = !doc.railOpen; renderRail(); return; }
     var sec = secOf(caretEl());
     if (cmd === 'section') { addSection(sec ? sec.id : null); return; }
     if (!sec) { barHint(D.where); return; }
@@ -1064,11 +1084,17 @@
       doc.rail.addEventListener('drop', railDrop);
       doc.rail.addEventListener('dragend', railDragEnd);
     }
-    if (sb && doc.rail.parentNode !== sb) {
-      var fund = sb.querySelector(':scope > .sidebar-fund-link');
-      sb.insertBefore(doc.rail, fund ? fund.nextSibling : sb.firstChild);
-    } else if (!sb && !doc.rail.parentNode) area.parentNode.insertBefore(doc.rail, area);
-    doc.rail.hidden = false;
+    if (EMBED) {
+      if (doc.bar && doc.rail.parentNode !== doc.bar) doc.bar.appendChild(doc.rail);
+      doc.rail.classList.add('ppme-railpop');
+      doc.rail.hidden = !doc.railOpen;
+    } else {
+      if (sb && doc.rail.parentNode !== sb) {
+        var fund = sb.querySelector(':scope > .sidebar-fund-link');
+        sb.insertBefore(doc.rail, fund ? fund.nextSibling : sb.firstChild);
+      } else if (!sb && !doc.rail.parentNode) area.parentNode.insertBefore(doc.rail, area);
+      doc.rail.hidden = false;
+    }
     var r = doc.rail;
     r.innerHTML = '';
     var h = el('div', { class: 'ppme-rail-h' });
@@ -1108,6 +1134,7 @@
     var id = go.getAttribute('data-go');
     var target = !id ? area : id === 'fiche-contact' ? contactCard() : byId(id);
     if (target) target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    if (EMBED) { doc.railOpen = false; doc.rail.hidden = true; }
   }
   function railChange(e) {
     var cb = e.target.closest('input[data-pdf]');
@@ -1308,6 +1335,12 @@
   });
   window.addEventListener('resize', function () { hideTools(); closeMenu(); });
   document.addEventListener('mouseup', function () { if (!doc.drag) doc.pressed = null; });
+  document.addEventListener('mousedown', function (e) {
+    if (!EMBED || !doc.railOpen || !doc.rail || doc.rail.contains(e.target)) return;
+    if (e.target.closest && e.target.closest('[data-cmd="plan"], .ppme-menu')) return;
+    doc.railOpen = false;
+    doc.rail.hidden = true;
+  });
   window.addEventListener('beforeunload', function (e) {
     if (doc.on && (doc.saving || payload())) { save(); e.preventDefault(); e.returnValue = D.leave; }
   });
@@ -2196,6 +2229,9 @@
       '.ppme-dbar-tools{display:flex;flex-wrap:wrap;align-items:center;gap:2px;flex:1 1 auto;min-width:0}',
       '.ppme-dbar-side{display:flex;align-items:center;gap:2px;flex:0 0 auto;margin-left:6px}',
       '.ppme-sep{width:1px;height:20px;background:#D5DDE7;margin:0 3px}',
+      '.ppme-dbar.ppme-narrow{flex-wrap:wrap;row-gap:4px}',
+      '.ppme-dbar.ppme-narrow .ppme-dbar-tools{flex:1 1 100%}',
+      '.ppme-dbar.ppme-narrow .ppme-dbar-side{margin-left:auto}',
       '.ppme-dbar .ppme-st{font-size:11px;font-weight:600;color:#0E7F3F;padding:6px 3px}',
       '.ppme-dbar .ppme-st.dirty,.ppme-dbar .ppme-st.saving{color:#5B6B82}',
       '.ppme-dbar .ppme-st.error,.ppme-dbar .ppme-st.conflict{color:#B45309}',
@@ -2237,7 +2273,8 @@
       '.ppme-rail li.ppme-over-bottom{box-shadow:inset 0 -2px 0 #12A150}',
       '.ppme-rgrip{flex:none;width:12px;color:#9AA7B8;font-size:11px;line-height:18px;cursor:grab;user-select:none;letter-spacing:-2px}',
       '.ppme-rail input{flex:none;width:14px;height:14px;margin:2px 0 0;accent-color:#12A150;cursor:pointer}',
-      '.ppme-rail-t{flex:1;min-width:0;padding:0;border:0;background:none;font:inherit;font-size:12.5px;line-height:1.35;text-align:left;color:#3B4A61;cursor:pointer;overflow-wrap:anywhere}',
+      '.ppme-rail-t{flex:1;min-width:0;padding:0;border:0;background:none;font:inherit;font-size:12.5px;line-height:1.35;text-align:left;color:#3B4A61;cursor:pointer;overflow-wrap:break-word}',
+      '.ppme-rail,.ppme-rail *{hyphens:none!important;-webkit-hyphens:none!important;word-break:normal!important}',
       '.ppme-rail-t:hover{color:#0E7F3F;text-decoration:underline}',
       '.ppme-rail li.off .ppme-rail-t{color:#9AA7B8;text-decoration:line-through}',
       '.ppme-rail li.fixed .ppme-rail-t{font-weight:600;color:#0F1D33}',
@@ -2405,6 +2442,21 @@
     document.head.appendChild(css);
   }
 
+  function injectEmbedCss() {
+    if (!EMBED || document.getElementById('ppme-embed-css')) return;
+    document.documentElement.classList.add('ppme-embed');
+    var css = el('style', { id: 'ppme-embed-css' });
+    css.textContent = [
+      '.ppme-embed .sidebar,.ppme-embed #stan-fabBtn,.ppme-embed .ppj-fab{display:none!important}',
+      '.ppme-embed .main-wrapper{display:block!important;padding:0!important;margin:0!important;max-width:none!important}',
+      '.ppme-embed .content-area{padding:10px 14px 48px!important;margin:0!important;max-width:none!important;width:auto!important}',
+      '.ppme-embed .ppme-dbar{top:0!important}',
+      '.ppme-railpop{position:absolute;top:calc(100% + 6px);left:6px;z-index:906;width:min(340px,calc(100vw - 28px));max-height:min(70vh,560px);overflow:auto;margin:0!important;box-shadow:0 12px 30px rgba(15,29,51,.2)!important}',
+      '.ppme-dbar .ppme-planbtn{font-weight:700}'
+    ].join('\n');
+    document.head.appendChild(css);
+  }
+  injectEmbedCss();
   syncLatest().then(checkAccess);
   // connexion faite dans le panneau Stan (cookie posé) : l'édition s'ouvre au retour
   window.addEventListener('focus', checkAccess);
