@@ -44,7 +44,7 @@
     title: 'Versions du mémo', sections: 'sections'
   };
   var state = { head: null, role: '', email: '', editing: false, open: null, preview: 0 };
-  window.PPMemoEditor = { version: 3, state: state };
+  window.PPMemoEditor = { version: 4, state: state };
 
   function el(tag, attrs, text) {
     var node = document.createElement(tag);
@@ -284,19 +284,19 @@
   /* ── Stan chat : réponses et modifications proposées, validées par l'équipe ── */
   var BLOCKS = 'p, li, h3, h4, tr, blockquote, figcaption';
   var C = en ? {
-    chat: '💬 Stan', title: 'Stan · Chat', hint: 'Ask anything about this deal. When a change to the memo is useful, Stan proposes it — you approve.',
+    chat: '💬 Stan', tab: 'Chat', hint: 'Ask anything about this deal. Stan answers, proposes memo changes you approve, and the results of his actions land here.',
     placeholder: 'e.g. “Rewrite the verdict with what we learned on the call: the CEO wants to sell in 2027”',
     send: 'Send', thinking: 'Stan is thinking…', accept: 'Accept', decline: 'Decline', view: 'Show in memo',
     accepted: 'Accepted', declined: 'Declined', applied: function (n) { return 'Stan’s change applied — version ' + n + '.'; },
     actions: { replace: 'Rewrite', insert_after: 'Add after', 'delete': 'Remove' }, you: 'You', cost: 'cost'
   } : {
-    chat: '💬 Stan', title: 'Stan · Chat', hint: 'Demandez n’importe quoi sur ce dossier. Quand une modification du mémo est utile, Stan la propose — vous validez.',
+    chat: '💬 Stan', tab: 'Chat', hint: 'Demandez n’importe quoi sur ce dossier : Stan répond, propose des modifications du mémo que vous validez, et les résultats de ses actions arrivent ici.',
     placeholder: 'ex. « Réécris le verdict avec ce qu’on a appris à l’appel : le dirigeant veut céder en 2027 »',
     send: 'Envoyer', thinking: 'Stan réfléchit…', accept: 'Accepter', decline: 'Refuser', view: 'Voir dans le mémo',
     accepted: 'Acceptée', declined: 'Refusée', applied: function (n) { return 'Modification de Stan appliquée — version ' + n + '.'; },
     actions: { replace: 'Réécrire', insert_after: 'Ajouter après', 'delete': 'Retirer' }, you: 'Vous', cost: 'coût'
   };
-  var chat = { panel: null, list: null, decisions: {} };
+  var chat = { list: null, input: null, loaded: false, decisions: {} };
   function sectionTitle(id) {
     var t = document.querySelector('#' + CSS.escape(id) + ' .section-title, #' + CSS.escape(id) + ' h2');
     return t ? t.textContent.trim() : id;
@@ -367,43 +367,57 @@
     else if (m.kind === 'research') renderResearch(box, m, m.action && m.action.title);
     else if (m.kind === 'agent_draft') renderAgentDraft(box, m);
     else if (m.kind === 'agent_result') renderAgentResult(box, m);
-    else if (m.kind === 'next_action') box.appendChild(el('div', { class: 'ppme-text' }, '🎯 ' + N.did + ((m.action && m.action.title) || m.text || '')));
+    else if (m.kind === 'next_action') box.appendChild(el('div', { class: 'ppme-text' }, '🎯 ' + (m.action && m.action.mode === 'agent' ? N.didAgent : N.did)
+      + ((m.action && m.action.title) || m.text || '')));
     else if (m.kind === 'agent_build' || m.kind === 'agent_run') box.appendChild(el('div', { class: 'ppme-text' }, (m.kind === 'agent_build' ? '🛠️ ' : '🧩 ') + (m.text || '')));
     else box.appendChild(el('div', { class: 'ppme-text' }, m.text || ''));
     (m.proposals || []).forEach(function (p) { box.appendChild(proposalCard(p)); });
     chat.list.appendChild(box);
     chat.list.scrollTop = chat.list.scrollHeight;
   }
-  /* ── Prochaine action : la plus utile maintenant, réalisée par Stan sur « Faisons-le » ── */
+  /* ── Prochaine action : la « Prochaine étape » du Parcours, choisie par Stan ─────────
+   * Stan lit tout le mémo, ses versions, vos échanges et le Parcours, choisit l'action qui
+   * a le plus d'impact et la rattache à l'étape du Parcours qu'elle fait avancer.
+   * « Faisons-le » la réalise ; « En faire un agent » la confie à un agent codé sur mesure,
+   * rangé ensuite dans la Librairie. Les résultats arrivent dans l'onglet Chat. */
   var N = en ? {
-    title: '🎯 Next best action', loading: 'Loading…',
-    empty: 'Stan reads the whole memo, its versions, your exchanges and the deal progress, then proposes the single action with the most impact now — and does it.',
-    propose: 'Propose the next action', computing: 'Stan is studying the memo, its history and the deal progress… (1 to 3 min)',
-    uncertainty: 'Key uncertainty', doIt: 'Let’s do it', other: 'Another idea', recompute: 'Recompute',
-    running: 'In progress: ', stale: function (n) { return 'Proposed on version ' + n + ': the memo has changed since.'; },
+    kicker: 'Next action · Stan', loading: 'Loading…',
+    ask: 'Ask Stan for the best next action',
+    askWhy: 'Stan reads the whole memo, its versions, your exchanges and this journey, then picks the action with the most impact now — and does it.',
+    computing: 'Stan is studying the memo, its history and this journey… (1 to 3 min)',
+    uncertainty: 'Key uncertainty', doIt: 'Let’s do it', asAgent: '🛠️ Make it an agent', other: 'Another idea',
+    recompute: 'Recompute the next action', step: 'Moves forward: ', running: 'Stan is on it: ',
+    done: function (t) { return 'Done: ' + t; }, see: 'See the result', nextOne: 'Next action',
+    stale: function (n) { return 'Proposed on version ' + n + ': the memo has changed since.'; },
     types: { draft: '✉️ Ready-to-use draft', research: '🔎 Sourced research', memo: '📝 Memo update',
-      agent: '🧩 Library agent', build_agent: '🛠️ Code a custom agent' },
-    est: function (eur, min) { return 'Estimated cost ≈ ' + eur + ' € · ~' + min + ' min'; },
+      agent: '🧩 Library agent', build_agent: '🛠️ Custom agent to code' },
+    est: function (eur, min) { return '≈ ' + eur + ' € · ~' + min + ' min'; },
+    asAgentWhy: function (eur) { return 'Stan codes an agent for this task, tries it on this deal (≈ ' + eur + ' €) and stores it in the Library for your next deals.'; },
     confirm: function (eur) { return 'Estimated cost: ' + eur + ' € (above 5 €). Go ahead?'; }, confirmBtn: 'Confirm', cancel: 'Cancel',
     copy: 'Copy', copied: 'Copied ✓', check: 'Check before use: ', impact: 'Impact on the decision: ', sources: 'Sources',
     signals: { 'continuer': 'Continue', 'à confirmer': 'To confirm', 'arrêter': 'Stop' }, failed: 'Stan could not finish: ',
-    did: 'Let’s do it: ', alt: function (i, n) { return 'Alternative ' + i + ' of ' + n; }, deliverable: 'Deliverable: ', fold: 'Show or hide'
+    did: 'Let’s do it: ', didAgent: 'Make it an agent: ', alt: function (i, n) { return 'Alternative ' + i + ' of ' + n; },
+    ready: function (t) { return '✅ ' + t + ': the result is in Chat.'; }, open: 'Open', started: 'Stan is on it — follow it in Parcours, the result will land in Chat.'
   } : {
-    title: '🎯 Prochaine action', loading: 'Chargement…',
-    empty: 'Stan lit tout le mémo, ses versions, vos échanges et l’avancement du Parcours, puis propose LA prochaine action qui a le plus d’impact — et la réalise.',
-    propose: 'Proposer la prochaine action', computing: 'Stan étudie le mémo, son historique et le Parcours… (1 à 3 min)',
-    uncertainty: 'Incertitude clé', doIt: 'Faisons-le', other: 'Autre idée', recompute: 'Recalculer',
-    running: 'En cours : ', stale: function (n) { return 'Proposée sur la version ' + n + ' : le mémo a changé depuis.'; },
+    kicker: 'Prochaine action · Stan', loading: 'Chargement…',
+    ask: 'Demander à Stan la meilleure prochaine action',
+    askWhy: 'Stan lit tout le mémo, ses versions, vos échanges et ce Parcours, puis choisit l’action qui a le plus d’impact maintenant — et la réalise.',
+    computing: 'Stan étudie le mémo, son historique et ce Parcours… (1 à 3 min)',
+    uncertainty: 'Incertitude clé', doIt: 'Faisons-le', asAgent: '🛠️ En faire un agent', other: 'Autre idée',
+    recompute: 'Recalculer la prochaine action', step: 'Fait avancer : ', running: 'Stan s’en occupe : ',
+    done: function (t) { return 'Fait : ' + t; }, see: 'Voir le résultat', nextOne: 'Action suivante',
+    stale: function (n) { return 'Proposée sur la version ' + n + ' : le mémo a changé depuis.'; },
     types: { draft: '✉️ Livrable prêt à l’emploi', research: '🔎 Recherche sourcée', memo: '📝 Mise à jour du mémo',
-      agent: '🧩 Agent de la librairie', build_agent: '🛠️ Coder un agent sur mesure' },
-    est: function (eur, min) { return 'Coût estimé ≈ ' + eur + ' € · ~' + min + ' min'; },
+      agent: '🧩 Agent de la Librairie', build_agent: '🛠️ Agent sur mesure à coder' },
+    est: function (eur, min) { return '≈ ' + eur + ' € · ~' + min + ' min'; },
+    asAgentWhy: function (eur) { return 'Stan code un agent pour cette tâche, l’essaie sur ce dossier (≈ ' + eur + ' €) et le range dans la Librairie pour vos prochains dossiers.'; },
     confirm: function (eur) { return 'Coût estimé : ' + eur + ' € (au-delà de 5 €). On y va ?'; }, confirmBtn: 'Confirmer', cancel: 'Annuler',
     copy: 'Copier', copied: 'Copié ✓', check: 'À vérifier avant usage : ', impact: 'Ce que cela change pour la décision : ', sources: 'Sources',
     signals: { 'continuer': 'Continuer', 'à confirmer': 'À confirmer', 'arrêter': 'Arrêter' }, failed: 'Stan n’a pas pu terminer : ',
-    did: 'Faisons-le : ', alt: function (i, n) { return 'Alternative ' + i + ' sur ' + n; }, deliverable: 'Livrable : ', fold: 'Afficher ou masquer'
+    did: 'Faisons-le : ', didAgent: 'En faire un agent : ', alt: function (i, n) { return 'Alternative ' + i + ' sur ' + n; },
+    ready: function (t) { return '✅ ' + t + ' : le résultat est dans le Chat.'; }, open: 'Ouvrir', started: 'Stan s’en occupe : suivi dans le Parcours, résultat dans le Chat.'
   };
-  var nba = { box: null, data: null, head: 0, index: 0, loaded: false, runs: {}, folded: false, cost: 0 };
-  try { nba.folded = localStorage.getItem('ppme-nba-folded') === '1'; } catch (_) {}
+  var nba = { box: null, data: null, head: 0, index: 0, loaded: false, runs: {}, cost: 0, agentCost: 0, done: null };
   function fmtEur(x) {
     return Number(x || 0).toLocaleString(en ? 'en-GB' : 'fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
@@ -430,86 +444,91 @@
     var n = nba.data && nba.data.nba;
     return n ? [n.action].concat(n.alternatives || []) : [];
   }
+  function shown(node) { return !!node && node.offsetParent !== null; }
+  function bar(buttons) {
+    var row = el('div', { class: 'ppme-bar' });
+    buttons.forEach(function (b) { if (b) row.appendChild(b); });
+    return row;
+  }
+  function btn(label, onclick, cls, title) {
+    var b = el('button', title ? { type: 'button', class: cls || '', title: title, 'aria-label': title } : { type: 'button', class: cls || '' }, label);
+    b.onclick = function () { onclick(b); };
+    return b;
+  }
   function renderNba() {
     var box = nba.box;
     if (!box) return;
     box.innerHTML = '';
-    var h = el('button', { type: 'button', class: 'ppme-nba-h', 'aria-expanded': String(!nba.folded), title: N.fold },
-      (nba.folded ? '▸ ' : '▾ ') + N.title);
-    h.onclick = function () {
-      nba.folded = !nba.folded;
-      try { localStorage.setItem('ppme-nba-folded', nba.folded ? '1' : '0'); } catch (_) {}
-      renderNba();
-    };
-    box.appendChild(h);
-    if (nba.folded) {
-      var cur = nbaActions()[nba.index % (nbaActions().length || 1)];
-      if (cur) box.appendChild(el('div', { class: 'ppme-nba-folded' }, cur.title));
-      return;
-    }
-    var runs = Object.keys(nba.runs).map(function (k) { return nba.runs[k]; });
-    runs.forEach(function (r) { if (r.op !== 'propose') box.appendChild(el('div', { class: 'ppme-nba-run' }, N.running + (r.title || ''))); });
-    if (!nba.loaded) { box.appendChild(el('div', { class: 'ppme-wait' }, N.loading)); return; }
-    if (runs.some(function (r) { return r.op === 'propose'; })) { box.appendChild(el('div', { class: 'ppme-wait' }, N.computing)); return; }
     var n = nba.data && nba.data.nba;
+    box.classList.toggle('ppme-has-nba', !!n);          // elle prend la place de « Prochaine étape »
+    box.appendChild(el('span', { class: 'ppme-kicker' }, '🎯 ' + N.kicker));
+    var runs = Object.keys(nba.runs).map(function (k) { return nba.runs[k]; });
+    runs.forEach(function (r) { if (r.op !== 'propose') box.appendChild(el('p', { class: 'ppme-nba-run' }, '⏳ ' + N.running + (r.title || ''))); });
+    if (nba.done) {
+      var done = el('div', { class: 'ppme-nba-done' });
+      done.appendChild(el('span', {}, '✅ ' + N.done(nba.done.title)));
+      done.appendChild(btn(N.see, function () { openStan('chat'); }));
+      box.appendChild(done);
+    }
+    if (!nba.loaded) { box.appendChild(el('p', { class: 'ppme-wait' }, N.loading)); return; }
+    if (runs.some(function (r) { return r.op === 'propose'; })) { box.appendChild(el('p', { class: 'ppme-wait' }, N.computing)); return; }
     if (!n) {
-      box.appendChild(el('p', { class: 'ppme-why' }, N.empty));
-      var first = el('button', { type: 'button', class: 'ppme-go' }, N.propose + (nba.cost ? ' · ≈ ' + fmtEur(nba.cost) + ' €' : ''));
-      first.onclick = proposeNext;
-      box.appendChild(first);
+      box.appendChild(el('p', { class: 'ppme-why' }, N.askWhy));
+      box.appendChild(bar([btn(N.ask + (nba.cost ? ' · ≈ ' + fmtEur(nba.cost) + ' €' : ''), proposeNext, 'ppme-go')]));
       return;
     }
-    var acts = nbaActions();
-    var i = nba.index % acts.length;
-    var a = acts[i];
+    var acts = nbaActions(), i = nba.index % acts.length, a = acts[i];
     var meta = el('div', { class: 'ppme-nba-meta' });
     meta.appendChild(el('span', { class: 'ppme-chip' }, n.stage_label || n.stage));
-    meta.appendChild(el('span', { class: 'ppme-chip sig-' + signalClass(n.signal) }, N.signals[n.signal] || n.signal));
+    meta.appendChild(el('span', { class: 'ppme-chip sig-' + signalClass(n.signal), title: n.signal_reason || '' }, N.signals[n.signal] || n.signal));
+    if (i) meta.appendChild(el('span', { class: 'ppme-chip' }, N.alt(i, acts.length - 1)));
     box.appendChild(meta);
-    if (n.signal_reason) box.appendChild(citedText(n.signal_reason, 'p', 'ppme-why'));
-    if (n.uncertainty) {
+    if (n.uncertainty && !i) {
       var u = citedText(n.uncertainty, 'p', 'ppme-unc');
       u.insertBefore(el('strong', {}, N.uncertainty + ' : '), u.firstChild);
       box.appendChild(u);
     }
-    var act = el('div', { class: 'ppme-nba-act' });
-    act.appendChild(el('div', { class: 'ppme-op-h' }, (i ? N.alt(i, acts.length - 1) + ' · ' : '') + (N.types[a.type] || a.type)
-      + (a.agent_name ? ' · ' + a.agent_name : '')));
-    act.appendChild(el('strong', {}, a.title));
-    if (a.why) act.appendChild(citedText(a.why, 'p', 'ppme-why'));
-    if (a.deliverable) act.appendChild(citedText(N.deliverable + a.deliverable, 'p', 'ppme-why'));
-    act.appendChild(el('div', { class: 'ppme-est' }, N.est(fmtEur(a.est_eur), a.est_minutes || 5)));
-    box.appendChild(act);
+    box.appendChild(el('span', { class: 'ppme-act-type' }, (N.types[a.type] || a.type) + (a.agent_name ? ' · ' + a.agent_name : '')));
+    box.appendChild(el('strong', { class: 'ppme-act-title' }, a.title));
+    if (a.why) box.appendChild(citedText(a.why, 'p', 'ppme-why'));
+    var foot = el('p', { class: 'ppme-est' });
+    if (a.parcours_step) {
+      // l'étape du Parcours que cette action fait avancer : le Parcours l'ouvre (data-do="goto")
+      foot.appendChild(el('button', { type: 'button', class: 'ppme-step', 'data-do': 'goto', 'data-id': a.parcours_step },
+        N.step + (a.parcours_title || a.parcours_step) + ' →'));
+      foot.appendChild(document.createTextNode(' · '));
+    }
+    foot.appendChild(document.createTextNode(N.est(fmtEur(a.est_eur), a.est_minutes || 5)));
+    box.appendChild(foot);
     var head = Math.max(nba.head || 0, (state.head && state.head.n) || 0);
     if (nba.data.base && head > nba.data.base) box.appendChild(el('p', { class: 'ppme-stale' }, N.stale(nba.data.base)));
-    var bar = el('div', { class: 'ppme-nba-bar' });
-    var go = el('button', { type: 'button', class: 'ppme-go' }, N.doIt);
-    go.onclick = function () { runAction(a, false, go); };
-    bar.appendChild(go);
-    if (acts.length > 1) {
-      var other = el('button', { type: 'button' }, N.other);
-      other.onclick = function () { nba.index++; renderNba(); };
-      bar.appendChild(other);
-    }
-    var again = el('button', { type: 'button', title: nba.cost ? '≈ ' + fmtEur(nba.cost) + ' €' : '' }, N.recompute);
-    again.onclick = proposeNext;
-    bar.appendChild(again);
-    box.appendChild(bar);
+    var finished = nba.done && nba.done.action_id === a.id;
+    var codable = ['draft', 'research', 'memo'].indexOf(a.type) >= 0;
+    box.appendChild(bar([
+      finished ? btn(N.nextOne + (nba.cost ? ' · ≈ ' + fmtEur(nba.cost) + ' €' : ''), proposeNext, 'ppme-go')
+        : btn(N.doIt, function (b) { runAction(a, false, b, 'do'); }, 'ppme-go'),
+      !finished && codable ? btn(N.asAgent, function (b) { runAction(a, false, b, 'agent'); }, '', N.asAgentWhy(fmtEur(nba.agentCost))) : null,
+      acts.length > 1 ? btn(N.other, function () { nba.index++; renderNba(); }) : null,
+      btn('↻', proposeNext, 'ppme-icon', N.recompute)
+    ]));
   }
   function loadNext() {
     renderNba();
     api('/next').then(function (j) {
-      if (!j.ok) { if (nba.box) nba.box.remove(); nba.box = null; return; }
-      nba.data = j.cached || null;
-      nba.head = j.head || 0;
-      nba.cost = j.propose_eur || 0;
       nba.loaded = true;
-      (j.running || []).forEach(function (r) { track(r.run_id, r); });
+      if (j.ok) {
+        nba.data = j.cached || null;
+        nba.head = j.head || 0;
+        nba.cost = j.propose_eur || 0;
+        nba.agentCost = j.build_eur || 0;
+        (j.running || []).forEach(function (r) { track(r.run_id, r); });
+      }
       renderNba();
-    }).catch(function () {});
+    }).catch(function () { nba.loaded = true; renderNba(); });
   }
   function proposeNext() {
     nba.runs.pending = { op: 'propose' };
+    nba.done = null;
     renderNba();
     api('/next', 'POST', {}).then(function (j) {
       delete nba.runs.pending;
@@ -528,10 +547,16 @@
         api('/next/runs/' + rid).then(function (s) {
           if (s.state === 'running' && ++tries < 450) { poll(); return; }
           delete nba.runs[rid];
-          if (s.state === 'done') {
-            if (s.next) { nba.data = s.next; nba.index = 0; nba.head = Math.max(nba.head, s.next.base || 0); }
-            if (s.message && chat.panel) renderMessage(s.message);
-            if (s.op === 'build' || s.op === 'agent') lib.data = null;
+          if (s.state === 'done' && s.next) {
+            nba.data = s.next; nba.index = 0; nba.done = null; nba.head = Math.max(nba.head, s.next.base || 0);
+          } else if (s.state === 'done') {
+            if (s.message && chat.loaded) renderMessage(s.message);
+            nba.done = { title: info.title || '', action_id: info.action_id || '' };
+            // la carte du Parcours ou le Chat le montrent déjà : sinon, on prévient
+            if (!shown(nba.box) && !(chat.loaded && shown(chat.list))) {
+              toast(N.ready(info.title || ''), [{ label: N.open, run: function () { openStan('chat'); } }]);
+            }
+            if (s.op === 'build' || s.op === 'agent') { lib.data = null; if (lib.box && !lib.box.hidden) loadLibrary(); }
           } else {
             toast(N.failed + (s.error || s.detail || s.status));
           }
@@ -540,29 +565,25 @@
       }, tries < 20 ? 3000 : 8000);
     })();
   }
-  function runAction(a, confirmed, btn) {
-    if (btn) btn.disabled = true;
-    api('/next/run', 'POST', { action_id: a.id, confirm: !!confirmed }).then(function (j) {
-      if (btn) btn.disabled = false;
-      if (j.needs_confirm) { askConfirm(a, j.est_eur); return; }
-      if (!j.ok) { toast(N.failed + (j.detail || j.error || j.status)); return; }
-      (j.messages || []).forEach(renderMessage);
-      track(j.run_id, { op: a.type, title: a.title });
-    }).catch(function (e) { if (btn) btn.disabled = false; toast(N.failed + e); });
-  }
-  function askConfirm(a, eur) {
-    if (!nba.box) return;
+  function confirmIn(container, eur, onYes) {
+    if (!container || container.querySelector('.ppme-confirm')) return;
     var box = el('div', { class: 'ppme-confirm', role: 'alertdialog' });
     box.appendChild(el('p', {}, N.confirm(fmtEur(eur))));
-    var bar = el('div', { class: 'ppme-nba-bar' });
-    var yes = el('button', { type: 'button', class: 'ppme-go' }, N.confirmBtn);
-    var no = el('button', { type: 'button' }, N.cancel);
-    yes.onclick = function () { box.remove(); runAction(a, true); };
-    no.onclick = function () { box.remove(); };
-    bar.appendChild(yes);
-    bar.appendChild(no);
-    box.appendChild(bar);
-    nba.box.appendChild(box);
+    box.appendChild(bar([btn(N.confirmBtn, function () { box.remove(); onYes(); }, 'ppme-go'),
+                         btn(N.cancel, function () { box.remove(); })]));
+    container.appendChild(box);
+  }
+  // « Faisons-le » (mode do) ou « En faire un agent » (mode agent) sur une action proposée
+  function runAction(a, confirmed, button, mode) {
+    if (button) button.disabled = true;
+    api('/next/run', 'POST', { action_id: a.id, confirm: !!confirmed, mode: mode }).then(function (j) {
+      if (button) button.disabled = false;
+      if (j.needs_confirm) { confirmIn(nba.box, j.est_eur, function () { runAction(a, true, null, mode); }); return; }
+      if (!j.ok) { toast(N.failed + (j.detail || j.error || j.status)); return; }
+      if (chat.loaded) (j.messages || []).forEach(renderMessage);
+      nba.done = null;
+      track(j.run_id, { op: mode === 'agent' ? 'build' : a.type, title: a.title, action_id: a.id });
+    }).catch(function (e) { if (button) button.disabled = false; toast(N.failed + e); });
   }
   function safeUrl(u) { return /^https?:\/\//i.test(String(u || '')) ? String(u) : ''; }
   function renderDeliverable(box, m) {
@@ -606,13 +627,15 @@
       box.appendChild(det);
     }
   }
-  /* ── Librairie : agents codés par Stan, essayés sur un dossier, partagés par leur créateur ── */
+  /* ── Librairie : les agents que Stan a codés pour des prochaines actions ───────────
+   * On ne les crée pas ici : ils naissent d'une prochaine action (« En faire un agent »,
+   * ou un agent sur mesure proposé par Stan). Ici, on les relance, on les améliore ; leur
+   * créateur les valide pour les partager avec tous les fonds. */
   var L = en ? {
-    tabChat: '💬 Conversation', tabLib: '📚 Library', loading: 'Loading…',
-    intro: 'Agents coded by Stan for tasks he could not do yet. Each one is tried on a deal, then shared with every fund by its creator. It runs isolated, with no access to anything but the current deal.',
-    create: '🛠️ Create a custom agent', taskPh: 'e.g. “Audit the tech stack and tech hiring of the main competitors”',
-    build: function (eur) { return 'Code and try the agent · ≈ ' + eur + ' €'; },
-    empty: 'The library is empty: create the first agent.', run: 'Run on this deal', code: 'View code', hideCode: 'Hide code',
+    tab: 'Library', loading: 'Loading…',
+    intro: 'The agents Stan coded for your next actions. Run them on this deal or improve them; once approved by their creator, they serve every fund. Each runs isolated, with no access to anything but the current deal.',
+    empty: 'No agent yet. In Parcours, choose “🛠️ Make it an agent” on a next action: Stan codes it, tries it on this deal, and it lands here.',
+    run: 'Run on this deal', code: 'View code', hideCode: 'Hide code',
     validate: 'Approve and share', improve: 'Improve', discard: 'Discard', retire: 'Remove from library',
     feedbackPh: 'What should be improved…', send: 'Send to Stan',
     shared: 'Shared with all funds', draft: 'Draft — visible to your fund', mine: 'created by you',
@@ -622,11 +645,10 @@
     states: { shared: 'Shared with all funds', discarded: 'Discarded' },
     sharedToast: 'Agent shared with every fund.', discardedToast: 'Done.'
   } : {
-    tabChat: '💬 Conversation', tabLib: '📚 Librairie', loading: 'Chargement…',
-    intro: 'Des agents codés par Stan pour des tâches qu’il ne savait pas encore faire. Chacun est essayé sur un dossier, puis partagé avec tous les fonds par son créateur. Il tourne isolé, sans accès à rien d’autre que le dossier en cours.',
-    create: '🛠️ Créer un agent sur mesure', taskPh: 'ex. « Audite la stack technique et les recrutements tech des principaux concurrents »',
-    build: function (eur) { return 'Coder et essayer l’agent · ≈ ' + eur + ' €'; },
-    empty: 'La librairie est vide : créez le premier agent.', run: 'Lancer sur ce dossier', code: 'Voir le code', hideCode: 'Masquer le code',
+    tab: 'Librairie', loading: 'Chargement…',
+    intro: 'Les agents que Stan a codés pour vos prochaines actions. Relancez-les sur ce dossier ou améliorez-les ; validés par leur créateur, ils servent à tous les fonds. Chacun tourne isolé, sans accès à rien d’autre que le dossier en cours.',
+    empty: 'Aucun agent pour l’instant. Dans le Parcours, choisissez « 🛠️ En faire un agent » sur une prochaine action : Stan le code, l’essaie sur ce dossier, et il arrive ici.',
+    run: 'Lancer sur ce dossier', code: 'Voir le code', hideCode: 'Masquer le code',
     validate: 'Valider et partager', improve: 'Améliorer', discard: 'Abandonner', retire: 'Retirer de la librairie',
     feedbackPh: 'Ce qu’il faut améliorer…', send: 'Envoyer à Stan',
     shared: 'Partagé avec tous les fonds', draft: 'Brouillon — visible par votre fonds', mine: 'créé par vous',
@@ -639,7 +661,7 @@
   var lib = { box: null, data: null, state: {} };
   function loadLibrary() {
     if (!lib.box) return;
-    if (!lib.data) { lib.box.innerHTML = ''; lib.box.appendChild(el('div', { class: 'ppme-wait' }, L.loading)); }
+    if (!lib.data) { lib.box.innerHTML = ''; lib.box.appendChild(el('p', { class: 'ppme-wait' }, L.loading)); }
     api('/library').then(function (j) {
       if (!j.ok) { toast(N.failed + (j.detail || j.error || j.status)); return; }
       lib.data = j;
@@ -651,20 +673,8 @@
     if (!box || !lib.data) return;
     box.innerHTML = '';
     box.appendChild(el('p', { class: 'ppme-hint' }, L.intro));
-    var create = el('details', { class: 'ppme-create' });
-    create.appendChild(el('summary', {}, L.create));
-    var task = el('textarea', { rows: '3', placeholder: L.taskPh, 'aria-label': L.create });
-    var go = el('button', { type: 'button', class: 'ppme-go' }, L.build(fmtEur(lib.data.build_eur)));
-    go.onclick = function () {
-      if (task.value.trim().length < 10) { task.focus(); return; }
-      go.disabled = true;
-      buildAgent({ task: task.value.trim() }, function (ok) { go.disabled = false; if (ok) task.value = ''; });
-    };
-    create.appendChild(task);
-    create.appendChild(go);
-    box.appendChild(create);
     var agents = lib.data.agents || [];
-    if (!agents.length) box.appendChild(el('p', { class: 'ppme-why' }, L.empty));
+    if (!agents.length) box.appendChild(el('p', { class: 'ppme-empty' }, L.empty));
     agents.forEach(function (a) { box.appendChild(agentCard(a)); });
   }
   function agentCard(a) {
@@ -673,108 +683,78 @@
     if (a.description) card.appendChild(el('p', { class: 'ppme-why' }, a.description));
     var meta = [a.status === 'shared' ? L.shared : L.draft, 'v' + a.version, L.uses(a.uses), '≈ ' + fmtEur(a.est_eur) + ' €'];
     if (a.mine) meta.push(L.mine);
-    card.appendChild(el('div', { class: 'ppme-est' }, meta.join(' · ')));
+    card.appendChild(el('p', { class: 'ppme-est' }, meta.join(' · ')));
     if (a.mine && a.test && !a.test.ok && a.status === 'draft') card.appendChild(el('p', { class: 'ppme-stale' }, L.testKo + (a.test.error || '')));
     if (a.pending) {
       card.appendChild(el('p', { class: 'ppme-stale' }, L.pendingV(a.pending.version)
         + (a.pending.test && !a.pending.test.ok ? ' — ' + L.testKo + (a.pending.test.error || '') : '')));
     }
-    var bar = el('div', { class: 'ppme-nba-bar' });
-    if (a.status === 'shared' || (a.test && a.test.ok)) {
-      var run = el('button', { type: 'button', class: 'ppme-go' }, L.run);
-      run.onclick = function () { runAgent(a, false, run, card); };
-      bar.appendChild(run);
-    }
-    var code = el('button', { type: 'button' }, L.code);
-    code.onclick = function () { toggleCode(a, card, code); };
-    bar.appendChild(code);
     var testOk = a.pending ? a.pending.test && a.pending.test.ok : a.status === 'draft' && a.test && a.test.ok;
-    if (a.mine && testOk) {
-      var share = el('button', { type: 'button' }, L.validate);
-      share.onclick = function () { agentDecision(a.id, 'validate', share); };
-      bar.appendChild(share);
-    }
-    var better = el('button', { type: 'button' }, L.improve);
-    better.onclick = function () { improveForm(a.id, card); };
-    bar.appendChild(better);
-    if (a.mine) {
-      var drop = el('button', { type: 'button' }, a.pending || a.status === 'draft' ? L.discard : L.retire);
-      drop.onclick = function () { agentDecision(a.id, 'discard', drop); };
-      bar.appendChild(drop);
-    }
-    card.appendChild(bar);
+    card.appendChild(bar([
+      a.status === 'shared' || (a.test && a.test.ok) ? btn(L.run, function (b) { runAgent(a, false, b, card); }, 'ppme-go') : null,
+      btn(L.code, function (b) { toggleCode(a, card, b); }),
+      a.mine && testOk ? btn(L.validate, function (b) { agentDecision(a.id, 'validate', b); }) : null,
+      btn(L.improve, function () { improveForm(a.id, card); }),
+      a.mine ? btn(a.pending || a.status === 'draft' ? L.discard : L.retire, function (b) { agentDecision(a.id, 'discard', b); }) : null
+    ]));
     return card;
   }
-  function toggleCode(a, card, btn) {
+  function toggleCode(a, card, button) {
     var open = card.querySelector('.ppme-code');
-    if (open) { open.remove(); btn.textContent = L.code; return; }
+    if (open) { open.remove(); button.textContent = L.code; return; }
     api('/agents/' + a.id).then(function (j) {
       if (!j.ok) { toast(N.failed + (j.detail || j.status)); return; }
       card.appendChild(el('pre', { class: 'ppme-code' }, j.pending_code || j.code || ''));
-      btn.textContent = L.hideCode;
+      button.textContent = L.hideCode;
     });
   }
   function improveForm(aid, container) {
     if (container.querySelector('.ppme-improve')) return;
     var form = el('div', { class: 'ppme-improve' });
     var text = el('textarea', { rows: '3', placeholder: L.feedbackPh, 'aria-label': L.improve });
-    var send = el('button', { type: 'button', class: 'ppme-go' }, L.send);
-    send.onclick = function () {
-      if (text.value.trim().length < 5) { text.focus(); return; }
-      send.disabled = true;
-      buildAgent({ agent_id: aid, feedback: text.value.trim() }, function (ok) { send.disabled = false; if (ok) form.remove(); });
-    };
     form.appendChild(text);
-    form.appendChild(send);
+    form.appendChild(bar([btn(L.send, function (b) {
+      if (text.value.trim().length < 5) { text.focus(); return; }
+      b.disabled = true;
+      buildAgent({ agent_id: aid, feedback: text.value.trim() }, function (ok) { b.disabled = false; if (ok) form.remove(); });
+    }, 'ppme-go')]));
     container.appendChild(form);
     text.focus();
   }
-  function showChat() { if (chat.show) chat.show('chat'); }
+  function launched(j, info) {
+    if (chat.loaded) (j.messages || []).forEach(renderMessage);
+    track(j.run_id, info);
+    toast(N.started);
+  }
   function buildAgent(body, done) {
     api('/agents/build', 'POST', body).then(function (j) {
       done(!!j.ok);
       if (!j.ok) { toast(N.failed + (j.detail || j.error || j.status)); return; }
-      showChat();
-      (j.messages || []).forEach(renderMessage);
-      track(j.run_id, { op: 'build', title: (j.messages && j.messages[0] && j.messages[0].text) || L.create });
+      launched(j, { op: 'build', title: (j.messages && j.messages[0] && j.messages[0].text) || L.improve });
     }).catch(function (e) { done(false); toast(N.failed + e); });
   }
-  function runAgent(a, confirmed, btn, container) {
-    if (btn) btn.disabled = true;
+  function runAgent(a, confirmed, button, container) {
+    if (button) button.disabled = true;
     api('/agents/' + a.id + '/run', 'POST', { confirm: !!confirmed }).then(function (j) {
-      if (btn) btn.disabled = false;
-      if (j.needs_confirm) {
-        var box = el('div', { class: 'ppme-confirm', role: 'alertdialog' });
-        box.appendChild(el('p', {}, N.confirm(fmtEur(j.est_eur))));
-        var bar = el('div', { class: 'ppme-nba-bar' });
-        var yes = el('button', { type: 'button', class: 'ppme-go' }, N.confirmBtn);
-        var no = el('button', { type: 'button' }, N.cancel);
-        yes.onclick = function () { box.remove(); runAgent(a, true, null, container); };
-        no.onclick = function () { box.remove(); };
-        bar.appendChild(yes);
-        bar.appendChild(no);
-        box.appendChild(bar);
-        container.appendChild(box);
-        return;
-      }
+      if (button) button.disabled = false;
+      if (j.needs_confirm) { confirmIn(container, j.est_eur, function () { runAgent(a, true, null, container); }); return; }
       if (!j.ok) { toast(N.failed + (j.detail || j.error || j.status)); return; }
-      showChat();
-      (j.messages || []).forEach(renderMessage);
-      track(j.run_id, { op: 'agent', title: a.name });
-    }).catch(function (e) { if (btn) btn.disabled = false; toast(N.failed + e); });
+      launched(j, { op: 'agent', title: a.name });
+    }).catch(function (e) { if (button) button.disabled = false; toast(N.failed + e); });
   }
-  function agentDecision(aid, what, btn) {
-    if (btn) btn.disabled = true;
+  function agentDecision(aid, what, button) {
+    if (button) button.disabled = true;
     api('/agents/' + aid + '/' + what, 'POST', {}).then(function (j) {
-      if (btn) btn.disabled = false;
+      if (button) button.disabled = false;
       if (!j.ok) { toast(N.failed + (j.detail || j.error || j.status)); return; }
       lib.state[aid] = what === 'validate' ? 'shared' : 'discarded';
       toast(what === 'validate' ? L.sharedToast : L.discardedToast);
       Array.prototype.forEach.call(document.querySelectorAll('.ppme-agent-acts[data-aid="' + aid + '"]'), function (n) {
         n.replaceWith(el('span', { class: 'ppme-status accepted' }, L.states[lib.state[aid]]));
       });
+      lib.data = null;
       loadLibrary();
-    }).catch(function (e) { if (btn) btn.disabled = false; toast(N.failed + e); });
+    }).catch(function (e) { if (button) button.disabled = false; toast(N.failed + e); });
   }
   function renderAgentDraft(box, m) {
     var a = m.agent || {};
@@ -782,27 +762,20 @@
     if (a.description) box.appendChild(el('p', { class: 'ppme-why' }, a.description));
     if (m.error) box.appendChild(el('p', { class: 'ppme-stale' }, L.testKo + m.error));
     else {
-      box.appendChild(el('div', { class: 'ppme-op-h' }, L.testOk));
+      box.appendChild(el('p', { class: 'ppme-op-h' }, L.testOk));
       renderResearch(box, m, '');
       if (m.deliverable) renderDeliverable(box, { title: m.deliverable.title, text: m.deliverable.content });
     }
     if (lib.state[a.id]) { box.appendChild(el('span', { class: 'ppme-status accepted' }, L.states[lib.state[a.id]])); return; }
-    var bar = el('div', { class: 'ppme-nba-bar ppme-agent-acts', 'data-aid': a.id || '' });
     var mine = a.by === state.email;
-    if (mine && a.ok) {
-      var share = el('button', { type: 'button', class: 'ppme-go' }, L.validate);
-      share.onclick = function () { agentDecision(a.id, 'validate', share); };
-      bar.appendChild(share);
-    }
-    var better = el('button', { type: 'button' }, L.improve);
-    better.onclick = function () { improveForm(a.id, box); };
-    bar.appendChild(better);
-    if (mine) {
-      var drop = el('button', { type: 'button' }, L.discard);
-      drop.onclick = function () { agentDecision(a.id, 'discard', drop); };
-      bar.appendChild(drop);
-    }
-    box.appendChild(bar);
+    var acts = bar([
+      mine && a.ok ? btn(L.validate, function (b) { agentDecision(a.id, 'validate', b); }, 'ppme-go') : null,
+      btn(L.improve, function () { improveForm(a.id, box); }),
+      mine ? btn(L.discard, function (b) { agentDecision(a.id, 'discard', b); }) : null
+    ]);
+    acts.classList.add('ppme-agent-acts');
+    acts.setAttribute('data-aid', a.id || '');
+    box.appendChild(acts);
   }
   function renderAgentResult(box, m) {
     var a = m.agent || {};
@@ -811,37 +784,27 @@
     renderResearch(box, m, '');
     if (m.deliverable) renderDeliverable(box, { title: m.deliverable.title, text: m.deliverable.content });
   }
-  function openChat() {
-    if (chat.panel) { chat.panel.remove(); chat.panel = null; chat.list = null; nba.box = null; lib.box = null; chat.show = null; return; }
-    var panel = el('aside', { class: 'ppme-chat', role: 'complementary', 'aria-label': C.title });
-    var head = el('div', { class: 'ppme-card-h' });
-    head.appendChild(el('strong', {}, C.title));
-    var x = el('button', { type: 'button', class: 'ppme-x', 'aria-label': T.close }, '×');
-    x.onclick = openChat;
-    head.appendChild(x);
-    panel.appendChild(head);
-    var tabs = el('div', { class: 'ppme-tabs', role: 'tablist' });
-    var tabChat = el('button', { type: 'button', role: 'tab', 'aria-selected': 'true' }, L.tabChat);
-    var tabLib = el('button', { type: 'button', role: 'tab', 'aria-selected': 'false' }, L.tabLib);
-    tabs.appendChild(tabChat);
-    tabs.appendChild(tabLib);
-    panel.appendChild(tabs);
-    var view = el('div', { class: 'ppme-view' });
-    lib.box = el('div', { class: 'ppme-view ppme-lib', role: 'tabpanel', hidden: '' });
-    chat.show = function (which) {
-      view.hidden = which !== 'chat';
-      lib.box.hidden = which !== 'lib';
-      tabChat.setAttribute('aria-selected', String(which === 'chat'));
-      tabLib.setAttribute('aria-selected', String(which === 'lib'));
-      if (which === 'lib') loadLibrary();
-    };
-    tabChat.onclick = function () { chat.show('chat'); };
-    tabLib.onclick = function () { chat.show('lib'); };
-    view.appendChild(el('p', { class: 'ppme-hint' }, C.hint));
-    nba.box = el('section', { class: 'ppme-nba', 'aria-label': N.title });
-    view.appendChild(nba.box);
+  /* ── Le poste de travail Stan (proplace-chat-memo.js) : Chat et Librairie en onglets à
+   * côté du Parcours et de l'Historique ; la prochaine action dans la carte du Parcours. ── */
+  function stan() {
+    var SJ = window.StanJourney;
+    return SJ && SJ.addView && SJ.addSlot && document.getElementById('stan-sidebar') ? SJ : null;
+  }
+  function whenStan(fn) {
+    if (stan()) { fn(); return; }
+    window.addEventListener('stan:ready', function () { if (stan()) fn(); }, { once: true });
+  }
+  function mountStan() {
+    var SJ = stan();
+    if (!SJ || chat.list) return;
+    var box = SJ.addView('chat', C.tab, showChat);
+    lib.box = SJ.addView('library', L.tab, loadLibrary);
+    if (!box || !lib.box) return;
+    lib.box.classList.add('ppme-lib');
+    box.classList.add('ppme-chatview');
+    box.appendChild(el('p', { class: 'ppme-hint' }, C.hint));
     chat.list = el('div', { class: 'ppme-msgs' });
-    view.appendChild(chat.list);
+    box.appendChild(chat.list);
     var form = el('form', { class: 'ppme-form' });
     var input = el('textarea', { rows: '3', placeholder: C.placeholder, 'aria-label': C.placeholder });
     var send = el('button', { type: 'submit', class: 'ppme-save' }, C.send);
@@ -865,28 +828,40 @@
       }).catch(function (err) { wait.remove(); send.disabled = false; toast(T.error + err); });
     };
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) form.requestSubmit(); });
-    view.appendChild(form);
-    panel.appendChild(view);
-    panel.appendChild(lib.box);
-    document.body.appendChild(panel);
-    chat.panel = panel;
-    api('/chat').then(function (j) {
-      if (!j.ok) return;
-      (j.messages || []).forEach(function (m) {
-        if (m.type === 'decision') chat.decisions[m.pid] = m.decision;
-        if (m.type === 'agent_decision') lib.state[m.aid] = m.decision;
-      });
-      (j.messages || []).forEach(renderMessage);
-    });
+    box.appendChild(form);
+    chat.input = input;
+    nba.box = el('section', { class: 'ppme-nba', 'aria-label': N.kicker });
+    SJ.addSlot('next', nba.box);
     loadNext();
-    input.focus();
+  }
+  function showChat() {
+    if (!chat.loaded) {
+      chat.loaded = true;
+      api('/chat').then(function (j) {
+        if (!j.ok) { chat.loaded = false; return; }
+        chat.list.innerHTML = '';
+        (j.messages || []).forEach(function (m) {
+          if (m.type === 'decision') chat.decisions[m.pid] = m.decision;
+          if (m.type === 'agent_decision') lib.state[m.aid] = m.decision;
+        });
+        (j.messages || []).forEach(renderMessage);
+      }).catch(function () { chat.loaded = false; });
+    }
+    chat.list.scrollTop = chat.list.scrollHeight;
+    if (chat.input) chat.input.focus();
+  }
+  function openStan(view) {
+    var SJ = stan();
+    if (!SJ) return;
+    mountStan();
+    SJ.open(chat.list ? view : 'roadmap');
   }
 
   function buildPill() {
     if (document.querySelector('.ppme-pill')) return;
     var pill = el('div', { class: 'ppme-pill' });
     var talk = el('button', { type: 'button' }, C.chat);
-    talk.onclick = openChat;
+    talk.onclick = function () { openStan('chat'); };
     pill.appendChild(talk);
     var edit = el('button', { type: 'button' }, T.editMemo);
     var versions = el('button', { type: 'button' }, T.versions);
@@ -911,6 +886,7 @@
       injectCss();
       buildPill();
       decorate();
+      whenStan(mountStan);
     }).catch(function () {});
   }
   function injectCss() {
@@ -940,19 +916,20 @@
       '.ppme-what{flex:1;min-width:0}',
       '.ppme-cur{font-size:12px;color:#0E6B37;background:#EAF6EF;border-radius:999px;padding:2px 9px}',
       '.ppme-list button{border:1px solid #E3E8F0;background:#fff;border-radius:999px;padding:5px 12px;font-weight:600;font-size:12.5px;font-family:inherit;cursor:pointer}',
-      '.ppme-chat{position:fixed;top:0;right:0;bottom:0;z-index:2147483003;width:min(440px,100vw);display:flex;flex-direction:column;background:#fff;border-left:1px solid #E3E8F0;box-shadow:-12px 0 32px rgba(15,29,51,.14);padding:16px;box-sizing:border-box;color:#16233A}',
-      '.ppme-hint{margin:0 0 10px;font-size:12.5px;color:#61708A}',
-      '.ppme-msgs{flex:1;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px}',
+      // le chat (onglet du poste de travail Stan)
+      '.ppj-shell .ppme-chatview{overflow:hidden}',
+      '.ppj-shell .ppme-hint{margin:0;font-size:12.5px;color:#61708A}',
+      '.ppme-msgs{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px}',
       '.ppme-msg{max-width:92%;padding:10px 12px;border-radius:12px;font-size:13.5px;line-height:1.5}',
       '.ppme-msg.me{align-self:flex-end;background:#EAF6EF}',
-      '.ppme-msg.stan{align-self:flex-start;background:#F6F8FB;border:1px solid #EEF2F7}',
+      '.ppme-msg.stan{align-self:flex-start;background:#fff;border:1px solid #E3E8F0}',
       '.ppme-who{font-size:11.5px;color:#61708A;margin-bottom:4px}',
       '.ppme-text{white-space:pre-wrap}',
-      '.ppme-wait{color:#61708A;font-style:italic}',
+      '.ppj-shell .ppme-wait{color:#61708A;font-style:italic;margin:0}',
       '.ppme-prop{margin-top:10px;padding:10px;border:1px solid #BFE6CF;border-radius:10px;background:#fff}',
-      '.ppme-why{margin:4px 0 8px;font-size:12.5px;color:#4B5E78}',
+      '.ppj-shell .ppme-why{margin:4px 0 8px;font-size:12.5px;color:#4B5E78}',
       '.ppme-op{margin:8px 0;padding-top:8px;border-top:1px dashed #E3E8F0}',
-      '.ppme-op-h{font-size:12px;font-weight:700;color:#0E6B37;margin-bottom:4px}',
+      '.ppj-shell .ppme-op-h{font-size:12px;font-weight:700;color:#0E6B37;margin:0 0 4px}',
       '.ppme-before{font-size:12.5px;color:#B42318;text-decoration:line-through;margin-bottom:4px}',
       '.ppme-after{font-size:12.5px;color:#0E6B37}',
       '.ppme-link{border:0;background:none;color:#3B4D66;text-decoration:underline;font-size:12px;padding:4px 0;cursor:pointer;font-family:inherit}',
@@ -961,57 +938,67 @@
       '.ppme-status{display:inline-block;margin-top:8px;font-size:12px;font-weight:700;border-radius:999px;padding:3px 10px}',
       '.ppme-status.accepted{background:#EAF6EF;color:#0E6B37}',
       '.ppme-status.declined{background:#EEF2F7;color:#61708A}',
-      '.ppme-form{display:flex;gap:8px;align-items:flex-end;margin-top:10px}',
-      '.ppme-form textarea{flex:1;resize:vertical;min-height:64px;border:1px solid #E3E8F0;border-radius:12px;padding:10px;font-family:inherit;font-size:13.5px}',
+      '.ppme-form{display:flex;gap:8px;align-items:flex-end}',
+      '.ppj-shell .ppme-form textarea{flex:1;margin:0;resize:vertical;min-height:64px;border:1px solid #cbdcd2;border-radius:12px;padding:10px;font:13.5px system-ui}',
       '.ppme-form button{border:0;border-radius:999px;padding:10px 16px;font-weight:700;font-size:13px;font-family:inherit;cursor:pointer}',
       '.ppme-hl{outline:3px solid #E0A526!important;outline-offset:3px;background:#FFF8E8!important;transition:background .3s}',
-      '.ppme-nba{flex:none;max-height:44vh;overflow:auto;margin:0 0 10px;padding:12px;border:1px solid #F3D08A;border-radius:12px;background:#FFFBF0;font-size:13px;line-height:1.45}',
-      '.ppme-nba-h{display:block;width:100%;text-align:left;border:0;background:none;padding:0;margin-bottom:6px;font-weight:800;font-size:13.5px;font-family:inherit;color:inherit;cursor:pointer}',
-      '.ppme-nba-folded{font-size:12.5px;color:#3B4D66;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-      '.ppme-nba-meta{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px}',
-      '.ppme-chip{font-size:11.5px;font-weight:700;border-radius:999px;padding:2px 9px;background:#EEF2F7;color:#3B4D66}',
-      '.ppme-chip.sig-go{background:#EAF6EF;color:#0E6B37}',
-      '.ppme-chip.sig-wait{background:#FFF1D6;color:#7A5A00}',
-      '.ppme-chip.sig-stop{background:#FDECEC;color:#B42318}',
-      '.ppme-unc{margin:6px 0;font-size:12.5px}',
-      '.ppme-nba-act{margin-top:8px;padding:10px;border-radius:10px;background:#fff;border:1px solid #EEF2F7}',
-      '.ppme-est{font-size:12px;color:#61708A;margin-top:4px}',
-      '.ppme-stale{font-size:12px;color:#7A5A00;margin:8px 0 0}',
-      '.ppme-nba-run{font-size:12.5px;color:#0E6B37;font-weight:700;margin:2px 0 6px}',
-      '.ppme-nba-bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}',
-      '.ppme-nba-bar button,.ppme-nba>.ppme-go{border:1px solid #E3E8F0;background:#fff;border-radius:999px;padding:7px 14px;font-weight:700;font-size:12.5px;font-family:inherit;cursor:pointer}',
-      '.ppme-nba .ppme-go{background:#12A150;color:#fff;border-color:#12A150}',
-      '.ppme-nba button:disabled{opacity:.55;cursor:wait}',
-      '.ppme-confirm{margin-top:10px;padding:10px;border-radius:10px;background:#FFF1D6}',
-      '.ppme-confirm p{margin:0}',
+      // résultats : livrables, constats sourcés, agents
       '.ppme-cite{border:0;background:#EEF2F7;color:#3B4D66;border-radius:6px;padding:0 6px;margin:0 1px;font-size:11.5px;font-family:inherit;cursor:pointer}',
       '.ppme-doc{background:#fff;border:1px solid #EEF2F7;border-radius:8px;padding:8px 10px;margin:6px 0;max-height:320px;overflow:auto}',
       '.ppme-findings{margin:6px 0;padding-left:18px}',
-      '.ppme-findings li{margin:4px 0;font-size:13px;line-height:1.45;color:inherit}',
+      '.ppj-shell .ppme-findings li{margin:4px 0;font-size:13px;line-height:1.45}',
       '.ppme-src{font-size:11.5px;color:#3B4D66}',
-      '.ppme-impact{font-size:12.5px;font-weight:600;margin:6px 0}',
+      '.ppj-shell .ppme-impact{font-size:12.5px;font-weight:600;margin:6px 0}',
       '.ppme-sources{font-size:12px;margin-top:6px}',
-      '.ppme-sources summary{font-size:12.5px;font-weight:600;cursor:pointer}',
-      '.ppme-sources li{font-size:12px;margin:2px 0}',
+      '.ppj-shell .ppme-sources>summary{font-size:12.5px!important;font-weight:600;cursor:pointer}',
       '.ppme-sources ol{padding-left:18px;margin:4px 0}',
+      '.ppj-shell .ppme-sources li{font-size:12px;margin:2px 0}',
       '.ppme-sources a{color:#3B4D66;word-break:break-word}',
-      '.ppme-tabs{display:flex;gap:6px;margin:0 0 10px}',
-      '.ppme-tabs button{flex:1;border:1px solid #E3E8F0;background:#fff;border-radius:999px;padding:7px 10px;font-weight:700;font-size:12.5px;font-family:inherit;color:#3B4D66;cursor:pointer}',
-      '.ppme-tabs button[aria-selected="true"]{background:#16233A;color:#fff;border-color:#16233A}',
-      '.ppme-view{flex:1;min-height:0;display:flex;flex-direction:column}',
-      '.ppme-view[hidden]{display:none!important}',
-      '.ppme-lib{overflow:auto;gap:10px}',
-      '.ppme-create{padding:10px 12px;border:1px dashed #BFE6CF;border-radius:12px;background:#F7FCF9}',
-      '.ppme-create summary{font-weight:700;font-size:13px;cursor:pointer}',
-      '.ppme-create textarea,.ppme-improve textarea{width:100%;box-sizing:border-box;margin:8px 0;border:1px solid #E3E8F0;border-radius:10px;padding:8px;font-family:inherit;font-size:13px;resize:vertical}',
-      '.ppme-create .ppme-go,.ppme-improve .ppme-go{border:0;background:#12A150;color:#fff;border-radius:999px;padding:7px 14px;font-weight:700;font-size:12.5px;font-family:inherit;cursor:pointer}',
-      '.ppme-agent{padding:12px;border:1px solid #E3E8F0;border-radius:12px;background:#fff;font-size:13px}',
-      '.ppme-msg .ppme-nba-bar button,.ppme-agent .ppme-nba-bar button,.ppme-confirm .ppme-nba-bar button{border:1px solid #E3E8F0;background:#fff;border-radius:999px;padding:6px 12px;font-weight:700;font-size:12px;font-family:inherit;cursor:pointer}',
-      '.ppme-agent .ppme-nba-bar .ppme-go,.ppme-msg .ppme-nba-bar .ppme-go,.ppme-confirm .ppme-nba-bar .ppme-go{background:#12A150;color:#fff;border-color:#12A150}',
-      '.ppme-chat summary{font-size:12.5px!important;line-height:1.4!important;font-weight:600}',
-      '.ppme-chat .ppme-create summary{font-size:13px!important;font-weight:700}',
+      '.ppj-shell .ppme-est{font-size:12px;color:#61708A;margin:4px 0 0}',
+      '.ppj-shell .ppme-stale{font-size:12px;color:#7A5A00;margin:8px 0 0}',
+      '.ppme-bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px}',
+      '.ppme-bar button,.ppme-nba-done button{border:1px solid #d9e5dd;background:#fff;color:#294137;border-radius:999px;padding:7px 13px;font:700 12px/1.3 system-ui;cursor:pointer}',
+      '.ppme-bar button:hover{background:#edf6f0}',
+      '.ppme-bar .ppme-go{background:#12A150;color:#fff;border-color:#12A150}',
+      '.ppme-bar .ppme-go:hover{background:#0E8A44}',
+      '.ppme-bar button:disabled{opacity:.55;cursor:wait}',
+      '.ppme-confirm{margin-top:10px;padding:10px;border-radius:10px;background:#FFF1D6;color:#5C4400}',
+      '.ppj-shell .ppme-confirm p{margin:0}',
+      // la librairie : les agents nés des prochaines actions
+      '.ppme-lib .ppme-agent{padding:12px 14px;border:1px solid #dfe7e2;border-radius:12px;background:#fff;font-size:13px}',
+      '.ppj-shell .ppme-empty{margin:0;padding:14px;border:1px dashed #cbdcd2;border-radius:12px;color:#536b60;font-size:13px}',
       '.ppme-code{max-height:300px;overflow:auto;margin:8px 0 0;padding:10px;background:#0F1D33;color:#E3E8F0;border-radius:10px;font-size:11.5px;line-height:1.45;white-space:pre}',
-      '.ppme-improve{margin-top:8px}'
+      '.ppme-improve{margin-top:8px}',
+      '.ppj-shell .ppme-improve textarea{margin:0}',
+      // la prochaine action de Stan, dans la carte « Objectif closing » du Parcours
+      '.ppj-quest:has(.ppme-nba.ppme-has-nba) .ppj-next-cta{display:none}',
+      '.ppme-nba{margin-top:14px;padding:12px 14px;border-radius:12px;background:#ffffff12;border:1px solid #ffffff2e;color:#fff;font-size:12.5px;line-height:1.45}',
+      '.ppme-nba .ppme-kicker{display:block;margin-bottom:6px;font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:#8FD8AF}',
+      '.ppme-nba-meta{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}',
+      '.ppme-nba .ppme-chip{font-size:11px;font-weight:700;border-radius:999px;padding:2px 9px;background:#ffffff1f;color:#fff}',
+      '.ppme-nba .ppme-chip.sig-go{background:#12A15055;color:#C9F5DA}',
+      '.ppme-nba .ppme-chip.sig-wait{background:#E0A52655;color:#FFE6B0}',
+      '.ppme-nba .ppme-chip.sig-stop{background:#E5484D55;color:#FFD0D2}',
+      '.ppj-shell .ppj-quest .ppme-nba p{margin:0 0 6px}',
+      '.ppj-shell .ppme-nba .ppme-unc,.ppj-shell .ppme-nba .ppme-why{color:#C5D4DF;font-size:12.5px}',
+      '.ppme-nba .ppme-unc strong{color:#fff}',
+      '.ppme-nba .ppme-act-type{display:block;font-size:11px;font-weight:700;color:#8FD8AF}',
+      '.ppme-nba .ppme-act-title{display:block;margin:2px 0 4px;font-size:15px;line-height:1.3;color:#fff}',
+      '.ppj-shell .ppme-nba .ppme-est{font-size:11.5px;color:#9FB3C2}',
+      '.ppme-nba .ppme-step{border:0;background:none;padding:0;color:#8FD8AF;font:600 11.5px system-ui;text-decoration:underline;cursor:pointer;text-align:left}',
+      '.ppj-shell .ppme-nba .ppme-stale{color:#FFE6B0}',
+      '.ppj-shell .ppme-nba .ppme-wait{color:#C5D4DF}',
+      '.ppme-nba .ppme-cite{background:#ffffff1f;color:#fff}',
+      '.ppj-shell .ppme-nba-run{color:#C9F5DA;font-weight:600}',
+      '.ppme-nba-done{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 8px;padding:8px 10px;border-radius:10px;background:#12A15033;color:#C9F5DA;font-weight:600}',
+      '.ppme-nba .ppme-bar button,.ppme-nba-done button{border-color:#ffffff33;background:#ffffff14;color:#fff}',
+      '.ppme-nba .ppme-bar button:hover,.ppme-nba-done button:hover{background:#ffffff26}',
+      '.ppme-nba .ppme-bar .ppme-go{background:#12A150;border-color:#12A150;box-shadow:0 4px 14px #12A15055}',
+      '.ppme-nba .ppme-icon{min-width:34px;padding:7px 10px}',
+      '.ppme-nba .ppme-confirm{background:#ffffff1a;color:#fff}',
+      // la pilule du mémo s'efface quand le panneau Stan couvre toute la page
+      '@media (max-width:650px){body:has(#stan-sidebar:not([hidden])) .ppme-pill{display:none}.ppme-pill{left:12px;bottom:74px}.ppme-pill button{padding:7px 11px;font-size:12px}}',
+      'body:has(#stan-sidebar.ppj-full:not([hidden])) .ppme-pill{display:none}'
     ].join('\n');
     document.head.appendChild(css);
   }

@@ -15,7 +15,7 @@
   if (!demo && !document.getElementById('ppme-script')) {
     var memoEditor = document.createElement('script');
     memoEditor.id = 'ppme-script';
-    memoEditor.src = assetBase + 'memo-editor.js?v=3';
+    memoEditor.src = assetBase + 'memo-editor.js?v=4';
     memoEditor.defer = true;
     document.head.appendChild(memoEditor);
   }
@@ -23,6 +23,10 @@
   var selected = new Set(), key = '', accessToken = '', memberSession = '', accessPending = null, shell, content, statusLine, fab, opened = false, pendingDossier = null, reconnectNeeded = false, reconnectNotice;
   var loginFrame = null, loginChannel = '', loginDialog = null, loginOpener = null, loginTimer = null;
   var openingDossier = null, connectionProgress;
+  // 10/10 — les outils du mémo réservés à l'équipe du fonds (memo-editor.js) s'intègrent à ce
+  // poste de travail : des onglets (Chat, Librairie) et des emplacements dans le Parcours
+  // (la prochaine action de Stan, à la place de « Prochaine étape »).
+  var views = {}, slots = {};
   var states = { ready: 'À faire', running: 'En cours', awaiting_evidence: 'Pièces attendues', review: 'À valider',
     validated: 'Validé', failed: 'À reprendre', not_applicable: 'Non applicable' };
   var esc = function (v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); };
@@ -300,16 +304,42 @@
     }
   }
   function open(tab) {
-    opened = true; shell.hidden = false; fab.hidden = true; pane = tab === 'history' ? 'history' : 'roadmap';
-    shell.querySelector('#stan-tab-' + (pane === 'history' ? 'hist' : 'roadmap')).focus();
+    opened = true; shell.hidden = false; fab.hidden = true;
+    pane = views[tab] ? tab : tab === 'history' ? 'history' : 'roadmap';
+    (views[pane] ? views[pane].tab : shell.querySelector('#stan-tab-' + (pane === 'history' ? 'hist' : 'roadmap'))).focus();
     render(); schedule();
+    if (views[pane]) views[pane].show();
+  }
+  // Un onglet de plus, entre Parcours et Historique ; sa vue se dessine elle-même.
+  function addView(id, label, show) {
+    if (!shell || !/^[a-z]{2,20}$/.test(id || '') || id === 'roadmap' || id === 'history') return null;
+    if (views[id]) return views[id].box;
+    var tab = el('button', { id: 'stan-tab-' + id, type: 'button', 'data-do': 'view', 'data-id': id, 'aria-selected': 'false' }, label);
+    var hist = shell.querySelector('#stan-tab-hist');
+    hist.parentNode.insertBefore(tab, hist);
+    var box = el('section', { class: 'ppj-view', 'data-view': id, 'aria-label': label }); box.hidden = true;
+    content.parentNode.insertBefore(box, content.nextSibling);
+    views[id] = { tab: tab, box: box, show: typeof show === 'function' ? show : function () {} };
+    return box;
+  }
+  // Un élément gardé d'un rendu à l'autre (état, saisie), posé à son emplacement du Parcours.
+  function addSlot(id, node) {
+    if (!/^[a-z]{2,20}$/.test(id || '') || !node) return;
+    slots[id] = node;
+    if (state && content) render();
+  }
+  function fillSlots() {
+    Object.keys(slots).forEach(function (id) {
+      var place = content.querySelector('[data-ppj-slot="' + id + '"]');
+      if (place) place.replaceWith(slots[id]);
+    });
   }
   function close() { opened = false; shell.hidden = true; fab.hidden = false; clearTimeout(poll); fab.focus(); }
   function build() {
     // A cached legacy editor may initialize just before this production widget.
     // The supported dossier workflow now owns edits; remove its obsolete UI.
     ['plEditor', 'plModal'].forEach(function (id) { var old = document.getElementById(id); if (old) old.remove(); });
-    var css = el('link', { rel: 'stylesheet', href: assetBase + 'stan-journey.css?v=8' }); document.head.appendChild(css);
+    var css = el('link', { rel: 'stylesheet', href: assetBase + 'stan-journey.css?v=9' }); document.head.appendChild(css);
     fab = el('button', { id: 'stan-fabBtn', type: 'button', class: 'ppj-fab' + (demo ? ' ppj-demo-fab' : ''), 'aria-label': 'Stan Beta — ouvrir Parcours' }, 'Stan β · Parcours');
     fab.onclick = function () { open('roadmap'); };
     shell = el('aside', { id: 'stan-sidebar', class: 'ppj-shell', 'aria-label': 'Parcours du dossier' }); shell.hidden = true;
@@ -361,10 +391,15 @@
   }
   function render() {
     if (!content) return;
-    // A background run must never erase another action's unsaved form.
-    if (content.querySelector('form[data-form="add"],form[data-form="attest"],form[data-form="skip"],form[data-form="settings"],form[data-form="inputs"]')) return;
     shell.querySelector('#stan-tab-roadmap').setAttribute('aria-selected', String(pane === 'roadmap'));
     shell.querySelector('#stan-tab-hist').setAttribute('aria-selected', String(pane === 'history'));
+    Object.keys(views).forEach(function (id) {
+      views[id].box.hidden = id !== pane; views[id].tab.setAttribute('aria-selected', String(id === pane));
+    });
+    content.hidden = !!views[pane];
+    if (views[pane]) return;                     // un onglet ajouté : le Parcours reste intact, caché
+    // A background run must never erase another action's unsaved form.
+    if (content.querySelector('form[data-form="add"],form[data-form="attest"],form[data-form="skip"],form[data-form="settings"],form[data-form="inputs"]')) return;
     if (!state) {
       content.innerHTML = '<section class="ppj-welcome"><span class="ppj-eyebrow">DE L’ÉVALUATION AU CLOSING</span><h3>Un dossier, toutes les prochaines actions.</h3>' +
         '<p>Retrouvez vos preuves, analyses, décisions et documents dans un espace privé. Toutes les étapes restent consultables.</p>' +
@@ -375,6 +410,7 @@
     }
     var scroll = content.scrollTop, fresh = celebrate();
     content.innerHTML = pane === 'history' ? history() : roadmap();
+    fillSlots();
     content.scrollTop = scroll;
     fresh.forEach(function (id) { var checked = content.querySelector('#stan-action-' + id); if (checked) checked.classList.add('ppj-just-done'); });
     if (pendingResult && pane === 'roadmap' && active === pendingResult && state.actions[pendingResult].status !== 'running' && state.actions[pendingResult].result) {
@@ -414,6 +450,7 @@
       '<p class="ppj-quest-stats"><b>' + plan.done + ' / ' + plan.total + '</b> étapes cochées' + (plan.left ? ' · plus que <b>' + plan.left + '</b> avant le closing' : '') + '</p>' +
       (meta ? '<p class="ppj-quest-meta">' + meta + '</p>' : '') + '</div></div>' +
       (next ? button('<span>▶ ' + (plan.left ? 'Prochaine étape' : 'Après le closing') + ' : ' + esc(next.title) + '</span><span aria-hidden="true">→</span>', 'ppj-primary ppj-next-cta', 'goto', next.id) : '') +
+      '<div data-ppj-slot="next"></div>' +
       (wins.length ? '<div class="ppj-missions"><span class="ppj-missions-t">À cocher maintenant</span>' + wins.map(function (w) {
         return '<button type="button" class="ppj-mission" data-do="goto" data-id="' + w.a.id + '"><span class="ppj-tick" data-state="' + w.state + '" aria-hidden="true">' + stepIcons[w.state] + '</span>' +
           '<span class="ppj-mission-text"><b>' + esc(w.a.title) + '</b><small>' + w.why + '</small></span><span aria-hidden="true">→</span></button>';
@@ -631,6 +668,7 @@
       }
       if (cmd === 'full') { shell.classList.toggle('ppj-full'); return; }
       if (cmd === 'roadmap' || cmd === 'history') { pane = cmd; content.innerHTML = ''; render(); return; }
+      if (cmd === 'view' && views[id]) { pane = id; render(); views[id].show(); return; }
       if (cmd === 'phase') { filter = filter === id ? '' : id; render(); return; }
       if (cmd === 'all') { filter = ''; search = ''; render(); return; }
       if (cmd === 'after') {
@@ -702,7 +740,7 @@
       }
     } catch (error) { announce(error.message, true); b.disabled = false; }
   }
-  window.StanJourney = { open: open, showAction: function (id) { active = id; filter = ''; open('roadmap'); }, getState: function () { return demo ? state : null; } };
+  window.StanJourney = { open: open, addView: addView, addSlot: addSlot, showAction: function (id) { active = id; filter = ''; open('roadmap'); }, getState: function () { return demo ? state : null; } };
   if (!demo) window.addEventListener('message', function (e) {
     if (loginFrame && e.source === loginFrame.contentWindow && e.origin === 'https://proplace.co'
         && e.data && e.data.channel === loginChannel) {
