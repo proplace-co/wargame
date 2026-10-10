@@ -44,7 +44,7 @@
     title: 'Versions du mémo', sections: 'sections'
   };
   var state = { head: null, role: '', email: '', editing: false, open: null, preview: 0 };
-  window.PPMemoEditor = { version: 2, state: state };
+  window.PPMemoEditor = { version: 3, state: state };
 
   function el(tag, attrs, text) {
     var node = document.createElement(tag);
@@ -361,10 +361,14 @@
     var mine = m.role === 'user';
     var box = el('div', { class: 'ppme-msg ' + (mine ? 'me' : 'stan') + (m.kind ? ' ppme-' + m.kind : '') });
     box.appendChild(el('div', { class: 'ppme-who' }, (mine ? (m.by === state.email ? C.you : shortWho(m.by)) : 'Stan') + ' · ' + when(m.at)
-      + (!mine && m.cost ? ' · ' + C.cost + ' ' + Number(m.cost).toFixed(2) + ' $' : '')));
+      + (!mine && m.cost ? ' · ' + C.cost + ' ' + Number(m.cost).toFixed(2) + ' $' : '')
+      + (!mine && m.cost_eur ? ' · ' + C.cost + ' ' + fmtEur(m.cost_eur) + ' €' : '')));
     if (m.kind === 'deliverable') renderDeliverable(box, m);
-    else if (m.kind === 'research') renderResearch(box, m);
+    else if (m.kind === 'research') renderResearch(box, m, m.action && m.action.title);
+    else if (m.kind === 'agent_draft') renderAgentDraft(box, m);
+    else if (m.kind === 'agent_result') renderAgentResult(box, m);
     else if (m.kind === 'next_action') box.appendChild(el('div', { class: 'ppme-text' }, '🎯 ' + N.did + ((m.action && m.action.title) || m.text || '')));
+    else if (m.kind === 'agent_build' || m.kind === 'agent_run') box.appendChild(el('div', { class: 'ppme-text' }, (m.kind === 'agent_build' ? '🛠️ ' : '🧩 ') + (m.text || '')));
     else box.appendChild(el('div', { class: 'ppme-text' }, m.text || ''));
     (m.proposals || []).forEach(function (p) { box.appendChild(proposalCard(p)); });
     chat.list.appendChild(box);
@@ -377,7 +381,8 @@
     propose: 'Propose the next action', computing: 'Stan is studying the memo, its history and the deal progress… (1 to 3 min)',
     uncertainty: 'Key uncertainty', doIt: 'Let’s do it', other: 'Another idea', recompute: 'Recompute',
     running: 'In progress: ', stale: function (n) { return 'Proposed on version ' + n + ': the memo has changed since.'; },
-    types: { draft: '✉️ Ready-to-use draft', research: '🔎 Sourced research', memo: '📝 Memo update' },
+    types: { draft: '✉️ Ready-to-use draft', research: '🔎 Sourced research', memo: '📝 Memo update',
+      agent: '🧩 Library agent', build_agent: '🛠️ Code a custom agent' },
     est: function (eur, min) { return 'Estimated cost ≈ ' + eur + ' € · ~' + min + ' min'; },
     confirm: function (eur) { return 'Estimated cost: ' + eur + ' € (above 5 €). Go ahead?'; }, confirmBtn: 'Confirm', cancel: 'Cancel',
     copy: 'Copy', copied: 'Copied ✓', check: 'Check before use: ', impact: 'Impact on the decision: ', sources: 'Sources',
@@ -389,7 +394,8 @@
     propose: 'Proposer la prochaine action', computing: 'Stan étudie le mémo, son historique et le Parcours… (1 à 3 min)',
     uncertainty: 'Incertitude clé', doIt: 'Faisons-le', other: 'Autre idée', recompute: 'Recalculer',
     running: 'En cours : ', stale: function (n) { return 'Proposée sur la version ' + n + ' : le mémo a changé depuis.'; },
-    types: { draft: '✉️ Livrable prêt à l’emploi', research: '🔎 Recherche sourcée', memo: '📝 Mise à jour du mémo' },
+    types: { draft: '✉️ Livrable prêt à l’emploi', research: '🔎 Recherche sourcée', memo: '📝 Mise à jour du mémo',
+      agent: '🧩 Agent de la librairie', build_agent: '🛠️ Coder un agent sur mesure' },
     est: function (eur, min) { return 'Coût estimé ≈ ' + eur + ' € · ~' + min + ' min'; },
     confirm: function (eur) { return 'Coût estimé : ' + eur + ' € (au-delà de 5 €). On y va ?'; }, confirmBtn: 'Confirmer', cancel: 'Annuler',
     copy: 'Copier', copied: 'Copié ✓', check: 'À vérifier avant usage : ', impact: 'Ce que cela change pour la décision : ', sources: 'Sources',
@@ -467,7 +473,8 @@
       box.appendChild(u);
     }
     var act = el('div', { class: 'ppme-nba-act' });
-    act.appendChild(el('div', { class: 'ppme-op-h' }, (i ? N.alt(i, acts.length - 1) + ' · ' : '') + (N.types[a.type] || a.type)));
+    act.appendChild(el('div', { class: 'ppme-op-h' }, (i ? N.alt(i, acts.length - 1) + ' · ' : '') + (N.types[a.type] || a.type)
+      + (a.agent_name ? ' · ' + a.agent_name : '')));
     act.appendChild(el('strong', {}, a.title));
     if (a.why) act.appendChild(citedText(a.why, 'p', 'ppme-why'));
     if (a.deliverable) act.appendChild(citedText(N.deliverable + a.deliverable, 'p', 'ppme-why'));
@@ -519,16 +526,17 @@
     (function poll() {
       setTimeout(function () {
         api('/next/runs/' + rid).then(function (s) {
-          if (s.state === 'running' && ++tries < 150) { poll(); return; }
+          if (s.state === 'running' && ++tries < 450) { poll(); return; }
           delete nba.runs[rid];
           if (s.state === 'done') {
             if (s.next) { nba.data = s.next; nba.index = 0; nba.head = Math.max(nba.head, s.next.base || 0); }
             if (s.message && chat.panel) renderMessage(s.message);
+            if (s.op === 'build' || s.op === 'agent') lib.data = null;
           } else {
             toast(N.failed + (s.error || s.detail || s.status));
           }
           renderNba();
-        }).catch(function () { if (++tries < 150) poll(); });
+        }).catch(function () { if (++tries < 450) poll(); });
       }, tries < 20 ? 3000 : 8000);
     })();
   }
@@ -567,10 +575,10 @@
     box.appendChild(copy);
     if (m.notes) box.appendChild(el('p', { class: 'ppme-why' }, N.check + m.notes));
   }
-  function renderResearch(box, m) {
+  function renderResearch(box, m, title) {
     var byN = {};
     (m.sources || []).forEach(function (s) { byN[s.n] = s; });
-    if (m.action && m.action.title) box.appendChild(el('strong', {}, m.action.title));
+    if (title) box.appendChild(el('strong', {}, title));
     box.appendChild(el('div', { class: 'ppme-text' }, m.text || ''));
     var ul = el('ul', { class: 'ppme-findings' });
     (m.findings || []).forEach(function (f) {
@@ -598,8 +606,213 @@
       box.appendChild(det);
     }
   }
+  /* ── Librairie : agents codés par Stan, essayés sur un dossier, partagés par leur créateur ── */
+  var L = en ? {
+    tabChat: '💬 Conversation', tabLib: '📚 Library', loading: 'Loading…',
+    intro: 'Agents coded by Stan for tasks he could not do yet. Each one is tried on a deal, then shared with every fund by its creator. It runs isolated, with no access to anything but the current deal.',
+    create: '🛠️ Create a custom agent', taskPh: 'e.g. “Audit the tech stack and tech hiring of the main competitors”',
+    build: function (eur) { return 'Code and try the agent · ≈ ' + eur + ' €'; },
+    empty: 'The library is empty: create the first agent.', run: 'Run on this deal', code: 'View code', hideCode: 'Hide code',
+    validate: 'Approve and share', improve: 'Improve', discard: 'Discard', retire: 'Remove from library',
+    feedbackPh: 'What should be improved…', send: 'Send to Stan',
+    shared: 'Shared with all funds', draft: 'Draft — visible to your fund', mine: 'created by you',
+    uses: function (n) { return n + (n === 1 ? ' run' : ' runs'); }, pendingV: function (v) { return 'Version ' + v + ' awaiting approval'; },
+    testOk: 'Trial on this deal succeeded', testKo: 'The trial failed: ',
+    built: function (name, v) { return '🛠️ Agent coded: ' + name + ' (v' + v + ')'; },
+    states: { shared: 'Shared with all funds', discarded: 'Discarded' },
+    sharedToast: 'Agent shared with every fund.', discardedToast: 'Done.'
+  } : {
+    tabChat: '💬 Conversation', tabLib: '📚 Librairie', loading: 'Chargement…',
+    intro: 'Des agents codés par Stan pour des tâches qu’il ne savait pas encore faire. Chacun est essayé sur un dossier, puis partagé avec tous les fonds par son créateur. Il tourne isolé, sans accès à rien d’autre que le dossier en cours.',
+    create: '🛠️ Créer un agent sur mesure', taskPh: 'ex. « Audite la stack technique et les recrutements tech des principaux concurrents »',
+    build: function (eur) { return 'Coder et essayer l’agent · ≈ ' + eur + ' €'; },
+    empty: 'La librairie est vide : créez le premier agent.', run: 'Lancer sur ce dossier', code: 'Voir le code', hideCode: 'Masquer le code',
+    validate: 'Valider et partager', improve: 'Améliorer', discard: 'Abandonner', retire: 'Retirer de la librairie',
+    feedbackPh: 'Ce qu’il faut améliorer…', send: 'Envoyer à Stan',
+    shared: 'Partagé avec tous les fonds', draft: 'Brouillon — visible par votre fonds', mine: 'créé par vous',
+    uses: function (n) { return n + (n > 1 ? ' utilisations' : ' utilisation'); }, pendingV: function (v) { return 'Version ' + v + ' à valider'; },
+    testOk: 'Essai réussi sur ce dossier', testKo: 'L’essai a échoué : ',
+    built: function (name, v) { return '🛠️ Agent codé : ' + name + ' (v' + v + ')'; },
+    states: { shared: 'Partagé avec tous les fonds', discarded: 'Abandonné' },
+    sharedToast: 'Agent partagé avec tous les fonds.', discardedToast: 'C’est fait.'
+  };
+  var lib = { box: null, data: null, state: {} };
+  function loadLibrary() {
+    if (!lib.box) return;
+    if (!lib.data) { lib.box.innerHTML = ''; lib.box.appendChild(el('div', { class: 'ppme-wait' }, L.loading)); }
+    api('/library').then(function (j) {
+      if (!j.ok) { toast(N.failed + (j.detail || j.error || j.status)); return; }
+      lib.data = j;
+      renderLibrary();
+    }).catch(function () {});
+  }
+  function renderLibrary() {
+    var box = lib.box;
+    if (!box || !lib.data) return;
+    box.innerHTML = '';
+    box.appendChild(el('p', { class: 'ppme-hint' }, L.intro));
+    var create = el('details', { class: 'ppme-create' });
+    create.appendChild(el('summary', {}, L.create));
+    var task = el('textarea', { rows: '3', placeholder: L.taskPh, 'aria-label': L.create });
+    var go = el('button', { type: 'button', class: 'ppme-go' }, L.build(fmtEur(lib.data.build_eur)));
+    go.onclick = function () {
+      if (task.value.trim().length < 10) { task.focus(); return; }
+      go.disabled = true;
+      buildAgent({ task: task.value.trim() }, function (ok) { go.disabled = false; if (ok) task.value = ''; });
+    };
+    create.appendChild(task);
+    create.appendChild(go);
+    box.appendChild(create);
+    var agents = lib.data.agents || [];
+    if (!agents.length) box.appendChild(el('p', { class: 'ppme-why' }, L.empty));
+    agents.forEach(function (a) { box.appendChild(agentCard(a)); });
+  }
+  function agentCard(a) {
+    var card = el('div', { class: 'ppme-agent' });
+    card.appendChild(el('strong', {}, a.name));
+    if (a.description) card.appendChild(el('p', { class: 'ppme-why' }, a.description));
+    var meta = [a.status === 'shared' ? L.shared : L.draft, 'v' + a.version, L.uses(a.uses), '≈ ' + fmtEur(a.est_eur) + ' €'];
+    if (a.mine) meta.push(L.mine);
+    card.appendChild(el('div', { class: 'ppme-est' }, meta.join(' · ')));
+    if (a.mine && a.test && !a.test.ok && a.status === 'draft') card.appendChild(el('p', { class: 'ppme-stale' }, L.testKo + (a.test.error || '')));
+    if (a.pending) {
+      card.appendChild(el('p', { class: 'ppme-stale' }, L.pendingV(a.pending.version)
+        + (a.pending.test && !a.pending.test.ok ? ' — ' + L.testKo + (a.pending.test.error || '') : '')));
+    }
+    var bar = el('div', { class: 'ppme-nba-bar' });
+    if (a.status === 'shared' || (a.test && a.test.ok)) {
+      var run = el('button', { type: 'button', class: 'ppme-go' }, L.run);
+      run.onclick = function () { runAgent(a, false, run, card); };
+      bar.appendChild(run);
+    }
+    var code = el('button', { type: 'button' }, L.code);
+    code.onclick = function () { toggleCode(a, card, code); };
+    bar.appendChild(code);
+    var testOk = a.pending ? a.pending.test && a.pending.test.ok : a.status === 'draft' && a.test && a.test.ok;
+    if (a.mine && testOk) {
+      var share = el('button', { type: 'button' }, L.validate);
+      share.onclick = function () { agentDecision(a.id, 'validate', share); };
+      bar.appendChild(share);
+    }
+    var better = el('button', { type: 'button' }, L.improve);
+    better.onclick = function () { improveForm(a.id, card); };
+    bar.appendChild(better);
+    if (a.mine) {
+      var drop = el('button', { type: 'button' }, a.pending || a.status === 'draft' ? L.discard : L.retire);
+      drop.onclick = function () { agentDecision(a.id, 'discard', drop); };
+      bar.appendChild(drop);
+    }
+    card.appendChild(bar);
+    return card;
+  }
+  function toggleCode(a, card, btn) {
+    var open = card.querySelector('.ppme-code');
+    if (open) { open.remove(); btn.textContent = L.code; return; }
+    api('/agents/' + a.id).then(function (j) {
+      if (!j.ok) { toast(N.failed + (j.detail || j.status)); return; }
+      card.appendChild(el('pre', { class: 'ppme-code' }, j.pending_code || j.code || ''));
+      btn.textContent = L.hideCode;
+    });
+  }
+  function improveForm(aid, container) {
+    if (container.querySelector('.ppme-improve')) return;
+    var form = el('div', { class: 'ppme-improve' });
+    var text = el('textarea', { rows: '3', placeholder: L.feedbackPh, 'aria-label': L.improve });
+    var send = el('button', { type: 'button', class: 'ppme-go' }, L.send);
+    send.onclick = function () {
+      if (text.value.trim().length < 5) { text.focus(); return; }
+      send.disabled = true;
+      buildAgent({ agent_id: aid, feedback: text.value.trim() }, function (ok) { send.disabled = false; if (ok) form.remove(); });
+    };
+    form.appendChild(text);
+    form.appendChild(send);
+    container.appendChild(form);
+    text.focus();
+  }
+  function showChat() { if (chat.show) chat.show('chat'); }
+  function buildAgent(body, done) {
+    api('/agents/build', 'POST', body).then(function (j) {
+      done(!!j.ok);
+      if (!j.ok) { toast(N.failed + (j.detail || j.error || j.status)); return; }
+      showChat();
+      (j.messages || []).forEach(renderMessage);
+      track(j.run_id, { op: 'build', title: (j.messages && j.messages[0] && j.messages[0].text) || L.create });
+    }).catch(function (e) { done(false); toast(N.failed + e); });
+  }
+  function runAgent(a, confirmed, btn, container) {
+    if (btn) btn.disabled = true;
+    api('/agents/' + a.id + '/run', 'POST', { confirm: !!confirmed }).then(function (j) {
+      if (btn) btn.disabled = false;
+      if (j.needs_confirm) {
+        var box = el('div', { class: 'ppme-confirm', role: 'alertdialog' });
+        box.appendChild(el('p', {}, N.confirm(fmtEur(j.est_eur))));
+        var bar = el('div', { class: 'ppme-nba-bar' });
+        var yes = el('button', { type: 'button', class: 'ppme-go' }, N.confirmBtn);
+        var no = el('button', { type: 'button' }, N.cancel);
+        yes.onclick = function () { box.remove(); runAgent(a, true, null, container); };
+        no.onclick = function () { box.remove(); };
+        bar.appendChild(yes);
+        bar.appendChild(no);
+        box.appendChild(bar);
+        container.appendChild(box);
+        return;
+      }
+      if (!j.ok) { toast(N.failed + (j.detail || j.error || j.status)); return; }
+      showChat();
+      (j.messages || []).forEach(renderMessage);
+      track(j.run_id, { op: 'agent', title: a.name });
+    }).catch(function (e) { if (btn) btn.disabled = false; toast(N.failed + e); });
+  }
+  function agentDecision(aid, what, btn) {
+    if (btn) btn.disabled = true;
+    api('/agents/' + aid + '/' + what, 'POST', {}).then(function (j) {
+      if (btn) btn.disabled = false;
+      if (!j.ok) { toast(N.failed + (j.detail || j.error || j.status)); return; }
+      lib.state[aid] = what === 'validate' ? 'shared' : 'discarded';
+      toast(what === 'validate' ? L.sharedToast : L.discardedToast);
+      Array.prototype.forEach.call(document.querySelectorAll('.ppme-agent-acts[data-aid="' + aid + '"]'), function (n) {
+        n.replaceWith(el('span', { class: 'ppme-status accepted' }, L.states[lib.state[aid]]));
+      });
+      loadLibrary();
+    }).catch(function (e) { if (btn) btn.disabled = false; toast(N.failed + e); });
+  }
+  function renderAgentDraft(box, m) {
+    var a = m.agent || {};
+    box.appendChild(el('strong', {}, L.built(a.name || '', a.version || 1)));
+    if (a.description) box.appendChild(el('p', { class: 'ppme-why' }, a.description));
+    if (m.error) box.appendChild(el('p', { class: 'ppme-stale' }, L.testKo + m.error));
+    else {
+      box.appendChild(el('div', { class: 'ppme-op-h' }, L.testOk));
+      renderResearch(box, m, '');
+      if (m.deliverable) renderDeliverable(box, { title: m.deliverable.title, text: m.deliverable.content });
+    }
+    if (lib.state[a.id]) { box.appendChild(el('span', { class: 'ppme-status accepted' }, L.states[lib.state[a.id]])); return; }
+    var bar = el('div', { class: 'ppme-nba-bar ppme-agent-acts', 'data-aid': a.id || '' });
+    var mine = a.by === state.email;
+    if (mine && a.ok) {
+      var share = el('button', { type: 'button', class: 'ppme-go' }, L.validate);
+      share.onclick = function () { agentDecision(a.id, 'validate', share); };
+      bar.appendChild(share);
+    }
+    var better = el('button', { type: 'button' }, L.improve);
+    better.onclick = function () { improveForm(a.id, box); };
+    bar.appendChild(better);
+    if (mine) {
+      var drop = el('button', { type: 'button' }, L.discard);
+      drop.onclick = function () { agentDecision(a.id, 'discard', drop); };
+      bar.appendChild(drop);
+    }
+    box.appendChild(bar);
+  }
+  function renderAgentResult(box, m) {
+    var a = m.agent || {};
+    box.appendChild(el('strong', {}, '🧩 ' + (a.name || '')));
+    if (m.error) { box.appendChild(el('p', { class: 'ppme-stale' }, N.failed + m.error)); return; }
+    renderResearch(box, m, '');
+    if (m.deliverable) renderDeliverable(box, { title: m.deliverable.title, text: m.deliverable.content });
+  }
   function openChat() {
-    if (chat.panel) { chat.panel.remove(); chat.panel = null; chat.list = null; nba.box = null; return; }
+    if (chat.panel) { chat.panel.remove(); chat.panel = null; chat.list = null; nba.box = null; lib.box = null; chat.show = null; return; }
     var panel = el('aside', { class: 'ppme-chat', role: 'complementary', 'aria-label': C.title });
     var head = el('div', { class: 'ppme-card-h' });
     head.appendChild(el('strong', {}, C.title));
@@ -607,11 +820,28 @@
     x.onclick = openChat;
     head.appendChild(x);
     panel.appendChild(head);
-    panel.appendChild(el('p', { class: 'ppme-hint' }, C.hint));
+    var tabs = el('div', { class: 'ppme-tabs', role: 'tablist' });
+    var tabChat = el('button', { type: 'button', role: 'tab', 'aria-selected': 'true' }, L.tabChat);
+    var tabLib = el('button', { type: 'button', role: 'tab', 'aria-selected': 'false' }, L.tabLib);
+    tabs.appendChild(tabChat);
+    tabs.appendChild(tabLib);
+    panel.appendChild(tabs);
+    var view = el('div', { class: 'ppme-view' });
+    lib.box = el('div', { class: 'ppme-view ppme-lib', role: 'tabpanel', hidden: '' });
+    chat.show = function (which) {
+      view.hidden = which !== 'chat';
+      lib.box.hidden = which !== 'lib';
+      tabChat.setAttribute('aria-selected', String(which === 'chat'));
+      tabLib.setAttribute('aria-selected', String(which === 'lib'));
+      if (which === 'lib') loadLibrary();
+    };
+    tabChat.onclick = function () { chat.show('chat'); };
+    tabLib.onclick = function () { chat.show('lib'); };
+    view.appendChild(el('p', { class: 'ppme-hint' }, C.hint));
     nba.box = el('section', { class: 'ppme-nba', 'aria-label': N.title });
-    panel.appendChild(nba.box);
+    view.appendChild(nba.box);
     chat.list = el('div', { class: 'ppme-msgs' });
-    panel.appendChild(chat.list);
+    view.appendChild(chat.list);
     var form = el('form', { class: 'ppme-form' });
     var input = el('textarea', { rows: '3', placeholder: C.placeholder, 'aria-label': C.placeholder });
     var send = el('button', { type: 'submit', class: 'ppme-save' }, C.send);
@@ -635,12 +865,17 @@
       }).catch(function (err) { wait.remove(); send.disabled = false; toast(T.error + err); });
     };
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) form.requestSubmit(); });
-    panel.appendChild(form);
+    view.appendChild(form);
+    panel.appendChild(view);
+    panel.appendChild(lib.box);
     document.body.appendChild(panel);
     chat.panel = panel;
     api('/chat').then(function (j) {
       if (!j.ok) return;
-      (j.messages || []).forEach(function (m) { if (m.type === 'decision') chat.decisions[m.pid] = m.decision; });
+      (j.messages || []).forEach(function (m) {
+        if (m.type === 'decision') chat.decisions[m.pid] = m.decision;
+        if (m.type === 'agent_decision') lib.state[m.aid] = m.decision;
+      });
       (j.messages || []).forEach(renderMessage);
     });
     loadNext();
@@ -759,7 +994,24 @@
       '.ppme-sources summary{font-size:12.5px;font-weight:600;cursor:pointer}',
       '.ppme-sources li{font-size:12px;margin:2px 0}',
       '.ppme-sources ol{padding-left:18px;margin:4px 0}',
-      '.ppme-sources a{color:#3B4D66;word-break:break-word}'
+      '.ppme-sources a{color:#3B4D66;word-break:break-word}',
+      '.ppme-tabs{display:flex;gap:6px;margin:0 0 10px}',
+      '.ppme-tabs button{flex:1;border:1px solid #E3E8F0;background:#fff;border-radius:999px;padding:7px 10px;font-weight:700;font-size:12.5px;font-family:inherit;color:#3B4D66;cursor:pointer}',
+      '.ppme-tabs button[aria-selected="true"]{background:#16233A;color:#fff;border-color:#16233A}',
+      '.ppme-view{flex:1;min-height:0;display:flex;flex-direction:column}',
+      '.ppme-view[hidden]{display:none!important}',
+      '.ppme-lib{overflow:auto;gap:10px}',
+      '.ppme-create{padding:10px 12px;border:1px dashed #BFE6CF;border-radius:12px;background:#F7FCF9}',
+      '.ppme-create summary{font-weight:700;font-size:13px;cursor:pointer}',
+      '.ppme-create textarea,.ppme-improve textarea{width:100%;box-sizing:border-box;margin:8px 0;border:1px solid #E3E8F0;border-radius:10px;padding:8px;font-family:inherit;font-size:13px;resize:vertical}',
+      '.ppme-create .ppme-go,.ppme-improve .ppme-go{border:0;background:#12A150;color:#fff;border-radius:999px;padding:7px 14px;font-weight:700;font-size:12.5px;font-family:inherit;cursor:pointer}',
+      '.ppme-agent{padding:12px;border:1px solid #E3E8F0;border-radius:12px;background:#fff;font-size:13px}',
+      '.ppme-msg .ppme-nba-bar button,.ppme-agent .ppme-nba-bar button,.ppme-confirm .ppme-nba-bar button{border:1px solid #E3E8F0;background:#fff;border-radius:999px;padding:6px 12px;font-weight:700;font-size:12px;font-family:inherit;cursor:pointer}',
+      '.ppme-agent .ppme-nba-bar .ppme-go,.ppme-msg .ppme-nba-bar .ppme-go,.ppme-confirm .ppme-nba-bar .ppme-go{background:#12A150;color:#fff;border-color:#12A150}',
+      '.ppme-chat summary{font-size:12.5px!important;line-height:1.4!important;font-weight:600}',
+      '.ppme-chat .ppme-create summary{font-size:13px!important;font-weight:700}',
+      '.ppme-code{max-height:300px;overflow:auto;margin:8px 0 0;padding:10px;background:#0F1D33;color:#E3E8F0;border-radius:10px;font-size:11.5px;line-height:1.45;white-space:pre}',
+      '.ppme-improve{margin-top:8px}'
     ].join('\n');
     document.head.appendChild(css);
   }
