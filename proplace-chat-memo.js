@@ -15,7 +15,7 @@
   if (!demo && !document.getElementById('ppme-script')) {
     var memoEditor = document.createElement('script');
     memoEditor.id = 'ppme-script';
-    memoEditor.src = assetBase + 'memo-editor.js?v=6';
+    memoEditor.src = assetBase + 'memo-editor.js?v=7';
     memoEditor.defer = true;
     document.head.appendChild(memoEditor);
   }
@@ -322,6 +322,15 @@
     views[id] = { tab: tab, box: box, show: typeof show === 'function' ? show : function () {} };
     return box;
   }
+  // Un bouton de l'en-tête du poste de travail (ex. le dossier comité en PDF), avant ⤢ et ×.
+  function addHeaderButton(id, label, title, onclick) {
+    if (!shell || !/^[a-z]{2,20}$/.test(id || '') || shell.querySelector('[data-head="' + id + '"]')) return null;
+    var tools = shell.querySelector('.ppj-header > div:last-child');
+    var b = el('button', { type: 'button', class: 'ppj-btn ppj-head-btn', 'data-head': id, title: title || label, 'aria-label': title || label }, label);
+    b.onclick = function (e) { e.stopPropagation(); onclick(); };
+    tools.insertBefore(b, tools.firstChild);
+    return b;
+  }
   // Un élément gardé d'un rendu à l'autre (état, saisie), posé à son emplacement du Parcours.
   function addSlot(id, node) {
     if (!/^[a-z]{2,20}$/.test(id || '') || !node) return;
@@ -339,7 +348,7 @@
     // A cached legacy editor may initialize just before this production widget.
     // The supported dossier workflow now owns edits; remove its obsolete UI.
     ['plEditor', 'plModal'].forEach(function (id) { var old = document.getElementById(id); if (old) old.remove(); });
-    var css = el('link', { rel: 'stylesheet', href: assetBase + 'stan-journey.css?v=9' }); document.head.appendChild(css);
+    var css = el('link', { rel: 'stylesheet', href: assetBase + 'stan-journey.css?v=10' }); document.head.appendChild(css);
     fab = el('button', { id: 'stan-fabBtn', type: 'button', class: 'ppj-fab' + (demo ? ' ppj-demo-fab' : ''), 'aria-label': 'Stan Beta — ouvrir Parcours' }, 'Stan β · Parcours');
     fab.onclick = function () { open('roadmap'); };
     shell = el('aside', { id: 'stan-sidebar', class: 'ppj-shell', 'aria-label': 'Parcours du dossier' }); shell.hidden = true;
@@ -582,7 +591,7 @@
     return '<ol class="ppj-trace">' + (run.trace || []).map(function (t) { return '<li><time>' + date(t.at) + '</time><span>' + esc(t.text) + '</span></li>'; }).join('') + '</ol>';
   }
   function history() {
-    return '<section id="stan-histList"><h3>Du premier contrôle au closing</h3><p class="ppj-muted">Décisions, pièces et travaux enregistrés. Les traces détaillées sont disponibles pendant sept jours.</p>' +
+    return '<div data-ppj-slot="memo"></div><section id="stan-histList"><h3>Du premier contrôle au closing</h3><p class="ppj-muted">Décisions, pièces et travaux enregistrés. Les traces détaillées sont disponibles pendant sept jours.</p>' +
       '<div class="ppj-actions">' + button('Exporter PDF', '', 'pdf') + button('Dossier complet et preuves', '', 'export') + '</div>' +
       '<ol class="ppj-timeline">' + state.events.slice().sort(function (a, b) { return b.at - a.at; }).map(function (e) {
         var recorded = e.run_id && state.runs[e.run_id];
@@ -741,7 +750,7 @@
       }
     } catch (error) { announce(error.message, true); b.disabled = false; }
   }
-  window.StanJourney = { open: open, addView: addView, addSlot: addSlot,
+  window.StanJourney = { open: open, addView: addView, addSlot: addSlot, addHeaderButton: addHeaderButton,
     // une pièce déposée par Stan (prochaine action) : le Parcours se met à jour
     reload: function () { if (!demo && state && !openingDossier) refresh(false).catch(function () {}); },
     showAction: function (id) { active = id; filter = ''; open('roadmap'); }, getState: function () { return demo ? state : null; } };
