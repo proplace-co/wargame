@@ -54,7 +54,7 @@
     conflict: function (by) { return 'Le mémo a été modifié par ' + by + ' entre-temps : rechargez la dernière version.'; }
   };
   var state = { head: null, role: '', email: '', company: '', fund: '', preview: 0 };
-  window.PPMemoEditor = { version: 14, state: state, embed: EMBED, reader: READER };
+  window.PPMemoEditor = { version: 15, state: state, embed: EMBED, reader: READER };
 
   function el(tag, attrs, text) {
     var node = document.createElement(tag);
@@ -71,7 +71,7 @@
     } catch (_) { return ''; }
   }
   function api(path, method, body) {
-    var headers = { 'Content-Type': 'application/json' };
+    var headers = body ? { 'Content-Type': 'application/json' } : {};
     var s = session();
     if (s) headers['X-Member-Session'] = s;
     return fetch(API + path, { method: method || 'GET', headers: headers, credentials: 'omit',
@@ -1112,8 +1112,17 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     var s = doc.bar && doc.bar.querySelector('.ppme-st');
     if (!s) return;
     var h = state.head || {};
+    if (READER && !h.n && pageVersion()) {
+      var latest = '';
+      sections().forEach(function (sec) {
+        var at = sec.getAttribute('data-pp-edited-at') || '';
+        if (Date.parse(at) > (Date.parse(latest) || 0)) latest = at;
+      });
+      h = { n: pageVersion(), at: latest, kind: latest ? 'edit' : 'generated' };
+    }
     var text = kind === 'saving' ? D.saving : kind === 'dirty' ? D.dirty : kind === 'error' ? D.err
       : kind === 'conflict' ? D.conflictSt
+      : READER && h.n ? (h.at ? D.savedAt(h.n, hour(h.at)) : (en ? 'Saved · v' : 'Enregistré · v') + h.n)
       : (kind === 'saved' || (h.n && h.kind && h.kind !== 'generated')) ? D.savedAt(h.n, hour(h.at)) : D.auto;
     s.className = 'ppme-st ' + kind + (text === D.auto ? ' generic' : '');
     s.textContent = text;
@@ -3339,6 +3348,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-reading .ppme-readnote{display:inline}',
       '.ppme-reader .section-container{scroll-margin-top:var(--ppme-reader-bar-h,84px)}',
       '@media (max-width:640px){.ppme-dbar{overflow-x:auto;top:0;margin:0 0 14px;border-radius:0 0 12px 12px;scrollbar-width:none}.ppme-dbar::-webkit-scrollbar{display:none}.ppme-dbar-tools{flex-wrap:nowrap;flex:0 0 auto}.ppme-dbar-side{order:-1;margin:0 8px 0 0}.ppme-dbar .ppme-pdf{order:-2}.ppme-dbar .ppme-savebtn{order:-1}.ppme-dbar .ppme-st.generic{display:none}}',
+      '@media (max-width:640px){.ppme-reader .ppme-dbar{overflow:visible;flex-wrap:wrap}.ppme-reader .ppme-dbar-tools{flex:1 1 100%;flex-wrap:wrap}.ppme-reader .ppme-dbar-side{order:0;flex-wrap:wrap;margin:0}.ppme-reader .ppme-readnote{flex:1 1 180px;line-height:1.4}}',
       // le document : tout le texte se modifie, les îlots d'origine sont signalés
       '.ppme-editing .section-container[contenteditable="true"]{outline:none;cursor:text;scroll-margin-top:84px;caret-color:#0E7F3F}',
       '.ppme-editing .section-container[contenteditable="true"]:focus-within{box-shadow:0 0 0 2px #12A15040,0 1px 4px rgba(15,29,51,.06)}',
@@ -3379,7 +3389,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-rail-add{margin-top:8px;width:100%;border:1px dashed #BFE6CF;background:#F6FBF8;color:#0E7F3F;border-radius:8px;padding:7px;font:700 12px system-ui,-apple-system,sans-serif;cursor:pointer}',
       '.ppme-rail-add:hover{background:#E7F6EE}',
       '.ppme-editing:not(.ppme-reading) .sidebar>.sb-nav-heading,.ppme-editing:not(.ppme-reading) .sidebar>a.nav-item[href^="#"]{display:none!important}',
-      '.ppme-reading .ppme-rail{display:none}',
+      '.ppme-reading:not(.ppme-reader) .ppme-rail{display:none}',
       '.ppme-menu{position:absolute;z-index:2147483002;min-width:210px;padding:4px;background:#fff;border:1px solid #D5DDE7;border-radius:10px;box-shadow:0 10px 30px rgba(15,29,51,.18)}',
       '.ppme-menu button{display:block;width:100%;text-align:left;border:0;background:none;padding:8px 10px;border-radius:7px;font:500 13px system-ui,-apple-system,sans-serif;color:#0F1D33;cursor:pointer}',
       '.ppme-menu button:hover{background:#EEF2F6}',
