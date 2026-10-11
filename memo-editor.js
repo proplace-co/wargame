@@ -51,7 +51,7 @@
     conflict: function (by) { return 'Le mémo a été modifié par ' + by + ' entre-temps : rechargez la dernière version.'; }
   };
   var state = { head: null, role: '', email: '', company: '', fund: '', preview: 0 };
-  window.PPMemoEditor = { version: 9, state: state, embed: EMBED };
+  window.PPMemoEditor = { version: 10, state: state, embed: EMBED };
 
   function el(tag, attrs, text) {
     var node = document.createElement(tag);
@@ -240,6 +240,9 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   var QUIET = 'script, style, template, noscript, link, meta';
   var WRAP = '.table-container, .memo-table-fallback, figure, .img-col';
   var DEFAULT_OFF = ['due-diligence', 'portfolio-management'];
+  // 11/10 — la fiche contact d'un mémo éclair (« Comment contacter … », emails et LinkedIn J0, J10…)
+  // se modifie comme une section ; elle reste en tête (ni déplacée, ni supprimée). Clé serveur « contact ».
+  var CONTACT = 'ppme-contact';
   var NOTE_STYLE = 'margin:14px 0;padding:12px 16px;border-left:4px solid #E0A526;background:#FFF8E8;border-radius:10px';
   var doc = { on: false, reading: false, loading: false, hashes: {}, order: [], print: {}, printBase: {}, saved: {},
     touched: {}, history: [], future: [], typing: null, busy: false, timer: 0, since: 0, saving: null, again: false,
@@ -254,11 +257,11 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   function copy(o) { return JSON.parse(JSON.stringify(o || {})); }
   function byId(id) {
     var n = id ? document.getElementById(id) : null;
-    return n && n.classList.contains('section-container') && area.contains(n) ? n : null;
+    return n && (n.classList.contains('section-container') || id === CONTACT) && area.contains(n) ? n : null;
   }
   function secOf(node) {
     var n = node && (node.nodeType === 1 ? node : node.parentElement);
-    var sec = n && n.closest ? n.closest('.section-container[id]') : null;
+    var sec = n && n.closest ? n.closest('.section-container[id], #' + CONTACT) : null;
     return sec && area.contains(sec) ? sec : null;
   }
   function order() { return sections().map(function (s) { return s.id; }); }
@@ -344,6 +347,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       setPageVersion(j.n);
       state.head = j;
       doc.hashes = j.hashes || {};
+      doc.contactHash = typeof j.contact_hash === 'string' ? j.contact_hash : null;
       doc.order = j.order || [];
       doc.print = copy(j.print);
       doc.printBase = copy(j.print);
@@ -366,8 +370,14 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     try { document.execCommand('enableObjectResizing', false, false); } catch (_) { /* Firefox : nos poignées, pas les siennes */ }
     document.body.classList.add('ppme-editing');
     sections().forEach(prepareSection);
+    var card = contactCard();
+    if (card && doc.contactHash != null && card.hasAttribute('data-ct-card') && (!card.id || card.id === CONTACT)) {
+      card.id = CONTACT;
+      prepareSection(card);
+    }
     doc.saved = {};
     sections().forEach(function (sec) { doc.saved[sec.id] = serialize(sec); });
+    if (byId(CONTACT)) doc.saved[CONTACT] = serialize(byId(CONTACT));
     buildBar();
     renderRail();
     applyPrintMarks();
@@ -383,6 +393,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     closeMenu();
     document.body.classList.remove('ppme-editing', 'ppme-reading');
     sections().forEach(function (sec) { sec.removeAttribute('contenteditable'); });
+    if (byId(CONTACT)) byId(CONTACT).removeAttribute('contenteditable');
     if (doc.bar && doc.bar.parentNode) doc.bar.parentNode.removeChild(doc.bar);
     if (doc.rail) doc.rail.hidden = true;
   }
@@ -457,7 +468,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   function snap(sids) {
     var s = { order: order(), nodes: {}, print: copy(doc.print), content: {} };
     sections().forEach(function (sec) { s.nodes[sec.id] = sec; });
-    (sids || []).forEach(function (sid) { var sec = byId(sid); if (sec) s.content[sid] = cloneSection(sec); });
+    (sids || []).forEach(function (sid) { var sec = byId(sid); if (sec) { s.nodes[sid] = sec; s.content[sid] = cloneSection(sec); } });
     return s;
   }
   function applySnap(s) {
@@ -553,6 +564,12 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     });
     Object.keys(doc.hashes).forEach(function (sid) { if (ids.indexOf(sid) < 0) { p.removed[sid] = doc.hashes[sid]; n++; } });
     if (structureChanged()) { p.order = ids; p.order_base = doc.order; n++; }
+    var card = byId(CONTACT);
+    if (card && doc.touched[CONTACT]) {
+      var ch = serialize(card);
+      if (ch !== doc.saved[CONTACT]) { p.contact = { html: ch, base: doc.contactHash }; n++; }
+    }
+    if (doc.contactHash != null) p.known_contact = doc.contactHash;
     var pr = {};
     Object.keys(doc.print).forEach(function (id) { if (doc.print[id] !== doc.printBase[id]) pr[id] = doc.print[id]; });
     if (Object.keys(pr).length) { p.print = pr; n++; }
@@ -582,6 +599,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     var sent = {}, touched = doc.touched;
     Object.keys(p.sections).forEach(function (k) { sent[k] = p.sections[k].html; });
     Object.keys(p.added).forEach(function (k) { sent[k] = p.added[k].html; });
+    if (p.contact) sent[CONTACT] = p.contact.html;
     doc.touched = {};
     status('saving');
     doc.saving = api('/document', 'POST', p).then(function (j) {
@@ -619,6 +637,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     tellCockpit(j);
     doc.hashes = j.hashes || doc.hashes;
     doc.order = j.order || doc.order;
+    adoptContact(j);
     Object.keys(j.print || {}).forEach(function (id) {
       if (doc.print[id] === doc.printBase[id] || !(id in doc.print)) doc.print[id] = j.print[id];
     });
@@ -629,6 +648,15 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     renderRail();
     updateBar();
     renderMemoBox();
+  }
+  // la fiche contact : son empreinte, et ce qu'un autre membre y a changé (hors de mes modifications)
+  function adoptContact(j) {
+    if (typeof j.contact_hash === 'string') doc.contactHash = j.contact_hash;
+    var card = byId(CONTACT);
+    if (card && typeof j.contact_changed === 'string' && !doc.touched[CONTACT]) {
+      fillSection(card, j.contact_changed);
+      doc.saved[CONTACT] = serialize(card);
+    }
   }
   // ce qu'un autre membre de l'équipe a changé entre-temps (hors de mes modifications en cours)
   function mergeChanged(changed) {
@@ -650,7 +678,10 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
   function onConflict(j) {
     status('conflict');
-    var names = (j.sections || []).map(function (sid) { return '« ' + (byId(sid) ? titleOf(byId(sid)) : sid) + ' »'; });
+    var names = (j.sections || []).map(function (sid) {
+      var sec = byId(sid === 'contact' ? CONTACT : sid);
+      return '« ' + (sec ? titleOf(sec) : sid) + ' »';
+    });
     var what = names.length ? names.join(', ') : D.plan;
     toast(D.conflict(shortWho(j.head && j.head.by), what), [
       { label: D.theirs, run: function () { takeTheirs(j); } },
@@ -659,7 +690,11 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
   function takeTheirs(j) {
     if (j.structure) { startEditor(); return; }
-    (j.sections || []).forEach(function (sid) {
+    if ((j.sections || []).indexOf('contact') >= 0) {
+      delete doc.touched[CONTACT];
+      adoptContact(j);
+    }
+    (j.sections || []).filter(function (sid) { return sid !== 'contact'; }).forEach(function (sid) {
       var sec = byId(sid), html = (j.changed || {})[sid];
       delete doc.touched[sid];
       if (sec && html != null) { fillSection(sec, html); doc.saved[sid] = serialize(sec); }
@@ -673,6 +708,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
   function keepMine(j) {
     (j.sections || []).forEach(function (sid) { if (j.hashes && sid in j.hashes) doc.hashes[sid] = j.hashes[sid]; });
+    if (typeof j.contact_hash === 'string') doc.contactHash = j.contact_hash;
     if (j.structure && j.order) doc.order = j.order;
     save();
   }
@@ -681,7 +717,9 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     api('/head').then(function (h) {
       if (!h.ok || !state.head || h.n === state.head.n) return;
       if (payload()) { save(); return; }
-      api('/document', 'POST', { known: doc.hashes, session: doc.session }).then(function (j) { if (j.ok) adoptServer(j); });
+      var known = { known: doc.hashes, session: doc.session };
+      if (doc.contactHash != null) known.known_contact = doc.contactHash;
+      api('/document', 'POST', known).then(function (j) { if (j.ok) adoptServer(j); });
     }).catch(function () {});
   }
   function exportPdf() {
@@ -797,7 +835,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     var sec = secOf(caretEl());
     if (cmd === 'section') { addSection(sec ? sec.id : null); return; }
     if (!sec) { barHint(D.where); return; }
-    if (cmd === 'offsec') { toggleSectionPdf(sec.id); return; }
+    if (cmd === 'offsec') { toggleSectionPdf(sec.id === CONTACT ? 'fiche-contact' : sec.id); return; }
     if (cmd === 'note') { insertNote(sec); return; }
     if (cmd === 'image') { imageMenu(b, sec); return; }
     if (cmd === 'video') { askVideo(sec, { after: anchorBlock(sec) }); return; }
@@ -831,6 +869,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     doc.reading = !!on;
     document.body.classList.toggle('ppme-reading', doc.reading);
     sections().forEach(function (sec) { sec.setAttribute('contenteditable', doc.reading ? 'false' : 'true'); });
+    if (byId(CONTACT)) byId(CONTACT).setAttribute('contenteditable', doc.reading ? 'false' : 'true');
     Array.prototype.forEach.call(area.querySelectorAll('details[data-ppme-closed]'), function (d) { d.open = !doc.reading; });
     hideTools();
     closeMenu();
@@ -1954,7 +1993,11 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     var m = !doc.cropping && !(e.target.closest && e.target.closest('figcaption')) && mediaOf(e.target);
     if (m) {
       // une image se sélectionne (son lien éventuel ne s'ouvre pas) ; la vidéo sélectionnée se regarde
-      if (!(m.kind === 'embed' && doc.sel && doc.sel.el === m.el)) { e.preventDefault(); selectMedia(m); }
+      if (!(m.kind === 'embed' && doc.sel && doc.sel.el === m.el)) {
+        e.preventDefault();
+        e.stopPropagation();          // la visionneuse de la page (a[data-memo-image-zoom]) attend le double-clic
+        selectMedia(m);
+      }
       return;
     }
     var a = e.target.closest && e.target.closest('a[href]');
@@ -2127,6 +2170,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   };
   var chat = { list: null, input: null, loaded: false, decisions: {} };
   function sectionTitle(id) {
+    if (id === 'contact') { var card = contactCard(); return card ? titleOf(card) : id; }
     var t = document.querySelector('#' + CSS.escape(id) + ' .section-title, #' + CSS.escape(id) + ' h2');
     return t ? t.textContent.trim() : id;
   }
