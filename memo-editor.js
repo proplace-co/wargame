@@ -7,8 +7,9 @@
  * s'ouvre en DOSSIER modifiable, comme le dossier comité du cockpit — une barre d'édition
  * en tête (mise en forme, note, section, annuler, enregistrer, aperçu, export PDF) et, à
  * gauche, le contenu du dossier (cocher ce qui part dans le PDF, glisser pour réordonner,
- * renommer, supprimer, ajouter). Chaque enregistrement est une version. Rien ne s'affiche
- * pour les autres lecteurs. Chargé par proplace-chat-memo.js (sur toutes les pages de mémo).
+ * renommer, supprimer, ajouter). Chaque enregistrement est une version.
+ * Profund (?embed=cockpit&reader=1) garde l'aperçu, le Plan et les exports, sans aucune
+ * commande d'édition, même pour un membre connecté. Chargé par proplace-chat-memo.js.
  */
 (function () {
   'use strict';
@@ -25,6 +26,8 @@
   // 10/10 — l'onglet Mémo du cockpit montre CETTE page, intégrée (?embed=cockpit) : même éditeur,
   // sans barre latérale ni bouton Stan ; le contenu du dossier passe dans la barre (☰ Plan)
   var EMBED = /[?&]embed=cockpit(&|$)/.test(location.search);
+  // Profund uses the original memo, with its reader tools and no editing session.
+  var READER = EMBED && /[?&]reader=1(&|$)/.test(location.search);
   var T = en ? {
     error: 'Could not save: ', close: 'Close',
     memoK: 'The memo', directHint: 'The memo is edited right in the page, like the committee pack: editing bar at the top, dossier contents on the left. Every save is a version.',
@@ -51,7 +54,7 @@
     conflict: function (by) { return 'Le mémo a été modifié par ' + by + ' entre-temps : rechargez la dernière version.'; }
   };
   var state = { head: null, role: '', email: '', company: '', fund: '', preview: 0 };
-  window.PPMemoEditor = { version: 12, state: state, embed: EMBED };
+  window.PPMemoEditor = { version: 14, state: state, embed: EMBED, reader: READER };
 
   function el(tag, attrs, text) {
     var node = document.createElement(tag);
@@ -150,10 +153,36 @@
   function syncLatest() {
     return api('/head').then(function (h) {
       if (!h.ok) return;
-      state.head = h;
       var mine = pageVersion();
-      if (mine ? mine < h.n : h.edited) return loadVersion(h.n, true);
+      if (READER && mine > h.n) return;
+      var previous = state.head;
+      state.head = h;
+      if (mine ? mine < h.n : h.edited) return loadVersion(h.n, true).then(function (c) {
+        if (READER && !c) state.head = previous;
+        return c;
+      }, function () { if (READER) state.head = previous; });
     }).catch(function () {});
+  }
+
+  var readerPending = false, readerPrinting = false, readerVersion = 0;
+  function startReader() {
+    injectCss();
+    doc.reading = true;
+    document.body.classList.add('ppme-reading', 'ppme-reader');
+    Array.prototype.forEach.call(area.querySelectorAll('[contenteditable]'), function (node) { node.setAttribute('contenteditable', 'false'); });
+    sections().forEach(function (sec) { sec.setAttribute('contenteditable', 'false'); });
+    buildBar();
+    renderReaderRail();
+    status('idle');
+    fitBar();
+    if (window.parent !== window) window.parent.postMessage({ type: 'proplace:memo:reader-ready', record: record }, 'https://proplace.co');
+    var head = state.head;
+    if (head && head.n !== readerVersion) { readerVersion = head.n; tellCockpit(head); }
+  }
+  function refreshReader(initial) {
+    if (readerPending || readerPrinting || (!initial && document.hidden)) return Promise.resolve();
+    readerPending = true;
+    return syncLatest().then(function () { startReader(); }).finally(function () { readerPending = false; });
   }
 
   /* ── l'équipe du fonds : le mémo est un DOSSIER, modifiable comme celui du cockpit (10/10, v8) ──
@@ -341,7 +370,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
 
   /* ouvrir, fermer */
   function startEditor() {
-    if (!state.role || state.preview || doc.loading) return Promise.resolve(false);
+    if (READER || !state.role || state.preview || doc.loading) return Promise.resolve(false);
     doc.loading = true;
     return api('/document').then(function (j) {
       doc.loading = false;
@@ -370,6 +399,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     }).catch(function () { doc.loading = false; return false; });
   }
   function enterEditing() {
+    if (READER) return;
     doc.on = true;
     dropLegacyEditorStyles();
     try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (_) { /* navigateur ancien */ }
@@ -521,6 +551,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
   // une opération annulable : l'état avant, l'opération, l'état après
   function change(sids, fn) {
+    if (READER) return;
     closeTyping();
     var before = snap(sids);
     doc.busy = true;
@@ -591,6 +622,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     if (!doc.saving) status('dirty');
   }
   function save(flush) {
+    if (READER) return Promise.resolve(true);
     clearTimeout(doc.timer);
     if (!doc.on) return Promise.resolve(true);
     if (doc.cropping) {
@@ -808,7 +840,11 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
   function openDeck() {
     unselectMedia();
-    if (!session() || !state.role) return;
+    if (!session() || !state.role) {
+      if (READER) toast(en ? 'Sign in with an authorised fund account to summarise this memo as a deck.'
+        : 'Connectez-vous avec un compte autorisé du fonds pour synthétiser ce mémo en deck.');
+      return;
+    }
     if (!deck.dlg) buildDeckDialog();
     deck.dlg.hidden = false;
     deck.err.hidden = true;
@@ -1000,7 +1036,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   /* la barre d'édition, en tête du mémo */
   function buildBar() {
     if (!doc.bar) {
-      var b = el('div', { class: 'ppme-ui ppme-dbar', role: 'toolbar', 'aria-label': D.bar });
+      var b = el('div', { class: 'ppme-ui ppme-dbar', role: 'toolbar', 'aria-label': READER ? D.reading : D.bar });
       var tools = el('div', { class: 'ppme-dbar-tools' }), side = el('div', { class: 'ppme-dbar-side' });
       b.appendChild(tools);
       b.appendChild(side);
@@ -1013,26 +1049,30 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       };
       var sep = function (cls) { into.appendChild(el('span', { class: 'ppme-sep ' + (cls || '') })); };
       if (EMBED) { add('plan', '☰ ' + D.outline, D.rail, 'ppme-planbtn'); sep(); }
-      add('bold', '<b>G</b>', D.bold, 'ppme-edonly');
-      add('italic', '<i>I</i>', D.italic, 'ppme-edonly');
-      add('list', '• ' + D.listLbl, D.list, 'ppme-edonly');
-      add('heading', D.headingLbl, D.heading, 'ppme-edonly');
-      add('link', '🔗', D.link, 'ppme-edonly');
-      add('image', '🖼 ' + D.image, D.imageHint, 'ppme-edonly');
-      add('video', '▶ ' + D.video, D.videoHint, 'ppme-edonly');
-      sep('ppme-edonly');
-      add('note', '＋ ' + D.note, D.noteHint, 'ppme-edonly');
-      add('section', '＋ ' + D.section, D.sectionHint, 'ppme-edonly');
-      add('offsec', '✕ ' + D.removeSec, D.removeSecHint, 'ppme-edonly');
+      if (!READER) {
+        add('bold', '<b>G</b>', D.bold, 'ppme-edonly');
+        add('italic', '<i>I</i>', D.italic, 'ppme-edonly');
+        add('list', '• ' + D.listLbl, D.list, 'ppme-edonly');
+        add('heading', D.headingLbl, D.heading, 'ppme-edonly');
+        add('link', '🔗', D.link, 'ppme-edonly');
+        add('image', '🖼 ' + D.image, D.imageHint, 'ppme-edonly');
+        add('video', '▶ ' + D.video, D.videoHint, 'ppme-edonly');
+        sep('ppme-edonly');
+        add('note', '＋ ' + D.note, D.noteHint, 'ppme-edonly');
+        add('section', '＋ ' + D.section, D.sectionHint, 'ppme-edonly');
+        add('offsec', '✕ ' + D.removeSec, D.removeSecHint, 'ppme-edonly');
+      }
       tools.appendChild(el('span', { class: 'ppme-readnote' }, D.reading));
       tools.appendChild(el('span', { class: 'ppme-hintx', role: 'status' }));
       into = side;
-      add('undo', '↶', D.undo, 'ppme-edonly');
-      add('redo', '↷', D.redo, 'ppme-edonly');
-      sep('ppme-edonly');
-      add('status', D.auto, D.versionsHint, 'ppme-st');
-      add('save', D.save, D.saveHint, 'ppme-savebtn ppme-edonly');
-      add('preview', D.preview, D.previewHint, 'ppme-prev');
+      if (!READER) {
+        add('undo', '↶', D.undo, 'ppme-edonly');
+        add('redo', '↷', D.redo, 'ppme-edonly');
+        sep('ppme-edonly');
+        add('status', D.auto, D.versionsHint, 'ppme-st');
+        add('save', D.save, D.saveHint, 'ppme-savebtn ppme-edonly');
+        add('preview', D.preview, D.previewHint, 'ppme-prev');
+      } else side.appendChild(el('span', { class: 'ppme-st', role: 'status' }));
       add('pdf', D.pdf, D.pdfHint, 'ppme-pdf');
       add('deck', K.btn, K.hint, 'ppme-deck');
       b.addEventListener('mousedown', function (e) {
@@ -1048,7 +1088,10 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     updateBar();
   }
   function fitBar() {
-    if (doc.bar) doc.bar.classList.toggle('ppme-narrow', doc.bar.clientWidth < 920 && window.innerWidth > 640);
+    if (doc.bar) {
+      doc.bar.classList.toggle('ppme-narrow', doc.bar.clientWidth < 920 && window.innerWidth > 640);
+      if (READER) document.documentElement.style.setProperty('--ppme-reader-bar-h', (doc.bar.offsetHeight + 12) + 'px');
+    }
   }
   function barHint(text) {
     var h = doc.bar && doc.bar.querySelector('.ppme-hintx');
@@ -1059,7 +1102,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
   function updateBar() {
     var b = doc.bar;
-    if (!b) return;
+    if (!b || READER) return;
     b.querySelector('[data-cmd="undo"]').disabled = !doc.history.length && !doc.typing;
     b.querySelector('[data-cmd="redo"]').disabled = !doc.future.length;
     b.querySelector('[data-cmd="preview"]').textContent = doc.reading ? D.backToEdit : D.preview;
@@ -1080,6 +1123,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     var b = e.target.closest('button[data-cmd]');
     if (!b) return;
     var cmd = b.getAttribute('data-cmd');
+    if (READER && ['plan', 'pdf', 'deck'].indexOf(cmd) < 0) return;
     if (cmd === 'save') { save(); return; }
     if (cmd === 'pdf') { exportPdf(); return; }
     if (cmd === 'deck') { openDeck(); return; }
@@ -1120,6 +1164,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     loadVersions();
   }
   function setReading(on, silent) {
+    if (READER) { on = true; silent = true; }
     unselectMedia();
     if (on && !silent) save(true);
     doc.reading = !!on;
@@ -2001,7 +2046,36 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
 
   /* le contenu du dossier, dans la barre latérale (à la place du menu, le temps de l'édition) */
+  function renderReaderRail() {
+    if (!doc.rail) {
+      doc.rail = el('nav', { class: 'ppme-ui ppme-rail ppme-railpop', 'aria-label': D.outline });
+      doc.rail.addEventListener('click', function (e) {
+        var go = e.target.closest('[data-go]');
+        if (!go) return;
+        var target = go.getAttribute('data-go') ? byId(go.getAttribute('data-go')) : area;
+        if (target) target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        doc.railOpen = false;
+        doc.rail.hidden = true;
+      });
+    }
+    if (doc.bar && doc.rail.parentNode !== doc.bar) doc.bar.appendChild(doc.rail);
+    doc.rail.hidden = !doc.railOpen;
+    doc.rail.innerHTML = '';
+    var h = el('div', { class: 'ppme-rail-h' });
+    h.appendChild(el('b', {}, D.outline));
+    doc.rail.appendChild(h);
+    var ol = el('ol');
+    var add = function (id, title) {
+      var li = el('li');
+      li.appendChild(el('button', { type: 'button', class: 'ppme-rail-t', 'data-go': id }, title));
+      ol.appendChild(li);
+    };
+    add('', D.cover);
+    sections().forEach(function (sec, i) { add(sec.id, (i + 1) + '. ' + titleOf(sec)); });
+    doc.rail.appendChild(ol);
+  }
   function renderRail() {
+    if (READER) { renderReaderRail(); return; }
     if (!doc.on) return;
     var sb = document.querySelector('.sidebar');
     if (!doc.rail) {
@@ -3137,6 +3211,8 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     return flag ? flag === 'off' : DEFAULT_OFF.indexOf(id) >= 0;
   }
   function printPack() {
+    if (READER && readerPrinting) return;
+    if (READER) readerPrinting = true;
     hideTools();
     closeMenu();
     unselectMedia();
@@ -3170,6 +3246,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     var title = document.title;
     document.title = P.file(name, head.n);
     function restore() {
+      if (READER) readerPrinting = false;
       cover.remove();
       hidden.forEach(function (n) { n.classList.remove('ppme-print-off'); });
       if (place) place.parent.insertBefore(contact, place.next && place.next.parentNode === place.parent ? place.next : null);
@@ -3191,8 +3268,8 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       state.fund = a.fund || '';
       if (a.head) state.head = a.head;
       injectCss();
-      startEditor();
-      whenStan(mountStan);
+      if (READER) startReader();
+      else { startEditor(); whenStan(mountStan); }
     }).catch(function () {});
   }
   function injectCss() {
@@ -3260,6 +3337,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-readnote{display:none;font-size:12.5px;color:#5B6B82;padding:0 6px}',
       '.ppme-reading .ppme-dbar .ppme-edonly{display:none}',
       '.ppme-reading .ppme-readnote{display:inline}',
+      '.ppme-reader .section-container{scroll-margin-top:var(--ppme-reader-bar-h,84px)}',
       '@media (max-width:640px){.ppme-dbar{overflow-x:auto;top:0;margin:0 0 14px;border-radius:0 0 12px 12px;scrollbar-width:none}.ppme-dbar::-webkit-scrollbar{display:none}.ppme-dbar-tools{flex-wrap:nowrap;flex:0 0 auto}.ppme-dbar-side{order:-1;margin:0 8px 0 0}.ppme-dbar .ppme-pdf{order:-2}.ppme-dbar .ppme-savebtn{order:-1}.ppme-dbar .ppme-st.generic{display:none}}',
       // le document : tout le texte se modifie, les îlots d'origine sont signalés
       '.ppme-editing .section-container[contenteditable="true"]{outline:none;cursor:text;scroll-margin-top:84px;caret-color:#0E7F3F}',
@@ -3521,7 +3599,11 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
   injectEmbedCss();
   injectContentCss();
-  syncLatest().then(checkAccess);
+  if (READER) {
+    refreshReader(true).then(checkAccess);
+    setInterval(function () { refreshReader(false); }, 30000);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshReader(false); });
+  } else syncLatest().then(checkAccess);
   // connexion faite dans le panneau Stan (cookie posé) : l'édition s'ouvre au retour
   window.addEventListener('focus', checkAccess);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) checkAccess(); });
