@@ -58,7 +58,7 @@
     conflict: function (by) { return 'Le mémo a été modifié par ' + by + ' entre-temps : rechargez la dernière version.'; }
   };
   var state = { head: null, role: '', email: '', company: '', fund: '', preview: 0 };
-  window.PPMemoEditor = { version: 17, state: state, embed: EMBED, reader: READER };
+  window.PPMemoEditor = { version: 18, state: state, embed: EMBED, reader: READER };
 
   function el(tag, attrs, text) {
     var node = document.createElement(tag);
@@ -204,6 +204,51 @@
     doc.reading = false;
     doc.railOpen = false;
   }
+  // 11/10 — « prévois un endroit pour se déconnecter, en haut à gauche à côté de Ouvrir le deal flow,
+  // et pour se connecter au même endroit » (Antoine)
+  function accountEmail() {
+    try {
+      var cookie = document.cookie.split('; ').find(function (c) { return c.indexOf('proplace_auth=') === 0; });
+      var auth = cookie ? JSON.parse(atob(decodeURIComponent(cookie.slice('proplace_auth='.length)))) : null;
+      return auth && typeof auth.email === 'string' ? auth.email : '';
+    } catch (_) { return ''; }
+  }
+  function renderAccount() {
+    var sb = document.querySelector('.sidebar');
+    if (EMBED || !sb) return;
+    injectCss();
+    var box = sb.querySelector('.ppme-account') || el('div', { class: 'ppme-ui ppme-account' });
+    var link = sb.querySelector(':scope > .sidebar-fund-link');
+    if (link) { if (link.nextSibling !== box) sb.insertBefore(box, link.nextSibling); }
+    else if (box.parentNode !== sb) sb.insertBefore(box, sb.firstChild);
+    box.innerHTML = '';
+    if (session()) {
+      var who = state.email || accountEmail();
+      box.appendChild(el('span', { class: 'ppme-acc-who', title: who }, '● ' + D.signedIn + (who ? ' · ' + shortWho(who) : '')));
+      var out = el('button', { type: 'button', class: 'ppme-acc-btn', title: D.signOutHint }, D.signOut);
+      out.onclick = logout;
+      box.appendChild(out);
+    } else {
+      var inn = el('button', { type: 'button', class: 'ppme-acc-btn ppme-acc-in', title: D.loginHint }, D.login);
+      inn.onclick = login;
+      box.appendChild(inn);
+    }
+  }
+  function syncAccount() {
+    renderAccount();
+    var b = doc.bar && doc.bar.querySelector('[data-cmd="login"]');
+    if (b) b.hidden = !!session();
+    fitBar();
+  }
+  function logout() {
+    // le même cookie que le site efface (proplace/src/lib/auth.ts, clearAuthCookie)
+    var site = /(^|\.)proplace\.co$/.test(location.hostname);
+    document.cookie = 'proplace_auth=; ' + (site ? 'domain=.proplace.co; path=/; max-age=0; secure; samesite=lax' : 'path=/; max-age=0; samesite=lax');
+    var SJ = window.StanJourney;
+    try { if (SJ && typeof SJ.logout === 'function') SJ.logout(); } catch (_) { /* panneau absent */ }
+    try { sessionStorage.removeItem('ppj-access:' + record); sessionStorage.removeItem('ppj-key:' + record); } catch (_) { /* stockage bloqué */ }
+    location.reload();
+  }
   function login() {
     var SJ = window.StanJourney;
     if (SJ && typeof SJ.login === 'function') { SJ.login(); return; }
@@ -237,6 +282,7 @@
     pdfReady: 'Committee pack downloaded.', pdfUnsaved: 'Committee pack downloaded — your last changes were not saved yet, it shows the last saved version.',
     pdfFailed: 'The PDF could not be formatted.', pdfPrint: 'Print from the browser', pdfOpen: 'Open the PDF',
     login: '🔑 Sign in', loginHint: 'Sign in to your Proplace account to edit the memo',
+    signedIn: 'Signed in', signOut: 'Sign out', signOutHint: 'Sign out of your Proplace account on this browser',
     auto: 'Autosave on', dirty: 'Changes…', saving: 'Saving…', savedAt: function (n, h) { return '✓ Saved · v' + n + (h ? ' · ' + h : ''); },
     err: '⚠ Not saved — retry', conflictSt: '⚠ Changed elsewhere', where: 'Put the cursor in the memo first.',
     noteTitle: '📝 Team note', notePh: 'Write your note here…', newTitle: 'New section', newText: 'Write here…',
@@ -275,6 +321,7 @@ versionsHint: 'All versions: Stan panel, History tab', leave: 'Changes are still
     pdfReady: 'Dossier comité téléchargé.', pdfUnsaved: 'Dossier comité téléchargé — vos dernières modifications n’étaient pas encore enregistrées : il montre la dernière version enregistrée.',
     pdfFailed: 'La mise en forme du PDF a échoué.', pdfPrint: 'Imprimer depuis le navigateur', pdfOpen: 'Ouvrir le PDF',
     login: '🔑 Se connecter', loginHint: 'Connectez-vous à votre compte Proplace pour modifier le mémo',
+    signedIn: 'Connecté', signOut: 'Se déconnecter', signOutHint: 'Vous déconnecter de votre compte Proplace sur ce navigateur',
     auto: 'Enregistrement automatique', dirty: 'Modifications…', saving: 'Enregistrement…', savedAt: function (n, h) { return '✓ Enregistré · v' + n + (h ? ' · ' + h : ''); },
     err: '⚠ Non enregistré — réessayer', conflictSt: '⚠ Modifié ailleurs', where: 'Placez d’abord le curseur dans le mémo.',
     noteTitle: '📝 Note de l’équipe', notePh: 'Écrivez ici votre note…', newTitle: 'Nouvelle section', newText: 'Écrivez ici…',
@@ -822,7 +869,10 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     if (pdfJob) return;
     var btns = pdfButtons();
     var labels = btns.map(function (b) { return b.textContent; });
-    btns.forEach(function (b) { b.setAttribute('aria-busy', 'true'); b.textContent = D.pdfBusy; });
+    btns.forEach(function (b) {
+      b.setAttribute('aria-busy', 'true');
+      b.textContent = doc.barLevel && b.hasAttribute('data-l0') ? '⏳ PDF…' : D.pdfBusy;
+    });
     var note = progress(D.pdfMaking);
     var saved = true;
     var wait = doc.on && !doc.reading ? save(true) : Promise.resolve(true);
@@ -849,7 +899,10 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     }).catch(function () {
       note.done(D.pdfFailed, [{ label: D.pdfPrint, run: printPack }]);
     }).then(function () {
-      btns.forEach(function (b, i) { b.removeAttribute('aria-busy'); b.textContent = labels[i]; });
+      btns.forEach(function (b, i) {
+        b.removeAttribute('aria-busy');
+        if (b.hasAttribute('data-l0')) applyLabel(b); else b.textContent = labels[i];
+      });
       pdfJob = null;
     });
   }
@@ -1101,6 +1154,8 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       var into = tools;
       var add = function (cmd, label, title, cls) {
         var x = el('button', { type: 'button', 'data-cmd': cmd, title: title || label, class: cls || '' });
+        x.setAttribute('data-l0', label);
+        (SHORT[cmd] || []).forEach(function (l, i) { if (l) x.setAttribute('data-l' + (i + 1), l); });
         x.innerHTML = label;
         into.appendChild(x);
         return x;
@@ -1131,7 +1186,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
         add('save', D.save, D.saveHint, 'ppme-savebtn ppme-edonly');
         add('preview', D.preview, D.previewHint, 'ppme-prev');
       } else side.appendChild(el('span', { class: 'ppme-st', role: 'status' }));
-      if (GUEST) add('login', D.login, D.loginHint, 'ppme-login');
+      if (GUEST) add('login', D.login, D.loginHint, 'ppme-login').hidden = !!session();
       add('pdf', D.pdf, D.pdfHint, 'ppme-pdf');
       add('deck', K.btn, K.hint, 'ppme-deck');
       b.addEventListener('mousedown', function (e) {
@@ -1146,11 +1201,48 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     if (doc.bar.parentNode !== area || area.firstChild !== doc.bar) area.insertBefore(doc.bar, area.firstChild);
     updateBar();
   }
+  // 11/10 — « ça doit tenir sur une ligne, sinon raccourcis le texte des boutons » (Antoine) : la
+  // barre essaie les libellés entiers ; puis les longs raccourcis (📄 Exporter en PDF, 🎞 Deck, ✕ Section,
+  // ✓ v3 · 14:04) ; puis la mise en forme en icônes (•, T, 🖼, ▶ — 📄 PDF, ✓ v3) ; puis tout en icônes.
+  // L'infobulle garde l'intitulé complet. Deux lignes seulement si même les icônes ne tiennent pas.
+  var SHORT = {
+    pdf: [en ? '📄 Export PDF' : '📄 Exporter en PDF', '📄 PDF'], deck: ['🎞 Deck'], offsec: ['✕ Section'],
+    list: [null, '•'], heading: [null, en ? 'H' : 'T'], image: [null, '🖼'], video: [null, '▶'],
+    preview: [null, null, '👁'], save: [null, null, '💾'], login: [null, null, '🔑'], plan: [null, null, '☰']
+  };
+  function applyLabel(x) {
+    if (!x || !x.hasAttribute('data-l0') || x.getAttribute('aria-busy') === 'true') return;
+    var lvl = doc.barLevel || 0, label = x.getAttribute('data-l0');
+    for (var i = lvl; i > 0; i--) { if (x.hasAttribute('data-l' + i)) { label = x.getAttribute('data-l' + i); break; } }
+    if (x.innerHTML !== label) x.innerHTML = label;
+  }
+  function setBarLevel(level) {
+    doc.barLevel = level;
+    Array.prototype.forEach.call(doc.bar.querySelectorAll('button[data-l0]'), applyLabel);
+    var note = doc.bar.querySelector('.ppme-readnote');
+    if (note) note.textContent = level ? (en ? 'Preview' : 'Aperçu') : D.reading;
+    status(doc.state || 'idle');
+  }
+  function barOverflows() {
+    var b = doc.bar, tools = b.querySelector('.ppme-dbar-tools');
+    var kids = Array.prototype.filter.call(tools ? tools.children : [], function (k) { return k.offsetWidth > 0; });
+    // une deuxième rangée commence sous la première (une mention plus petite, centrée, n'en est pas une)
+    var row = kids.length ? kids[0].offsetTop + kids[0].offsetHeight - 2 : 0;
+    var wrapped = kids.some(function (k) { return k.offsetTop >= row; });
+    return wrapped || b.scrollWidth > b.clientWidth + 2;
+  }
   function fitBar() {
-    if (doc.bar) {
-      doc.bar.classList.toggle('ppme-narrow', doc.bar.clientWidth < 920 && window.innerWidth > 640);
-      if (READER) document.documentElement.style.setProperty('--ppme-reader-bar-h', (doc.bar.offsetHeight + 12) + 'px');
+    var b = doc.bar;
+    if (!b) return;
+    b.classList.remove('ppme-narrow');
+    var level = 0;
+    while (true) {
+      setBarLevel(level);
+      if (!barOverflows() || level === 3) break;
+      level++;
     }
+    if (barOverflows() && window.innerWidth > 640) b.classList.add('ppme-narrow');
+    if (READER) document.documentElement.style.setProperty('--ppme-reader-bar-h', (b.offsetHeight + 12) + 'px');
   }
   function barHint(text) {
     var h = doc.bar && doc.bar.querySelector('.ppme-hintx');
@@ -1164,7 +1256,10 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     if (!b || READER) return;
     b.querySelector('[data-cmd="undo"]').disabled = !doc.history.length && !doc.typing;
     b.querySelector('[data-cmd="redo"]').disabled = !doc.future.length;
-    b.querySelector('[data-cmd="preview"]').textContent = doc.reading ? D.backToEdit : D.preview;
+    var prev = b.querySelector('[data-cmd="preview"]');
+    prev.setAttribute('data-l0', doc.reading ? D.backToEdit : D.preview);
+    prev.setAttribute('data-l3', doc.reading ? '✏️' : '👁');
+    applyLabel(prev);
   }
   function status(kind, detail) {
     doc.state = kind;
@@ -1184,6 +1279,9 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       : READER && h.n ? (h.at ? D.savedAt(h.n, hour(h.at)) : (en ? 'Saved · v' : 'Enregistré · v') + h.n)
       : (kind === 'saved' || (h.n && h.kind && h.kind !== 'generated')) ? D.savedAt(h.n, hour(h.at)) : D.auto;
     s.className = 'ppme-st ' + kind + (text === D.auto ? ' generic' : '');
+    // une barre serrée : « ✓ v3 · 14:04 », puis « ✓ v3 »
+    if (doc.barLevel) text = text.replace(/^✓\s*(Enregistré|Saved)\s*·\s*/, '✓ ');
+    if (doc.barLevel > 1) text = text.replace(/^(✓ v\d+)\s*·.*$/, '$1');
     s.textContent = text;
     s.title = detail ? T.error + detail : D.versionsHint;
   }
@@ -2162,7 +2260,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       doc.rail.hidden = !doc.railOpen;
     } else {
       if (sb && doc.rail.parentNode !== sb) {
-        var fund = sb.querySelector(':scope > .sidebar-fund-link');
+        var fund = sb.querySelector(':scope > .ppme-account') || sb.querySelector(':scope > .sidebar-fund-link');
         sb.insertBefore(doc.rail, fund ? fund.nextSibling : sb.firstChild);
       } else if (!sb && !doc.rail.parentNode) area.parentNode.insertBefore(doc.rail, area);
       doc.rail.hidden = false;
@@ -3328,7 +3426,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
 
   function checkAccess() {
-    if (state.role || !session()) return Promise.resolve(false);
+    if (state.role || !session()) { syncAccount(); return Promise.resolve(!!state.role); }
     return api('/access').then(function (a) {
       if (!a.ok) return false;
       state.role = a.role;
@@ -3340,7 +3438,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       if (READER && !GUEST) startReader();
       else { stopGuest(); startEditor(); whenStan(mountStan); }
       return true;
-    }).catch(function () { return false; });
+    }).catch(function () { return false; }).then(function (member) { syncAccount(); return member; });
   }
   function injectCss() {
     if (document.getElementById('ppme-css')) return;
@@ -3373,6 +3471,12 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-dbar .ppme-planbtn{font-weight:700}',
       '.ppme-reader .ppme-railpop{position:absolute;top:calc(100% + 6px);left:6px;z-index:906;width:min(340px,calc(100vw - 28px));max-height:min(70vh,560px);overflow:auto;margin:0!important;box-shadow:0 12px 30px rgba(15,29,51,.2)!important}',
       '.ppme-toast-wait .ppme-spin{flex:0 0 auto;margin-right:2px}',
+      '.ppme-account{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:2px 0 14px;font:500 12px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;color:#5B6B82}',
+      '.ppme-acc-who{color:#0E7F3F;font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.ppme-acc-btn{font:inherit;font-weight:700;color:#0F1D33;background:#fff;border:1px solid #D5DDE7;border-radius:999px;padding:4px 10px;cursor:pointer;line-height:1.2}',
+      '.ppme-acc-btn:hover{background:#EEF2F6}',
+      '.ppme-acc-btn.ppme-acc-in{color:#fff;background:#0F1D33;border-color:#0F1D33}',
+      '.ppme-acc-btn.ppme-acc-in:hover{background:#1B2F4E}',
       '.ppme-dlg-login{margin-left:6px;font:inherit;font-weight:700;color:#fff;background:#0F1D33;border:0;border-radius:8px;padding:5px 10px;cursor:pointer}',
       // la fenêtre « Synthétiser en deck »
       '.ppme-dlg-back{position:fixed;inset:0;z-index:2147483002;background:rgba(15,29,51,.42);display:flex;align-items:center;justify-content:center;padding:16px}',

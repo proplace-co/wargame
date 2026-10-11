@@ -15,7 +15,7 @@
   if (!demo && !document.getElementById('ppme-script')) {
     var memoEditor = document.createElement('script');
     memoEditor.id = 'ppme-script';
-    memoEditor.src = assetBase + 'memo-editor.js?v=17';
+    memoEditor.src = assetBase + 'memo-editor.js?v=18';
     memoEditor.defer = true;
     document.head.appendChild(memoEditor);
   }
@@ -758,8 +758,12 @@
     if (memberSession) { window.dispatchEvent(new CustomEvent('proplace:member-session')); return; }
     openAccountPopup();
   }
+  function logout() {
+    memberSession = ''; accessToken = ''; key = '';
+    try { sessionStorage.removeItem('ppj-access:' + record); sessionStorage.removeItem('ppj-key:' + record); } catch (_) {}
+  }
   window.StanJourney = { open: open, addView: addView, addSlot: addSlot, addHeaderButton: addHeaderButton,
-    login: login, session: function () { return demo ? '' : memberSession || readMemberSession(); },
+    login: login, logout: logout, session: function () { return demo ? '' : memberSession || readMemberSession(); },
     // une pièce déposée par Stan (prochaine action) : le Parcours se met à jour
     reload: function () { if (!demo && state && !openingDossier) refresh(false).catch(function () {}); },
     showAction: function (id) { active = id; filter = ''; open('roadmap'); }, getState: function () { return demo ? state : null; } };
