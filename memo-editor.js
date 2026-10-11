@@ -58,7 +58,7 @@
     conflict: function (by) { return 'Le mémo a été modifié par ' + by + ' entre-temps : rechargez la dernière version.'; }
   };
   var state = { head: null, role: '', email: '', company: '', fund: '', preview: 0 };
-  window.PPMemoEditor = { version: 18, state: state, embed: EMBED, reader: READER };
+  window.PPMemoEditor = { version: 19, state: state, embed: EMBED, reader: READER };
 
   function el(tag, attrs, text) {
     var node = document.createElement(tag);
@@ -176,6 +176,7 @@
   var readerPending = false, readerPrinting = false, readerVersion = 0;
   function startReader() {
     injectCss();
+    dropLegacyEditorStyles();          // sinon _base.css neutralise le gras sous [contenteditable]
     doc.reading = true;
     document.body.classList.add('ppme-reading', 'ppme-reader');
     Array.prototype.forEach.call(area.querySelectorAll('[contenteditable]'), function (node) { node.setAttribute('contenteditable', 'false'); });
@@ -183,6 +184,7 @@
     buildBar();
     renderReaderRail();
     status('idle');
+    composeReading();
     fitBar();
     if (window.parent !== window) window.parent.postMessage({ type: 'proplace:memo:reader-ready', record: record }, 'https://proplace.co');
     var head = state.head;
@@ -198,6 +200,7 @@
   function stopGuest() {
     if (!GUEST) return;
     GUEST = READER = false;
+    clearReading();
     document.body.classList.remove('ppme-reading', 'ppme-reader');
     if (doc.rail) { doc.rail.remove(); doc.rail = null; }
     if (doc.bar) { doc.bar.remove(); doc.bar = null; }
@@ -255,6 +258,151 @@
     if (SJ && SJ.open) { SJ.open('roadmap'); return; }
     window.open('https://proplace.co/fr/compte', '_blank', 'noopener');
   }
+  /* ── 11/10 — la lecture du mémo, comme le dossier comité ─────────────────────────────────────
+   * « Rendre le mémo en ligne plus lisible, plus scannable, plus professionnel, avec des boxes
+   * parfaites — sans changer le contenu ni les textes » (Antoine, d'après le PDF). Partout (lecteurs,
+   * aperçu, cockpit, et pendant l'édition, comme un traitement de texte), une passe repère les motifs
+   * du mémo — intitulé en gras seul, champs « Type : … », questions Q1 · Constat · Évaluation, attaques
+   * en italique, séparateurs — et pose des classes ppme-r-* : la feuille de lecture en dessine des
+   * cartes, des intitulés, des pastilles. Aucun nœud ajouté, aucun texte touché ; serialize() retire
+   * les classes ppme-*, l'enregistrement n'en voit rien. Chaque section reçoit aussi son surtitre
+   * « 08 · SYNERGIES » (variable CSS du conteneur). */
+  var FAMILY = [['market', 'Marché', 'Market'], ['value-chain', 'Chaîne de valeur', 'Value chain'],
+    ['competition', 'Concurrence', 'Competition'], ['company', 'Société', 'Company'], ['identity', 'Société', 'Company'],
+    ['cap-table', 'Société', 'Company'], ['swot', 'SWOT', 'SWOT'], ['scenario', 'Synergies', 'Synergies'],
+    ['synerg', 'Synergies', 'Synergies'], ['action-plan', 'Plan d’action', 'Action plan'], ['conviction', 'Conviction', 'Conviction'],
+    ['financial', 'Finances', 'Financials'], ['roi', 'Valorisation', 'Valuation'], ['sources', 'Sources', 'Sources'],
+    ['due-diligence', 'Due diligence', 'Due diligence'], ['portfolio', 'Portefeuille', 'Portfolio'], ['pp-', 'Note de l’équipe', 'Team note']];
+  // les conteneurs de texte d'une section (la section elle-même se compose à part : querySelectorAll
+  // ne renvoie jamais l'élément sur lequel on l'appelle, même avec :scope)
+  var FLOWS = ':scope > .text-block, :scope > .text-col, :scope > .text-full-width, :scope > .angle-deep-dive, '
+    + ':scope > .split-container > .text-col, :scope > .text-block > .angle-deep-dive';
+  function rText(n) { return (n.textContent || '').replace(/\s+/g, ' ').trim(); }
+  function kidsOf(p) {
+    return Array.prototype.filter.call(p.childNodes, function (c) {
+      return !(c.nodeType === 3 && !c.textContent.trim()) && !(c.nodeType === 1 && c.tagName === 'BR');
+    });
+  }
+  // le rôle d'un paragraphe du mémo, d'après sa forme (jamais d'après son texte exact)
+  function readKind(n) {
+    // « <h4>Q2.</h4> » : une question dont le générateur n'a gardé que le numéro, en intertitre
+    if (/^H[4-6]$/.test(n.tagName)) return /^Q\s?\d{1,2}\s*[.:)]?$/.test(rText(n)) ? 'q' : '';
+    if (n.tagName !== 'P') return '';
+    var t = rText(n);
+    if (!t) return '';
+    var kids = kidsOf(n), first = kids[0];
+    var fb = first && first.nodeType === 1 && /^(B|STRONG)$/.test(first.tagName) ? first : null;
+    var sole = kids.length === 1 && first.nodeType === 1 ? first.tagName : '';
+    if (n.querySelector(':scope > hr') && t.length <= 90) return 'div';
+    if (fb && /^Q\s?\d{1,2}\s*[.:)]?$/.test(rText(fb))) return 'q';
+    if (!fb && /^Q\s?\d{1,2}\s*[.:)]\s/.test(t) && /\?$/.test(t)) return 'q';   // « Q2. … ? » sans gras
+    if (fb && /^\d{1,2}\s*[.)]$/.test(rText(fb)) && t.length > rText(fb).length + 2) return 'num';
+    if (/^(Évaluation|Evaluation|Assessment)(\s+consolidée|\s+consolidated)?\s*:/i.test(t)) return 'eval';
+    if (/^(Constat|Finding|Réponse|Answer)\s*:/i.test(t) || /^[-–]\s*Perspective\b/i.test(t)) return 'qa';
+    if ((sole === 'B' || sole === 'STRONG') && t.length <= 90) return 'head';
+    if (fb && /:\s*$/.test(rText(fb)) && rText(fb).length <= 48 && t.length > rText(fb).length + 2) return 'field';
+    if ((sole === 'I' || sole === 'EM') && t.length <= 140) return 'sub';
+    return 'p';
+  }
+  function readTone(n) {
+    var t = n.textContent || '';
+    return /✅/.test(t) ? 'ppme-r-ok' : /❌/.test(t) ? 'ppme-r-ko' : /⚠/.test(t) ? 'ppme-r-warn' : 'ppme-r-neutral';
+  }
+  function readCard(nodes, kind) {
+    nodes.forEach(function (n, x) {
+      n.classList.add('ppme-r-c', kind);
+      if (!x) n.classList.add('ppme-r-c1');
+      if (x === nodes.length - 1) n.classList.add('ppme-r-cz');
+      var k = readKind(n);
+      if (k && k !== 'p') n.classList.add('ppme-r-' + k);
+      if (k === 'eval') n.classList.add(readTone(n));
+    });
+  }
+  function composeFlow(box) {
+    var kids = Array.prototype.filter.call(box.children, function (c) { return !c.classList.contains('ppme-ui'); });
+    var kinds = kids.map(readKind);
+    var list = function (j) { return j < kids.length && /^(UL|OL)$/.test(kids[j].tagName); };
+    // « <p><hr/><b>Annexe — piste d'audit</b><hr/></p> » : le navigateur ferme le paragraphe devant
+    // le filet, l'intitulé se retrouve seul entre deux filets — un séparateur, dessiné d'un seul trait
+    kids.forEach(function (n, x) {
+      var before = kids[x - 1], after = kids[x + 1];
+      if (/^(B|STRONG)$/.test(n.tagName) && before && before.tagName === 'HR' && after && after.tagName === 'HR'
+          && rText(n).length <= 90) {
+        n.classList.add('ppme-r-divb');
+        before.classList.add('ppme-r-hr'); after.classList.add('ppme-r-hr');
+      }
+    });
+    for (var i = 0; i < kids.length;) {
+      var n = kids[i], k = kinds[i], j;
+      if (k === 'q') {                                     // Q1 · Constat · Évaluation : une carte
+        j = i + 1;
+        while (j < kids.length && (kinds[j] === 'qa' || kinds[j] === 'eval' || list(j)
+               || (kinds[j] === 'p' && (kinds[j - 1] === 'qa' || kinds[j - 1] === 'q')))) {
+          j++;
+          if (kinds[j - 1] === 'eval') break;
+        }
+        readCard(kids.slice(i, j), 'ppme-r-qacard');
+        i = j;
+        continue;
+      }
+      if (k === 'field' || (n.tagName === 'H4' && kinds[i + 1] === 'field')) {
+        j = n.tagName === 'H4' ? i + 1 : i;               // l'intertitre devient la tête de la carte
+        var fields = 0;
+        while (j < kids.length && (kinds[j] === 'field' || (fields && (kinds[j] === 'p' || list(j))))) {
+          if (kinds[j] === 'field') fields++;
+          j++;
+        }
+        if (fields >= 2) { readCard(kids.slice(i, j), 'ppme-r-fields'); i = j; continue; }
+      }
+      if (k === 'head') {                                   // un intitulé suivi de son texte : une carte titrée
+        j = i + 1;
+        while (j < kids.length && (kinds[j] === 'p' || kinds[j] === 'field' || list(j))) j++;
+        if (j > i + 1) { readCard(kids.slice(i, j), 'ppme-r-titled'); i = j; continue; }
+        n.classList.add('ppme-r-head');
+      } else if (k === 'sub' || k === 'div' || k === 'eval' || k === 'num' || k === 'field') {
+        n.classList.add('ppme-r-' + k);
+        if (k === 'eval') n.classList.add(readTone(n));
+      }
+      i++;
+    }
+  }
+  function clearReading() {
+    document.body.classList.remove('ppme-read');
+    Array.prototype.forEach.call(area.querySelectorAll('[class*="ppme-r-"]'), function (n) {
+      Array.prototype.slice.call(n.classList).forEach(function (c) { if (c.indexOf('ppme-r-') === 0) n.classList.remove(c); });
+      if (!n.classList.length) n.removeAttribute('class');
+    });
+    sections().forEach(function (sec) { sec.style.removeProperty('--ppme-kicker'); });
+  }
+  function composeReading() {
+    clearReading();
+    injectCss();
+    var num = 0;
+    sections().forEach(function (sec) {
+      if (sec.offsetParent === null && !READER) return;     // une section masquée ne compte pas
+      num++;
+      var fam = FAMILY.filter(function (f) { return sec.id.indexOf(f[0]) === 0 || sec.id.indexOf(f[0]) >= 0; })[0];
+      var label = fam ? fam[en ? 2 : 1] : (en ? 'Analysis' : 'Analyse');
+      sec.style.setProperty('--ppme-kicker', JSON.stringify((num < 10 ? '0' : '') + num + '  ·  ' + label.toUpperCase()));
+      composeFlow(sec);
+      Array.prototype.forEach.call(sec.querySelectorAll(FLOWS), composeFlow);
+    });
+    document.body.classList.add('ppme-read');
+  }
+  // chaque changement du contenu (frappe, Entrée, bloc déplacé, annuler, version rechargée…) recompose
+  // la page : un paragraphe né d'un Entrée hérite des classes de son voisin, la passe suivante les remet
+  // d'aplomb. Seuls les classes et le surtitre bougent (des attributs, que l'observateur ne suit pas).
+  var readWatch = window.MutationObserver ? new MutationObserver(function (list) {
+    if (!document.body.classList.contains('ppme-read')) return;
+    var mine = list.every(function (m) {
+      var t = m.target.nodeType === 1 ? m.target : m.target.parentElement;
+      return !t || !!t.closest('.ppme-ui');
+    });
+    if (mine) return;
+    clearTimeout(doc.readT);
+    doc.readT = setTimeout(composeReading, 250);
+  }) : null;
+  if (readWatch) readWatch.observe(area, { childList: true, characterData: true, subtree: true });
   function refreshReader(initial) {
     if (readerPending || readerPrinting || (!initial && document.hidden)) return Promise.resolve();
     readerPending = true;
@@ -1336,6 +1484,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     if (on && !silent) save(true);
     doc.reading = !!on;
     document.body.classList.toggle('ppme-reading', doc.reading);
+    composeReading();                      // la même mise en page à l'édition qu'à la lecture
     sections().forEach(function (sec) { sec.setAttribute('contenteditable', doc.reading ? 'false' : 'true'); });
     if (byId(CONTACT)) byId(CONTACT).setAttribute('contenteditable', doc.reading ? 'false' : 'true');
     Array.prototype.forEach.call(area.querySelectorAll('details[data-ppme-closed]'), function (d) { d.open = !doc.reading; });
@@ -3471,6 +3620,59 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-dbar .ppme-planbtn{font-weight:700}',
       '.ppme-reader .ppme-railpop{position:absolute;top:calc(100% + 6px);left:6px;z-index:906;width:min(340px,calc(100vw - 28px));max-height:min(70vh,560px);overflow:auto;margin:0!important;box-shadow:0 12px 30px rgba(15,29,51,.2)!important}',
       '.ppme-toast-wait .ppme-spin{flex:0 0 auto;margin-right:2px}',
+      // ── la lecture (11/10) : la grammaire du dossier comité, sur la page ──
+      '.ppme-read .section-container>h2.section-title::before{content:var(--ppme-kicker,none);display:block;font:800 11px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.16em;color:#0E7F3F;margin:0 0 8px}',
+      '.ppme-read .section-container>h2.section-title::after{content:"";display:block;width:38px;height:3px;border-radius:2px;background:#12A150;margin:12px 0 0}',
+      '.ppme-read .section-container>h2.section-title{font-size:22px!important;font-weight:800!important;letter-spacing:-.015em;margin-bottom:22px!important}',
+      '.ppme-read .content-area .section-container h3{font-size:17px;font-weight:700;color:#0F1D33;margin:30px 0 12px;padding:0 0 0 12px;border-left:3px solid #12A150;line-height:1.35}',
+      '.ppme-read .content-area .section-container h4:not(.ppme-r-c){font-size:15.5px;font-weight:700;color:#0F1D33;margin:24px 0 8px}',
+      '.ppme-read .content-area .section-container h5:not(.ppme-r-c){font:800 11px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#0E7F3F;margin:24px 0 10px}',
+      '.ppme-read .content-area p.ppme-r-head{font-size:16.5px;font-weight:700;color:#0F1D33;margin:26px 0 10px;padding-left:12px;border-left:3px solid #12A150;line-height:1.35}',
+      '.ppme-read .content-area p.ppme-r-sub{font-weight:700;color:#16233A;margin:20px 0 6px}',
+      '.ppme-read .content-area p.ppme-r-div{display:flex;align-items:center;gap:14px;margin:34px 0 18px;font:800 11px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#5B6B82}',
+      '.ppme-read .content-area p.ppme-r-div>hr{flex:1 1 auto;margin:0;border:0;border-top:1px solid #E3E8F0;max-width:none}',
+      '.ppme-read .content-area p.ppme-r-div>b,.ppme-read .content-area p.ppme-r-div>strong{color:#5B6B82;font-weight:800}',
+      '.ppme-read .content-area .ppme-r-divb{display:flex;align-items:center;gap:14px;margin:40px 0 22px;font:800 11px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#5B6B82}',
+      '.ppme-read .content-area .ppme-r-divb::before,.ppme-read .content-area .ppme-r-divb::after{content:"";flex:1 1 auto;height:1px;background:#E3E8F0}',
+      '.ppme-read .content-area hr.ppme-r-hr{display:none}',
+      // les angles de la piste d'audit : le bandeau vert du dossier comité (la page ne charge pas l'EB Garamond)
+      '.ppme-read .content-area [style*="Garamond"]{font-family:inherit!important}',
+      '.ppme-read .content-area .angle-deep-dive>h4:first-child{font-size:16px!important;font-weight:800!important;color:#0B6B35!important;line-height:1.35!important;background:#F3FBF6;border:0!important;border-radius:12px;box-shadow:inset 4px 0 0 #12A150;padding:13px 18px 13px 20px!important;margin:30px 0 14px!important;max-width:none}',
+      // les cartes : des éléments voisins qui ne font qu'un (bords, fond, coins arrondis)
+      '.ppme-read .content-area .ppme-r-c{display:flow-root;background:#fff;border:solid #E3E8F0;border-width:0 1px;padding:0 20px 10px;margin:0!important;max-width:none}',
+      '.ppme-read .content-area ul.ppme-r-c>li:last-child,.ppme-read .content-area ol.ppme-r-c>li:last-child{margin-bottom:0}',
+      '.ppme-read .content-area .ppme-r-c1{border-top-width:1px;border-radius:14px 14px 0 0;padding-top:16px;margin-top:16px!important}',
+      '.ppme-read .content-area .ppme-r-cz{border-bottom-width:1px;border-radius:0 0 14px 14px;padding-bottom:16px;margin-bottom:16px!important}',
+      '.ppme-read .content-area .ppme-r-c1.ppme-r-cz{border-radius:14px}',
+      '.ppme-read .content-area ul.ppme-r-c,.ppme-read .content-area ol.ppme-r-c{padding-left:40px}',
+      // la tête d'une carte : un intertitre (synergie) ou un intitulé, puis un filet
+      '.ppme-read .content-area h4.ppme-r-c1{font-size:16px;font-weight:700;color:#0F1D33;line-height:1.35;padding-bottom:14px;box-shadow:inset 0 -1px 0 #EEF2F7;margin-bottom:0!important}',
+      '.ppme-read .content-area h4.ppme-r-c1+.ppme-r-c{padding-top:14px}',
+      '.ppme-read .content-area p.ppme-r-head.ppme-r-c1{border-left-width:1px;border-left-color:#E3E8F0;padding-left:20px;font:800 11.5px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#0E7F3F;padding-bottom:6px;margin-bottom:0!important}',
+      '.ppme-read .content-area p.ppme-r-head.ppme-r-c1>b,.ppme-read .content-area p.ppme-r-head.ppme-r-c1>strong{color:#0E7F3F;font-weight:800}',
+      // les champs « Type : … » : l'intitulé en surtitre vert, la valeur dessous
+      '.ppme-read .content-area p.ppme-r-field>b:first-child,.ppme-read .content-area p.ppme-r-field>strong:first-child{display:block;font:800 11px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#0E7F3F!important;margin:0 0 4px}',
+      '.ppme-read .content-area p.ppme-r-field{padding-top:4px;padding-bottom:12px}',
+      // les points numérotés « 1. … » : la pastille verte du dossier comité
+      '.ppme-read .content-area p.ppme-r-num{position:relative;padding-left:40px;margin-top:14px}',
+      '.ppme-read .content-area p.ppme-r-num>b:first-child,.ppme-read .content-area p.ppme-r-num>strong:first-child{position:absolute;left:0;top:1px;width:26px;height:26px;border-radius:50%;background:#E7F6EE;color:#0B6B35!important;font-size:12.5px;font-weight:800;display:flex;align-items:center;justify-content:center}',
+      // les questions : la pastille Q, la question en gras, le constat, l'évaluation en couleur
+      '.ppme-read .content-area .ppme-r-qacard{background:#FBFCFE}',
+      '.ppme-read .content-area p.ppme-r-q{font-weight:600;color:#0F1D33;padding-bottom:8px}',
+      '.ppme-read .content-area p.ppme-r-q>b:first-child,.ppme-read .content-area p.ppme-r-q>strong:first-child{display:inline-block;background:#0F1D33;color:#fff!important;border-radius:6px;padding:1px 7px;margin-right:8px;font-size:12px;line-height:1.6;vertical-align:1px}',
+      '.ppme-read .content-area p.ppme-r-qa{color:#2A3A52}',
+      '.ppme-read .content-area p.ppme-r-eval{font-weight:700}',
+      '.ppme-read .content-area p.ppme-r-eval::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin:0 8px 1px 0;background:#8A97AA}',
+      '.ppme-read .content-area p.ppme-r-eval.ppme-r-ok{color:#0B6B35}.ppme-read .content-area p.ppme-r-eval.ppme-r-ok::before{background:#12A150}',
+      '.ppme-read .content-area p.ppme-r-eval.ppme-r-ko{color:#B42318}.ppme-read .content-area p.ppme-r-eval.ppme-r-ko::before{background:#E5484D}',
+      '.ppme-read .content-area p.ppme-r-eval.ppme-r-warn{color:#8A5A00}.ppme-read .content-area p.ppme-r-eval.ppme-r-warn::before{background:#E0A526}',
+      // dans une carte, l'évaluation en est le pied, teinté selon le verdict
+      '.ppme-read .content-area p.ppme-r-eval.ppme-r-c{font-weight:600;padding-top:10px;padding-bottom:12px;background:#F7F9FC;box-shadow:inset 0 1px 0 #EEF2F7}',
+      '.ppme-read .content-area p.ppme-r-eval.ppme-r-c.ppme-r-ok{background:#F1FAF4}',
+      '.ppme-read .content-area p.ppme-r-eval.ppme-r-c.ppme-r-ko{background:#FDF3F3}',
+      '.ppme-read .content-area p.ppme-r-eval.ppme-r-c.ppme-r-warn{background:#FFF8EA}',
+      '.ppme-read .content-area h4.ppme-r-q{font-size:15px}',
+      '@media print{.ppme-read .section-container>h2.section-title::before,.ppme-read .section-container>h2.section-title::after{display:none}}',
       '.ppme-account{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:2px 0 14px;font:500 12px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;color:#5B6B82}',
       '.ppme-acc-who{color:#0E7F3F;font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '.ppme-acc-btn{font:inherit;font-weight:700;color:#0F1D33;background:#fff;border:1px solid #D5DDE7;border-radius:999px;padding:4px 10px;cursor:pointer;line-height:1.2}',
