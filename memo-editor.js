@@ -3625,6 +3625,11 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-read .section-container>h2.section-title::after{content:"";display:block;width:38px;height:3px;border-radius:2px;background:#12A150;margin:12px 0 0}',
       '.ppme-read .section-container>h2.section-title{font-size:22px!important;font-weight:800!important;letter-spacing:-.015em;margin-bottom:22px!important}',
       '.ppme-read .content-area .section-container h3{font-size:17px;font-weight:700;color:#0F1D33;margin:30px 0 12px;padding:0 0 0 12px;border-left:3px solid #12A150;line-height:1.35}',
+      // 11/10 soir (Antoine) — les titres des cadrans SWOT (Forces, Faiblesses…) ont déjà leur
+      // soulignement de couleur : pas de barre verticale en plus
+      '.ppme-read .content-area .swot-item h3,.ppme-read .content-area .sg-box h3{padding-left:0;border-left:0}',
+      // 11/10 soir — « Télécharger le modèle Excel interactif » : bords arrondis, comme les autres boutons
+      '.content-area a[href*=".xlsx"]{border-radius:10px}',
       '.ppme-read .content-area .section-container h4:not(.ppme-r-c){font-size:15.5px;font-weight:700;color:#0F1D33;margin:24px 0 8px}',
       '.ppme-read .content-area .section-container h5:not(.ppme-r-c){font:800 11px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#0E7F3F;margin:24px 0 10px}',
       '.ppme-read .content-area p.ppme-r-head{font-size:16.5px;font-weight:700;color:#0F1D33;margin:26px 0 10px;padding-left:12px;border-left:3px solid #12A150;line-height:1.35}',
