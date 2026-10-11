@@ -54,7 +54,7 @@
     conflict: function (by) { return 'Le mémo a été modifié par ' + by + ' entre-temps : rechargez la dernière version.'; }
   };
   var state = { head: null, role: '', email: '', company: '', fund: '', preview: 0 };
-  window.PPMemoEditor = { version: 15, state: state, embed: EMBED, reader: READER };
+  window.PPMemoEditor = { version: 16, state: state, embed: EMBED, reader: READER };
 
   function el(tag, attrs, text) {
     var node = document.createElement(tag);
@@ -3348,7 +3348,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-reading .ppme-readnote{display:inline}',
       '.ppme-reader .section-container{scroll-margin-top:var(--ppme-reader-bar-h,84px)}',
       '@media (max-width:640px){.ppme-dbar{overflow-x:auto;top:0;margin:0 0 14px;border-radius:0 0 12px 12px;scrollbar-width:none}.ppme-dbar::-webkit-scrollbar{display:none}.ppme-dbar-tools{flex-wrap:nowrap;flex:0 0 auto}.ppme-dbar-side{order:-1;margin:0 8px 0 0}.ppme-dbar .ppme-pdf{order:-2}.ppme-dbar .ppme-savebtn{order:-1}.ppme-dbar .ppme-st.generic{display:none}}',
-      '@media (max-width:640px){.ppme-reader .ppme-dbar{overflow:visible;flex-wrap:wrap}.ppme-reader .ppme-dbar-tools{flex:1 1 100%;flex-wrap:wrap}.ppme-reader .ppme-dbar-side{order:0;flex-wrap:wrap;margin:0}.ppme-reader .ppme-readnote{flex:1 1 180px;line-height:1.4}}',
+      '@media (max-width:640px){.ppme-reader .ppme-dbar{overflow:visible;flex-wrap:wrap}.ppme-reader .ppme-dbar-tools{flex:1 1 100%;max-width:100%;flex-wrap:wrap}.ppme-reader .ppme-dbar-side{order:0;flex:1 1 auto;min-width:0;max-width:100%;flex-wrap:wrap;margin:0}.ppme-reader .ppme-dbar-side button{max-width:100%;white-space:normal}.ppme-reader .ppme-readnote{flex:1 1 180px;line-height:1.4}}',
       // le document : tout le texte se modifie, les îlots d'origine sont signalés
       '.ppme-editing .section-container[contenteditable="true"]{outline:none;cursor:text;scroll-margin-top:84px;caret-color:#0E7F3F}',
       '.ppme-editing .section-container[contenteditable="true"]:focus-within{box-shadow:0 0 0 2px #12A15040,0 1px 4px rgba(15,29,51,.06)}',
