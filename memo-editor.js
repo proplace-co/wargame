@@ -51,7 +51,7 @@
     conflict: function (by) { return 'Le mémo a été modifié par ' + by + ' entre-temps : rechargez la dernière version.'; }
   };
   var state = { head: null, role: '', email: '', company: '', fund: '', preview: 0 };
-  window.PPMemoEditor = { version: 10, state: state, embed: EMBED };
+  window.PPMemoEditor = { version: 12, state: state, embed: EMBED };
 
   function el(tag, attrs, text) {
     var node = document.createElement(tag);
@@ -172,7 +172,10 @@
     removeSec: 'Remove section', removeSecHint: 'Take the current section out of the PDF (it stays in the memo)', putBack: 'Put back in the PDF',
     undo: 'Undo (Ctrl+Z)', redo: 'Redo (Ctrl+Y)', save: 'Save', saveHint: 'Save now (Ctrl+S) — saving is automatic',
     preview: '👁 Preview', previewHint: 'See the memo as your readers see it', backToEdit: '✏️ Edit',
-    pdf: '📄 Export PDF', pdfHint: 'The committee pack: a cover page, then the ticked sections in this order (Ctrl+P)',
+    pdf: '📄 Format & export as PDF', pdfHint: 'The committee pack, laid out as an A4 PDF: cover page, contents, then the ticked sections in this order (Ctrl+P)',
+    pdfBusy: '⏳ Formatting the PDF…', pdfMaking: 'Formatting the committee pack… (a few seconds, up to a minute for a long memo)',
+    pdfReady: 'Committee pack downloaded.', pdfUnsaved: 'Committee pack downloaded — your last changes were not saved yet, it shows the last saved version.',
+    pdfFailed: 'The PDF could not be formatted.', pdfPrint: 'Print from the browser',
     auto: 'Autosave on', dirty: 'Changes…', saving: 'Saving…', savedAt: function (n, h) { return '✓ Saved · v' + n + (h ? ' · ' + h : ''); },
     err: '⚠ Not saved — retry', conflictSt: '⚠ Changed elsewhere', where: 'Put the cursor in the memo first.',
     noteTitle: '📝 Team note', notePh: 'Write your note here…', newTitle: 'New section', newText: 'Write here…',
@@ -206,7 +209,10 @@ versionsHint: 'All versions: Stan panel, History tab', leave: 'Changes are still
     removeSec: 'Retirer la section', removeSecHint: 'Sortir la section en cours du PDF (elle reste dans le mémo)', putBack: 'Remettre dans le PDF',
     undo: 'Annuler (Ctrl+Z)', redo: 'Rétablir (Ctrl+Y)', save: 'Enregistrer', saveHint: 'Enregistrer maintenant (Ctrl+S) — l’enregistrement est automatique',
     preview: '👁 Aperçu', previewHint: 'Voir le mémo tel que le lisent vos lecteurs', backToEdit: '✏️ Modifier',
-    pdf: '📄 Exporter en PDF', pdfHint: 'Le dossier comité : une page de garde, puis les sections cochées dans cet ordre (Ctrl+P)',
+    pdf: '📄 Mettre en forme et exporter en PDF', pdfHint: 'Le dossier comité mis en page en PDF A4 : page de garde, sommaire, puis les sections cochées dans cet ordre (Ctrl+P)',
+    pdfBusy: '⏳ Mise en forme du PDF…', pdfMaking: 'Mise en forme du dossier comité… (quelques secondes, jusqu’à une minute pour un long mémo)',
+    pdfReady: 'Dossier comité téléchargé.', pdfUnsaved: 'Dossier comité téléchargé — vos dernières modifications n’étaient pas encore enregistrées : il montre la dernière version enregistrée.',
+    pdfFailed: 'La mise en forme du PDF a échoué.', pdfPrint: 'Imprimer depuis le navigateur',
     auto: 'Enregistrement automatique', dirty: 'Modifications…', saving: 'Enregistrement…', savedAt: function (n, h) { return '✓ Enregistré · v' + n + (h ? ' · ' + h : ''); },
     err: '⚠ Non enregistré — réessayer', conflictSt: '⚠ Modifié ailleurs', where: 'Placez d’abord le curseur dans le mémo.',
     noteTitle: '📝 Note de l’équipe', notePh: 'Écrivez ici votre note…', newTitle: 'Nouvelle section', newText: 'Écrivez ici…',
@@ -722,10 +728,258 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       api('/document', 'POST', known).then(function (j) { if (j.ok) adoptServer(j); });
     }).catch(function () {});
   }
+  // 11/10 — « Mettre en forme et exporter en PDF » : le serveur met le dossier comité en page
+  // (ReportLab, le système des fiches de Maximum Insurance : page de garde, sommaire, composants
+  // dessinés) et la page le télécharge. L'impression du navigateur reste le recours : lecteur hors
+  // de l'équipe, ou service indisponible.
+  var pdfJob = null;
   function exportPdf() {
     unselectMedia();
+    if (!session() || !state.role) { printPack(); return; }
+    if (pdfJob) return;
+    var btns = Array.prototype.slice.call(document.querySelectorAll('.ppme-dbar .ppme-pdf'));
+    var labels = btns.map(function (b) { return b.textContent; });
+    btns.forEach(function (b) { b.setAttribute('aria-busy', 'true'); b.textContent = D.pdfBusy; });
+    toast(D.pdfMaking);
+    var saved = true;
     var wait = doc.on && !doc.reading ? save(true) : Promise.resolve(true);
-    Promise.resolve(wait).then(function () { printPack(); });
+    pdfJob = Promise.resolve(wait).then(function (ok) {
+      saved = ok !== false;
+      var headers = {};
+      var s = session();
+      if (s) headers['X-Member-Session'] = s;
+      return fetch(API + '/pdf' + (state.preview ? '?n=' + state.preview : ''), { headers: headers, credentials: 'omit' });
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.blob();
+    }).then(function (blob) {
+      if (!blob || blob.size < 800) throw new Error('PDF vide');
+      var url = URL.createObjectURL(blob);
+      var a = el('a', { href: url, download: pdfName() + '.pdf' });
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 120000);
+      toast(saved ? D.pdfReady : D.pdfUnsaved);
+    }).catch(function () {
+      toast(D.pdfFailed, [{ label: D.pdfPrint, run: printPack }]);
+    }).then(function () {
+      btns.forEach(function (b, i) { b.removeAttribute('aria-busy'); b.textContent = labels[i]; });
+      pdfJob = null;
+    });
+  }
+  /* ── 11/10 — Synthétiser le mémo en deck pour le comité d'investissement ─────────────────────
+   * Trois comités, trois façons de raconter le dossier et de montrer les chiffres (VC, LBO,
+   * acquéreur stratégique). Sonnet 5.5 rédige en fond (≈ 30 s), le serveur retire tout chiffre absent
+   * du mémo, met en page en 16:9 et garde le deck par version et par comité (re-téléchargement gratuit). */
+  var K = en ? {
+    btn: '🎞 Summarise as a deck', hint: 'The investment committee deck (VC, LBO or strategic acquirer), drawn from the memo — 16:9 PDF',
+    title: 'Summarise the memo as a committee deck',
+    intro: 'The slides that matter to your committee, with the numbers presented the way it expects them. Nothing is made up: every figure comes from the memo (otherwise it is removed).',
+    modes: { vc: ['VC committee', 'Team, market, traction, unit economics, valuation and expected return (MOIC, IRR)'],
+             lbo: ['LBO committee', 'Cash flow, EBITDA and margins, entry multiple, leverage, value creation, low / base / high returns'],
+             strategic: ['Strategic acquirer committee', 'Strategic fit, quantified synergies, standalone vs synergy value, maximum price, integration'] },
+    suggested: 'suggested for this memo', ready: 'ready', loading: 'Loading…',
+    cost: function (eur) { return 'Written by Sonnet 5.5 · about €' + eur + ' · 1 to 2 minutes. Once made, a deck downloads again for free.'; },
+    go: function (eur) { return 'Generate the deck (~€' + eur + ')'; }, download: '⬇ Download the deck', cancel: 'Cancel', close: 'Close',
+    steps: { queued: 'Starting…', writing: 'Sonnet 5.5 is writing the slides…', layout: 'Laying out the slides…' },
+    failed: 'The summary failed: ', retry: 'Retry', done: 'Committee deck downloaded.', background: 'The deck keeps being prepared: it will download when ready.',
+    file: function (mode, name, n) { return K.modes[mode][0] + ' deck — ' + name + (n ? ' — v' + n : ''); }
+  } : {
+    btn: '🎞 Synthétiser en deck', hint: 'Le deck du comité d’investissement (VC, LBO ou acquéreur stratégique), tiré du mémo — PDF 16:9',
+    title: 'Synthétiser le mémo en deck pour le comité',
+    intro: 'Les diapositives qui comptent pour votre comité, avec les chiffres présentés comme il les attend. Rien n’est inventé : chaque chiffre vient du mémo (sinon il est retiré).',
+    modes: { vc: ['Comité VC', 'Équipe, marché, traction, économie unitaire, valorisation et retour attendu (MOIC, TRI)'],
+             lbo: ['Comité LBO', 'Cash-flow, EBITDA et marges, multiple d’entrée, levier, création de valeur, rendements bas / central / haut'],
+             strategic: ['Comité acquéreur stratégique', 'Adéquation stratégique, synergies chiffrées, valeur standalone et avec synergies, prix maximum, intégration'] },
+    suggested: 'conseillé pour ce mémo', ready: 'déjà prêt', loading: 'Chargement…',
+    cost: function (eur) { return 'Rédigé par Sonnet 5.5 · environ ' + eur + ' € · 1 à 2 minutes. Une fois fait, le deck se retélécharge gratuitement.'; },
+    go: function (eur) { return 'Générer le deck (~' + eur + ' €)'; }, download: '⬇ Télécharger le deck', cancel: 'Annuler', close: 'Fermer',
+    steps: { queued: 'Démarrage…', writing: 'Sonnet 5.5 rédige les diapositives…', layout: 'Mise en page des diapositives…' },
+    failed: 'La synthèse a échoué : ', retry: 'Réessayer', done: 'Deck du comité téléchargé.', background: 'Le deck continue de se préparer : il se téléchargera dès qu’il sera prêt.',
+    file: function (mode, name, n) { return 'Deck ' + K.modes[mode][0] + ' — ' + name + (n ? ' — v' + n : ''); }
+  };
+  var deck = { dlg: null, info: null, mode: '', run: null, timer: 0 };
+  function euros(v) { var s = (Number(v) || 0.15).toFixed(2); return en ? s : s.replace('.', ','); }
+  function memoName() {
+    var named = document.querySelector('.sidebar-company-name');
+    return String(state.company || ctx.name || ctx.company_name || (named && named.textContent) || '').trim();
+  }
+  function openDeck() {
+    unselectMedia();
+    if (!session() || !state.role) return;
+    if (!deck.dlg) buildDeckDialog();
+    deck.dlg.hidden = false;
+    deck.err.hidden = true;
+    if (deck.run) { showDeckRun(); return; }
+    deck.list.innerHTML = '';
+    deck.list.appendChild(el('p', { class: 'ppme-dlg-wait' }, K.loading));
+    deck.go.disabled = true;
+    api('/deck' + (state.preview ? '?n=' + state.preview : '')).then(function (j) {
+      if (!j.ok) throw new Error(j.detail || j.error || j.status);
+      deck.info = j;
+      if ((j.running || []).length) {
+        var r = j.running[0];
+        deck.run = { rid: r.run_id, mode: r.mode, n: r.n, t0: Date.now() };
+        showDeckRun();
+        pollDeck();
+        return;
+      }
+      if (!deck.mode || (j.modes || []).indexOf(deck.mode) < 0) deck.mode = j.suggested || 'vc';
+      renderDeckModes();
+    }).catch(function (e) { deckError(e); });
+  }
+  function buildDeckDialog() {
+    var back = el('div', { class: 'ppme-ui ppme-dlg-back' });
+    var box = el('div', { class: 'ppme-dlg', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'ppme-dlg-t' });
+    var x = el('button', { type: 'button', class: 'ppme-dlg-x', 'aria-label': K.close }, '×');
+    x.onclick = closeDeck;
+    box.appendChild(x);
+    box.appendChild(el('h2', { id: 'ppme-dlg-t' }, '🎞 ' + K.title));
+    box.appendChild(el('p', { class: 'ppme-dlg-intro' }, K.intro));
+    deck.list = el('div', { class: 'ppme-dlg-modes', role: 'radiogroup', 'aria-label': K.title });
+    box.appendChild(deck.list);
+    deck.cost = el('p', { class: 'ppme-dlg-cost' });
+    box.appendChild(deck.cost);
+    deck.progress = el('div', { class: 'ppme-dlg-run', role: 'status' });
+    deck.progress.hidden = true;
+    box.appendChild(deck.progress);
+    deck.err = el('p', { class: 'ppme-dlg-err', role: 'alert' });
+    deck.err.hidden = true;
+    box.appendChild(deck.err);
+    var act = el('div', { class: 'ppme-dlg-act' });
+    var cancel = el('button', { type: 'button', class: 'ppme-dlg-cancel' }, K.cancel);
+    cancel.onclick = closeDeck;
+    deck.go = el('button', { type: 'button', class: 'ppme-dlg-go' });
+    deck.go.onclick = goDeck;
+    act.appendChild(cancel);
+    act.appendChild(deck.go);
+    box.appendChild(act);
+    back.appendChild(box);
+    back.addEventListener('mousedown', function (e) { if (e.target === back) closeDeck(); });
+    back.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDeck(); });
+    document.body.appendChild(back);
+    deck.dlg = back;
+  }
+  function renderDeckModes() {
+    var j = deck.info || {};
+    deck.list.innerHTML = '';
+    (j.modes || ['vc', 'lbo', 'strategic']).forEach(function (m) {
+      var on = m === deck.mode;
+      var lab = el('label', { class: 'ppme-dlg-mode' + (on ? ' is-on' : '') });
+      var r = el('input', { type: 'radio', name: 'ppme-deck-mode', value: m });
+      r.checked = on;
+      r.onchange = function () { deck.mode = m; renderDeckModes(); };
+      lab.appendChild(r);
+      var txt = el('span', { class: 'ppme-dlg-mtxt' });
+      var head = el('span', { class: 'ppme-dlg-mhead' });
+      head.appendChild(el('b', {}, K.modes[m][0]));
+      if (m === j.suggested) head.appendChild(el('span', { class: 'ppme-dlg-tag' }, K.suggested));
+      if ((j.ready || {})[m]) head.appendChild(el('span', { class: 'ppme-dlg-tag ok' }, '✓ ' + K.ready));
+      txt.appendChild(head);
+      txt.appendChild(el('small', {}, K.modes[m][1]));
+      lab.appendChild(txt);
+      deck.list.appendChild(lab);
+    });
+    var ready = (j.ready || {})[deck.mode];
+    deck.cost.textContent = K.cost(euros(j.cost_eur));
+    deck.cost.hidden = !!ready;
+    deck.progress.hidden = true;
+    deck.list.hidden = false;
+    deck.go.disabled = false;
+    deck.go.textContent = ready ? K.download : K.go(euros(j.cost_eur));
+    setTimeout(function () { var c = deck.list.querySelector('input:checked'); if (c) c.focus(); }, 0);
+  }
+  function goDeck() {
+    var mode = deck.mode, j = deck.info || {};
+    deck.err.hidden = true;
+    if ((j.ready || {})[mode]) { downloadDeck(mode, j.n); return; }
+    deck.go.disabled = true;
+    var wait = doc.on && !doc.reading ? save(true) : Promise.resolve(true);
+    Promise.resolve(wait).then(function () {
+      return api('/deck', 'POST', state.preview ? { mode: mode, n: state.preview } : { mode: mode });
+    }).then(function (r) {
+      if (!r.ok) throw new Error(r.detail || r.error || r.status);
+      if (r.ready) { downloadDeck(mode, r.n); return; }
+      deck.run = { rid: r.run_id, mode: mode, n: r.n, t0: Date.now(), step: 'queued' };
+      showDeckRun();
+      pollDeck();
+    }).catch(function (e) { deck.go.disabled = false; deckError(e); });
+  }
+  function showDeckRun() {
+    var run = deck.run;
+    if (!run || !deck.dlg) return;
+    deck.list.hidden = true;
+    deck.cost.hidden = true;
+    deck.progress.hidden = false;
+    deck.progress.innerHTML = '';
+    deck.progress.appendChild(el('span', { class: 'ppme-spin', 'aria-hidden': 'true' }));
+    var t = el('span', { class: 'ppme-dlg-step' }, (K.modes[run.mode] || [''])[0] + ' — ' + (K.steps[run.step] || K.steps.queued));
+    deck.progress.appendChild(t);
+    deck.progress.appendChild(el('span', { class: 'ppme-dlg-time' }, Math.round((Date.now() - run.t0) / 1000) + ' s'));
+    deck.go.disabled = true;
+    deck.go.textContent = K.steps[run.step] || K.steps.queued;
+  }
+  function pollDeck() {
+    clearTimeout(deck.timer);
+    var run = deck.run;
+    if (!run) return;
+    deck.timer = setTimeout(function () {
+      api('/deck/runs/' + run.rid).then(function (s) {
+        if (deck.run !== run) return;
+        if (!s.ok) throw new Error(s.detail || s.error || s.status);
+        if (s.state === 'done') { deck.run = null; downloadDeck(run.mode, run.n); return; }
+        if (s.state === 'error') { deck.run = null; throw new Error(s.error || 'erreur'); }
+        run.step = s.step || run.step;
+        showDeckRun();
+        pollDeck();
+      }).catch(function (e) {
+        var msg = String((e && e.message) || '');
+        if (deck.run === run && (e instanceof TypeError || /^(5\d\d|0|429)$/.test(msg))) { pollDeck(); return; }   // un hoquet réseau : on réessaie
+        deck.run = null;
+        deckError(e, true);
+      });
+    }, 2500);
+  }
+  function downloadDeck(mode, n) {
+    var headers = {};
+    var s = session();
+    if (s) headers['X-Member-Session'] = s;
+    fetch(API + '/deck/pdf?mode=' + encodeURIComponent(mode) + (n ? '&n=' + n : ''), { headers: headers, credentials: 'omit' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+      .then(function (blob) {
+        var url = URL.createObjectURL(blob);
+        var a = el('a', { href: url, download: K.file(mode, memoName(), n).replace(/[\\/:*?"<>|]+/g, ' ') + '.pdf' });
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 120000);
+        if (deck.info) { deck.info.ready = deck.info.ready || {}; deck.info.ready[mode] = true; }
+        closeDeck(true);
+        toast(K.done);
+      }).catch(function (e) { deckError(e); });
+  }
+  function deckError(e, again) {
+    if (!deck.dlg || deck.dlg.hidden) { toast(K.failed + String((e && e.message) || e), again ? [{ label: K.retry, run: openDeck }] : null); return; }
+    deck.progress.hidden = true;
+    deck.err.hidden = false;
+    deck.err.textContent = K.failed + String((e && e.message) || e);
+    if (deck.info) renderDeckModes();
+    deck.go.disabled = false;
+    deck.go.textContent = K.retry;
+  }
+  function closeDeck(done) {
+    if (!deck.dlg) return;
+    deck.dlg.hidden = true;
+    if (deck.run && done !== true) toast(K.background);
+  }
+  function pdfName() {
+    var named = document.querySelector('.sidebar-company-name');
+    var name = String(state.company || ctx.name || ctx.company_name || (named && named.textContent) || '').trim();
+    var head = state.head || {};
+    return P.file(name, state.preview || head.n).replace(/[\\/:*?"<>|]+/g, ' ');
   }
   // le menu de gauche de la page suit le dossier (ordre, titres, sections ajoutées ou supprimées)
   function replaceNav(html) {
@@ -780,6 +1034,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       add('save', D.save, D.saveHint, 'ppme-savebtn ppme-edonly');
       add('preview', D.preview, D.previewHint, 'ppme-prev');
       add('pdf', D.pdf, D.pdfHint, 'ppme-pdf');
+      add('deck', K.btn, K.hint, 'ppme-deck');
       b.addEventListener('mousedown', function (e) {
         var x = e.target.closest('button[data-cmd]');
         if (x && x.getAttribute('data-cmd') !== 'status') e.preventDefault();      // le curseur reste dans le texte
@@ -827,6 +1082,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     var cmd = b.getAttribute('data-cmd');
     if (cmd === 'save') { save(); return; }
     if (cmd === 'pdf') { exportPdf(); return; }
+    if (cmd === 'deck') { openDeck(); return; }
     if (cmd === 'preview') { setReading(!doc.reading); return; }
     if (cmd === 'undo') { undo(); return; }
     if (cmd === 'redo') { redo(); return; }
@@ -2102,6 +2358,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     box.appendChild(el('p', { class: 'ppme-hint' }, T.directHint));
     box.appendChild(bar([
       btn(T.pdf, exportPdf, 'ppme-go'),
+      btn(K.btn, openDeck),
       btn((ver.open ? '▴ ' : '▾ ') + T.allVersions, function () { ver.open = !ver.open; if (ver.open) loadVersions(); else renderMemoBox(); })
     ]));
     if (ver.open && ver.list) {
@@ -2961,6 +3218,44 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-dbar .ppme-savebtn:hover{background:#E7F6EE;border-color:#12A150}',
       '.ppme-dbar .ppme-pdf{background:#12A150;color:#fff;border-color:#12A150;font-weight:700;padding:7px 12px}',
       '.ppme-dbar .ppme-pdf:hover{background:#0E8A44;border-color:#0E8A44}',
+      '.ppme-dbar .ppme-pdf[aria-busy="true"]{opacity:.8;cursor:progress}',
+      '.ppme-dbar .ppme-deck{background:#fff;color:#0E7F3F;border-color:#12A150;font-weight:700;padding:7px 11px;margin-left:4px}',
+      '.ppme-dbar .ppme-deck:hover{background:#E7F6EE;border-color:#0E8A44}',
+      // la fenêtre « Synthétiser en deck »
+      '.ppme-dlg-back{position:fixed;inset:0;z-index:2147483002;background:rgba(15,29,51,.42);display:flex;align-items:center;justify-content:center;padding:16px}',
+      '.ppme-dlg-back[hidden]{display:none}',
+      '.ppme-dlg{position:relative;width:min(620px,100%);max-height:calc(100vh - 32px);overflow:auto;background:#fff;border-radius:16px;box-shadow:0 24px 60px rgba(15,29,51,.35);padding:24px 24px 18px;font:400 14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:#0F1D33}',
+      '.ppme-dlg h2{font-size:19px;font-weight:800;margin:0 30px 6px 0;color:#0F1D33;letter-spacing:-.01em}',
+      '.ppme-dlg-intro{margin:0 0 14px;color:#4B5E78;font-size:13.5px}',
+      '.ppme-dlg-x{position:absolute;top:12px;right:12px;width:32px;height:32px;border:0;border-radius:8px;background:none;font-size:22px;line-height:1;color:#5B6B82;cursor:pointer}',
+      '.ppme-dlg-x:hover{background:#EEF2F6}',
+      '.ppme-dlg-modes{display:flex;flex-direction:column;gap:8px}',
+      '.ppme-dlg-mode{display:flex;gap:11px;align-items:flex-start;padding:11px 13px;border:1.5px solid #E3E8F0;border-radius:12px;cursor:pointer;background:#fff}',
+      '.ppme-dlg-mode:hover{border-color:#BFE6CF}',
+      '.ppme-dlg-mode.is-on{border-color:#12A150;background:#F3FBF6;box-shadow:0 0 0 3px rgba(18,161,80,.12)}',
+      '.ppme-dlg-mode input{margin:3px 0 0;accent-color:#12A150;flex:0 0 auto}',
+      '.ppme-dlg-mtxt{display:flex;flex-direction:column;gap:2px;min-width:0}',
+      '.ppme-dlg-mhead{display:flex;flex-wrap:wrap;gap:6px;align-items:center}',
+      '.ppme-dlg-mhead b{font-size:14.5px;color:#0F1D33}',
+      '.ppme-dlg-mtxt small{font-size:12.5px;color:#5B6B82}',
+      '.ppme-dlg-tag{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#2F5F9E;background:#EAF1FB;border-radius:999px;padding:2px 8px}',
+      '.ppme-dlg-tag.ok{color:#0B6B35;background:#E7F6EE}',
+      '.ppme-dlg-cost{margin:12px 0 0;font-size:12.5px;color:#5B6B82}',
+      '.ppme-dlg-cost[hidden],.ppme-dlg-modes[hidden],.ppme-dlg-run[hidden],.ppme-dlg-err[hidden]{display:none}',
+      '.ppme-dlg-wait{margin:6px 0;color:#5B6B82}',
+      '.ppme-dlg-run{display:flex;align-items:center;gap:12px;margin:8px 0 2px;padding:16px;border-radius:12px;background:#F7F9FC;font-weight:600}',
+      '.ppme-dlg-time{margin-left:auto;color:#5B6B82;font-weight:500;font-variant-numeric:tabular-nums}',
+      '.ppme-spin{width:18px;height:18px;border-radius:50%;border:2.5px solid #BFE6CF;border-top-color:#12A150;animation:ppme-spin 0.9s linear infinite;flex:0 0 auto}',
+      '@keyframes ppme-spin{to{transform:rotate(360deg)}}',
+      '.ppme-dlg-err{margin:12px 0 0;padding:10px 12px;border-radius:10px;background:#FDECEC;color:#B42318;font-size:13px}',
+      '.ppme-dlg-act{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}',
+      '.ppme-dlg-act button{font:inherit;font-weight:700;border-radius:9px;padding:9px 14px;cursor:pointer;border:1px solid #D5DDE7;background:#fff;color:#0F1D33}',
+      '.ppme-dlg-act .ppme-dlg-go{background:#12A150;border-color:#12A150;color:#fff}',
+      '.ppme-dlg-act .ppme-dlg-go:hover{background:#0E8A44}',
+      '.ppme-dlg-act button:disabled{opacity:.6;cursor:default}',
+      // « Mettre en forme et exporter en PDF » est long : sous 1700 px, la mention « Enregistrement
+      // automatique » (au repos) laisse sa place pour que la barre tienne sur une ligne
+      '@media (max-width:1700px){.ppme-dbar .ppme-st.generic{display:none}}',
       '.ppme-hintx{font-size:12px;color:#B45309;margin-left:6px}',
       '.ppme-readnote{display:none;font-size:12.5px;color:#5B6B82;padding:0 6px}',
       '.ppme-reading .ppme-dbar .ppme-edonly{display:none}',
