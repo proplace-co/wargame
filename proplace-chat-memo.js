@@ -15,7 +15,7 @@
   if (!demo && !document.getElementById('ppme-script')) {
     var memoEditor = document.createElement('script');
     memoEditor.id = 'ppme-script';
-    memoEditor.src = assetBase + 'memo-editor.js?v=16';
+    memoEditor.src = assetBase + 'memo-editor.js?v=17';
     memoEditor.defer = true;
     document.head.appendChild(memoEditor);
   }
@@ -592,7 +592,7 @@
   }
   function history() {
     return '<div data-ppj-slot="memo"></div><section id="stan-histList"><h3>Du premier contrôle au closing</h3><p class="ppj-muted">Décisions, pièces et travaux enregistrés. Les traces détaillées sont disponibles pendant sept jours.</p>' +
-      '<div class="ppj-actions">' + button('Exporter PDF', '', 'pdf') + button('Dossier complet et preuves', '', 'export') + '</div>' +
+      '<div class="ppj-actions">' + button('Exporter l’historique (PDF)', '', 'pdf') + button('Dossier complet et preuves', '', 'export') + '</div>' +
       '<ol class="ppj-timeline">' + state.events.slice().sort(function (a, b) { return b.at - a.at; }).map(function (e) {
         var recorded = e.run_id && state.runs[e.run_id];
         return '<li class="stan-hist-item"><time>' + date(e.at) + '</time><strong>' + esc(e.text) + '</strong><small>' + esc(e.actor) + '</small>' +
@@ -750,7 +750,16 @@
       }
     } catch (error) { announce(error.message, true); b.disabled = false; }
   }
+  // 11/10 — « Se connecter » dans la barre du mémo : la même connexion que ce poste de travail ;
+  // la session obtenue sert aussi à l'éditeur du mémo (memo-editor.js), cookie lisible ou non.
+  function login() {
+    if (demo) return;
+    memberSession = memberSession || readMemberSession();
+    if (memberSession) { window.dispatchEvent(new CustomEvent('proplace:member-session')); return; }
+    openAccountPopup();
+  }
   window.StanJourney = { open: open, addView: addView, addSlot: addSlot, addHeaderButton: addHeaderButton,
+    login: login, session: function () { return demo ? '' : memberSession || readMemberSession(); },
     // une pièce déposée par Stan (prochaine action) : le Parcours se met à jour
     reload: function () { if (!demo && state && !openingDossier) refresh(false).catch(function () {}); },
     showAction: function (id) { active = id; filter = ''; open('roadmap'); }, getState: function () { return demo ? state : null; } };
@@ -762,6 +771,7 @@
       if (e.data.type === 'proplace:journey:authenticated' && typeof e.data.session === 'string'
           && e.data.session.length < 1800 && e.data.session.indexOf('ppin1~') === 0) {
         memberSession = e.data.session; accessToken = ''; key = ''; closeAccountPopup();
+        window.dispatchEvent(new CustomEvent('proplace:member-session'));
         openDossier()
           .catch(function (error) { announce(error.message, true); render(); });
         return;

@@ -10,6 +10,8 @@
  * renommer, supprimer, ajouter). Chaque enregistrement est une version.
  * Profund (?embed=cockpit&reader=1) garde l'aperçu, le Plan et les exports, sans aucune
  * commande d'édition, même pour un membre connecté. Chargé par proplace-chat-memo.js.
+ * 11/10 — tout autre lecteur de la page (sans compte de l'équipe) a la même barre d'aperçu :
+ * ☰ Plan, le PDF mis en forme, le deck, et « Se connecter » ; connecté, l'édition s'ouvre.
  */
 (function () {
   'use strict';
@@ -28,6 +30,8 @@
   var EMBED = /[?&]embed=cockpit(&|$)/.test(location.search);
   // Profund uses the original memo, with its reader tools and no editing session.
   var READER = EMBED && /[?&]reader=1(&|$)/.test(location.search);
+  // 11/10 — un lecteur de la page sans compte de l'équipe : le même aperçu (GUEST lève READER)
+  var GUEST = false;
   var T = en ? {
     error: 'Could not save: ', close: 'Close',
     memoK: 'The memo', directHint: 'The memo is edited right in the page, like the committee pack: editing bar at the top, dossier contents on the left. Every save is a version.',
@@ -54,7 +58,7 @@
     conflict: function (by) { return 'Le mémo a été modifié par ' + by + ' entre-temps : rechargez la dernière version.'; }
   };
   var state = { head: null, role: '', email: '', company: '', fund: '', preview: 0 };
-  window.PPMemoEditor = { version: 16, state: state, embed: EMBED, reader: READER };
+  window.PPMemoEditor = { version: 17, state: state, embed: EMBED, reader: READER };
 
   function el(tag, attrs, text) {
     var node = document.createElement(tag);
@@ -65,10 +69,15 @@
   function session() {
     try {
       var cookie = document.cookie.split('; ').find(function (c) { return c.indexOf('proplace_auth=') === 0; });
-      if (!cookie) return '';
+      if (!cookie) return stanSession();
       var auth = JSON.parse(atob(decodeURIComponent(cookie.slice('proplace_auth='.length))));
-      return auth && typeof auth.member_session === 'string' ? auth.member_session : '';
-    } catch (_) { return ''; }
+      return auth && typeof auth.member_session === 'string' ? auth.member_session : stanSession();
+    } catch (_) { return stanSession(); }
+  }
+  // la connexion faite dans la fenêtre de Stan, quand son cookie ne se lit pas ici
+  function stanSession() {
+    var SJ = window.StanJourney;
+    try { return SJ && typeof SJ.session === 'function' ? String(SJ.session() || '') : ''; } catch (_) { return ''; }
   }
   function api(path, method, body) {
     var headers = body ? { 'Content-Type': 'application/json' } : {};
@@ -179,6 +188,28 @@
     var head = state.head;
     if (head && head.n !== readerVersion) { readerVersion = head.n; tellCockpit(head); }
   }
+  // 11/10 — « on doit pouvoir voir tout le nouveau système en mode aperçu sans modification si on
+  // n'est pas connecté, modifier si on l'est, et se connecter depuis la barre » (Antoine)
+  function startGuest() {
+    if (EMBED || GUEST || state.role || doc.on) return;
+    GUEST = READER = true;
+    startReader();
+  }
+  function stopGuest() {
+    if (!GUEST) return;
+    GUEST = READER = false;
+    document.body.classList.remove('ppme-reading', 'ppme-reader');
+    if (doc.rail) { doc.rail.remove(); doc.rail = null; }
+    if (doc.bar) { doc.bar.remove(); doc.bar = null; }
+    doc.reading = false;
+    doc.railOpen = false;
+  }
+  function login() {
+    var SJ = window.StanJourney;
+    if (SJ && typeof SJ.login === 'function') { SJ.login(); return; }
+    if (SJ && SJ.open) { SJ.open('roadmap'); return; }
+    window.open('https://proplace.co/fr/compte', '_blank', 'noopener');
+  }
   function refreshReader(initial) {
     if (readerPending || readerPrinting || (!initial && document.hidden)) return Promise.resolve();
     readerPending = true;
@@ -204,7 +235,8 @@
     pdf: '📄 Format & export as PDF', pdfHint: 'The committee pack, laid out as an A4 PDF: cover page, contents, then the ticked sections in this order (Ctrl+P)',
     pdfBusy: '⏳ Formatting the PDF…', pdfMaking: 'Formatting the committee pack… (a few seconds, up to a minute for a long memo)',
     pdfReady: 'Committee pack downloaded.', pdfUnsaved: 'Committee pack downloaded — your last changes were not saved yet, it shows the last saved version.',
-    pdfFailed: 'The PDF could not be formatted.', pdfPrint: 'Print from the browser',
+    pdfFailed: 'The PDF could not be formatted.', pdfPrint: 'Print from the browser', pdfOpen: 'Open the PDF',
+    login: '🔑 Sign in', loginHint: 'Sign in to your Proplace account to edit the memo',
     auto: 'Autosave on', dirty: 'Changes…', saving: 'Saving…', savedAt: function (n, h) { return '✓ Saved · v' + n + (h ? ' · ' + h : ''); },
     err: '⚠ Not saved — retry', conflictSt: '⚠ Changed elsewhere', where: 'Put the cursor in the memo first.',
     noteTitle: '📝 Team note', notePh: 'Write your note here…', newTitle: 'New section', newText: 'Write here…',
@@ -241,7 +273,8 @@ versionsHint: 'All versions: Stan panel, History tab', leave: 'Changes are still
     pdf: '📄 Mettre en forme et exporter en PDF', pdfHint: 'Le dossier comité mis en page en PDF A4 : page de garde, sommaire, puis les sections cochées dans cet ordre (Ctrl+P)',
     pdfBusy: '⏳ Mise en forme du PDF…', pdfMaking: 'Mise en forme du dossier comité… (quelques secondes, jusqu’à une minute pour un long mémo)',
     pdfReady: 'Dossier comité téléchargé.', pdfUnsaved: 'Dossier comité téléchargé — vos dernières modifications n’étaient pas encore enregistrées : il montre la dernière version enregistrée.',
-    pdfFailed: 'La mise en forme du PDF a échoué.', pdfPrint: 'Imprimer depuis le navigateur',
+    pdfFailed: 'La mise en forme du PDF a échoué.', pdfPrint: 'Imprimer depuis le navigateur', pdfOpen: 'Ouvrir le PDF',
+    login: '🔑 Se connecter', loginHint: 'Connectez-vous à votre compte Proplace pour modifier le mémo',
     auto: 'Enregistrement automatique', dirty: 'Modifications…', saving: 'Enregistrement…', savedAt: function (n, h) { return '✓ Enregistré · v' + n + (h ? ' · ' + h : ''); },
     err: '⚠ Non enregistré — réessayer', conflictSt: '⚠ Modifié ailleurs', where: 'Placez d’abord le curseur dans le mémo.',
     noteTitle: '📝 Note de l’équipe', notePh: 'Écrivez ici votre note…', newTitle: 'Nouvelle section', newText: 'Écrivez ici…',
@@ -765,14 +798,32 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   // dessinés) et la page le télécharge. L'impression du navigateur reste le recours : lecteur hors
   // de l'équipe, ou service indisponible.
   var pdfJob = null;
+  // les boutons PDF : la barre du mémo et l'en-tête du poste de travail Stan, même effet, même attente
+  function pdfButtons() {
+    return Array.prototype.slice.call(document.querySelectorAll('.ppme-dbar .ppme-pdf, .ppj-head-btn[data-head="pdf"]'));
+  }
+  // un message qui reste tant que le travail dure (la mise en forme prend 10 à 30 s), puis le résultat
+  function progress(text) {
+    var old = document.querySelector('.ppme-toast');
+    if (old) old.remove();
+    var box = el('div', { class: 'ppme-toast ppme-toast-wait', role: 'status', 'aria-live': 'polite' });
+    box.appendChild(el('span', { class: 'ppme-spin', 'aria-hidden': 'true' }));
+    var msg = el('span', {}, text);
+    box.appendChild(msg);
+    document.body.appendChild(box);
+    var t0 = Date.now();
+    var timer = setInterval(function () { msg.textContent = text + ' · ' + Math.round((Date.now() - t0) / 1000) + ' s'; }, 1000);
+    return { done: function (final, actions) { clearInterval(timer); box.remove(); toast(final, actions); } };
+  }
   function exportPdf() {
     unselectMedia();
-    if (!session() || !state.role) { printPack(); return; }
+    // l'aperçu Profund du cockpit, sans session : l'impression du navigateur (son propre parcours)
+    if (READER && !GUEST && !session()) { printPack(); return; }
     if (pdfJob) return;
-    var btns = Array.prototype.slice.call(document.querySelectorAll('.ppme-dbar .ppme-pdf'));
+    var btns = pdfButtons();
     var labels = btns.map(function (b) { return b.textContent; });
     btns.forEach(function (b) { b.setAttribute('aria-busy', 'true'); b.textContent = D.pdfBusy; });
-    toast(D.pdfMaking);
+    var note = progress(D.pdfMaking);
     var saved = true;
     var wait = doc.on && !doc.reading ? save(true) : Promise.resolve(true);
     pdfJob = Promise.resolve(wait).then(function (ok) {
@@ -792,10 +843,11 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setTimeout(function () { URL.revokeObjectURL(url); }, 120000);
-      toast(saved ? D.pdfReady : D.pdfUnsaved);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 600000);
+      // le fichier part au téléchargement ; s'il n'arrive pas (téléchargements bloqués), il s'ouvre ici
+      note.done(saved ? D.pdfReady : D.pdfUnsaved, [{ label: D.pdfOpen, run: function () { window.open(url, '_blank', 'noopener'); } }]);
     }).catch(function () {
-      toast(D.pdfFailed, [{ label: D.pdfPrint, run: printPack }]);
+      note.done(D.pdfFailed, [{ label: D.pdfPrint, run: printPack }]);
     }).then(function () {
       btns.forEach(function (b, i) { b.removeAttribute('aria-busy'); b.textContent = labels[i]; });
       pdfJob = null;
@@ -840,8 +892,8 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
   function openDeck() {
     unselectMedia();
-    if (!session() || !state.role) {
-      if (READER) toast(en ? 'Sign in with an authorised fund account to summarise this memo as a deck.'
+    if (READER && !GUEST && !session()) {
+      toast(en ? 'Sign in with an authorised fund account to summarise this memo as a deck.'
         : 'Connectez-vous avec un compte autorisé du fonds pour synthétiser ce mémo en deck.');
       return;
     }
@@ -1002,6 +1054,12 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     deck.progress.hidden = true;
     deck.err.hidden = false;
     deck.err.textContent = K.failed + String((e && e.message) || e);
+    if (!state.role && /connect/i.test(String((e && e.message) || ''))) {    // une synthèse neuve : la connexion
+      var b = el('button', { type: 'button', class: 'ppme-dlg-login' }, D.login);
+      b.onclick = function () { closeDeck(true); login(); };
+      deck.err.appendChild(document.createTextNode(' '));
+      deck.err.appendChild(b);
+    }
     if (deck.info) renderDeckModes();
     deck.go.disabled = false;
     deck.go.textContent = K.retry;
@@ -1048,7 +1106,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
         return x;
       };
       var sep = function (cls) { into.appendChild(el('span', { class: 'ppme-sep ' + (cls || '') })); };
-      if (EMBED) { add('plan', '☰ ' + D.outline, D.rail, 'ppme-planbtn'); sep(); }
+      if (EMBED || GUEST) { add('plan', '☰ ' + D.outline, D.rail, 'ppme-planbtn'); sep(); }
       if (!READER) {
         add('bold', '<b>G</b>', D.bold, 'ppme-edonly');
         add('italic', '<i>I</i>', D.italic, 'ppme-edonly');
@@ -1073,6 +1131,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
         add('save', D.save, D.saveHint, 'ppme-savebtn ppme-edonly');
         add('preview', D.preview, D.previewHint, 'ppme-prev');
       } else side.appendChild(el('span', { class: 'ppme-st', role: 'status' }));
+      if (GUEST) add('login', D.login, D.loginHint, 'ppme-login');
       add('pdf', D.pdf, D.pdfHint, 'ppme-pdf');
       add('deck', K.btn, K.hint, 'ppme-deck');
       b.addEventListener('mousedown', function (e) {
@@ -1132,7 +1191,8 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     var b = e.target.closest('button[data-cmd]');
     if (!b) return;
     var cmd = b.getAttribute('data-cmd');
-    if (READER && ['plan', 'pdf', 'deck'].indexOf(cmd) < 0) return;
+    if (READER && ['plan', 'pdf', 'deck', 'login'].indexOf(cmd) < 0) return;
+    if (cmd === 'login') { login(); return; }
     if (cmd === 'save') { save(); return; }
     if (cmd === 'pdf') { exportPdf(); return; }
     if (cmd === 'deck') { openDeck(); return; }
@@ -3268,18 +3328,19 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
 
   function checkAccess() {
-    if (state.role || !session()) return;
-    api('/access').then(function (a) {
-      if (!a.ok) return;
+    if (state.role || !session()) return Promise.resolve(false);
+    return api('/access').then(function (a) {
+      if (!a.ok) return false;
       state.role = a.role;
       state.email = a.email;
       state.company = a.company || '';
       state.fund = a.fund || '';
       if (a.head) state.head = a.head;
       injectCss();
-      if (READER) startReader();
-      else { startEditor(); whenStan(mountStan); }
-    }).catch(function () {});
+      if (READER && !GUEST) startReader();
+      else { stopGuest(); startEditor(); whenStan(mountStan); }
+      return true;
+    }).catch(function () { return false; });
   }
   function injectCss() {
     if (document.getElementById('ppme-css')) return;
@@ -3307,6 +3368,12 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-dbar .ppme-pdf[aria-busy="true"]{opacity:.8;cursor:progress}',
       '.ppme-dbar .ppme-deck{background:#fff;color:#0E7F3F;border-color:#12A150;font-weight:700;padding:7px 11px;margin-left:4px}',
       '.ppme-dbar .ppme-deck:hover{background:#E7F6EE;border-color:#0E8A44}',
+      '.ppme-dbar .ppme-login{background:#0F1D33;color:#fff;border-color:#0F1D33;font-weight:700;padding:7px 11px;margin-right:4px}',
+      '.ppme-dbar .ppme-login:hover{background:#1B2F4E;border-color:#1B2F4E}',
+      '.ppme-dbar .ppme-planbtn{font-weight:700}',
+      '.ppme-reader .ppme-railpop{position:absolute;top:calc(100% + 6px);left:6px;z-index:906;width:min(340px,calc(100vw - 28px));max-height:min(70vh,560px);overflow:auto;margin:0!important;box-shadow:0 12px 30px rgba(15,29,51,.2)!important}',
+      '.ppme-toast-wait .ppme-spin{flex:0 0 auto;margin-right:2px}',
+      '.ppme-dlg-login{margin-left:6px;font:inherit;font-weight:700;color:#fff;background:#0F1D33;border:0;border-radius:8px;padding:5px 10px;cursor:pointer}',
       // la fenêtre « Synthétiser en deck »
       '.ppme-dlg-back{position:fixed;inset:0;z-index:2147483002;background:rgba(15,29,51,.42);display:flex;align-items:center;justify-content:center;padding:16px}',
       '.ppme-dlg-back[hidden]{display:none}',
@@ -3613,8 +3680,9 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     refreshReader(true).then(checkAccess);
     setInterval(function () { refreshReader(false); }, 30000);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshReader(false); });
-  } else syncLatest().then(checkAccess);
+  } else syncLatest().then(checkAccess).then(function (member) { if (!member) startGuest(); });
   // connexion faite dans le panneau Stan (cookie posé) : l'édition s'ouvre au retour
   window.addEventListener('focus', checkAccess);
+  window.addEventListener('proplace:member-session', checkAccess);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) checkAccess(); });
 })();
