@@ -16,20 +16,24 @@
 (function () {
   'use strict';
   if (window.PPMemoEditor) return;
+  // An editorial uses the very same reader, without a memo record or transport.
+  // This explicit contract remains read-only even with a signed member cookie.
+  var editorial = window.__PP_EDITORIAL_READER__;
+  editorial = editorial && editorial.kind === 'editorial' && editorial.readOnly === true ? editorial : null;
   var meta = document.querySelector('meta[name="stan-deal"]');
   var area = document.querySelector('.content-area');
-  if (!meta || !area) return;
+  if ((!meta && !editorial) || !area) return;
   var ctx;
-  try { ctx = JSON.parse(meta.content); } catch (_) { return; }
+  try { ctx = editorial ? { name: String(editorial.title || '') } : JSON.parse(meta.content); } catch (_) { return; }
   var record = ctx.airtable_record || ctx.deal_id || '';
-  if (!/^rec[a-zA-Z0-9]{10,30}$/.test(record)) return;
+  if (!editorial && !/^rec[a-zA-Z0-9]{10,30}$/.test(record)) return;
   var API = (window.__PP_MEMO_EDITS_API__ || 'https://alexandre-79537--memo-edits-fastapi-app.modal.run') + '/memos/' + record;
   var en = (document.documentElement.lang || 'fr').toLowerCase().indexOf('en') === 0;
   // 10/10 — l'onglet Mémo du cockpit montre CETTE page, intégrée (?embed=cockpit) : même éditeur,
   // sans barre latérale ni bouton Stan ; le contenu du dossier passe dans la barre (☰ Plan)
-  var EMBED = /[?&]embed=cockpit(&|$)/.test(location.search);
+  var EMBED = !!editorial || /[?&]embed=cockpit(&|$)/.test(location.search);
   // Profund uses the original memo, with its reader tools and no editing session.
-  var READER = EMBED && /[?&]reader=1(&|$)/.test(location.search);
+  var READER = !!editorial || (EMBED && /[?&]reader=1(&|$)/.test(location.search));
   // 11/10 — un lecteur de la page sans compte de l'équipe : le même aperçu (GUEST lève READER)
   var GUEST = false;
   var T = en ? {
@@ -58,7 +62,7 @@
     conflict: function (by) { return 'Le mémo a été modifié par ' + by + ' entre-temps : rechargez la dernière version.'; }
   };
   var state = { head: null, role: '', email: '', company: '', fund: '', preview: 0 };
-  window.PPMemoEditor = { version: 19, state: state, embed: EMBED, reader: READER };
+  window.PPMemoEditor = { version: 19, state: state, embed: EMBED, reader: READER, editorial: !!editorial };
 
   function el(tag, attrs, text) {
     var node = document.createElement(tag);
@@ -80,6 +84,7 @@
     try { return SJ && typeof SJ.session === 'function' ? String(SJ.session() || '') : ''; } catch (_) { return ''; }
   }
   function api(path, method, body) {
+    if (editorial) return Promise.resolve({ ok: false, status: 0 });
     var headers = body ? { 'Content-Type': 'application/json' } : {};
     var s = session();
     if (s) headers['X-Member-Session'] = s;
@@ -529,6 +534,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
   function order() { return sections().map(function (s) { return s.id; }); }
   function titleOf(sec) {
+    if (editorial && sec && sec.getAttribute('data-pp-title')) return sec.getAttribute('data-pp-title');
     var t = sec && sec.querySelector('.section-title, h2');
     return t ? t.textContent.replace(/\s+/g, ' ').trim() : (sec ? sec.id : '');
   }
@@ -1012,6 +1018,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
   function exportPdf() {
     unselectMedia();
+    if (editorial) { if (editorial.exportBridge) editorialExport('a4'); else printPack(); return; }
     // l'aperçu Profund du cockpit, sans session : l'impression du navigateur (son propre parcours)
     if (READER && !GUEST && !session()) { printPack(); return; }
     if (pdfJob) return;
@@ -1093,6 +1100,20 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
   function openDeck() {
     unselectMedia();
+    if (editorial) {
+      var decks = (editorial.decks || []).filter(function (item) { return /^https:\/\//.test(String(item.url || '')); });
+      var download = function (url) {
+        var link = el('a', { href: url, target: '_blank', rel: 'noopener', download: '' });
+        document.body.appendChild(link); link.click(); link.remove();
+      };
+      if (decks.length === 1) download(decks[0].url);
+      else if (decks.length > 1) {
+        var choices = decks.map(function (item) { return [item.label, function () { download(item.url); }]; });
+        if (editorial.exportBridge) choices.push([en ? 'Both decks (ZIP)' : 'Les deux (ZIP)', function () { editorialExport('decks'); }]);
+        openMenu(choices, doc.bar.querySelector('[data-cmd="deck"]'));
+      }
+      return;
+    }
     if (READER && !GUEST && !session()) {
       toast(en ? 'Sign in with an authorised fund account to summarise this memo as a deck.'
         : 'Connectez-vous avec un compte autorisé du fonds pour synthétiser ce mémo en deck.');
@@ -1310,6 +1331,19 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       };
       var sep = function (cls) { into.appendChild(el('span', { class: 'ppme-sep ' + (cls || '') })); };
       if (EMBED || GUEST) { add('plan', '☰ ' + D.outline, D.rail, 'ppme-planbtn'); sep(); }
+      if (editorial && area.querySelector('.split-container > .img-col img')) {
+        var size = el('select', { class: 'ppme-image-width', 'aria-label': en ? 'Image width' : 'Taille des images' });
+        [25, 33, 40, 50].forEach(function (width) {
+          var option = el('option', { value: String(width) }, (en ? 'Images ' : 'Images ') + width + ' %');
+          option.selected = width === 40; size.appendChild(option);
+        });
+        size.onchange = function () {
+          Array.prototype.forEach.call(area.querySelectorAll('.split-container'), function (split) {
+            if (split.querySelector('.img-col img')) setSplit({ split: split }, Number(size.value));
+          });
+        };
+        tools.appendChild(size); sep();
+      }
       if (!READER) {
         add('bold', '<b>G</b>', D.bold, 'ppme-edonly');
         add('italic', '<i>I</i>', D.italic, 'ppme-edonly');
@@ -1336,7 +1370,9 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       } else side.appendChild(el('span', { class: 'ppme-st', role: 'status' }));
       if (GUEST) add('login', D.login, D.loginHint, 'ppme-login').hidden = !!session();
       add('pdf', D.pdf, D.pdfHint, 'ppme-pdf');
-      add('deck', K.btn, K.hint, 'ppme-deck');
+      if (!editorial || (editorial.decks || []).some(function (item) { return /^https:\/\//.test(String(item.url || '')); })) {
+        add('deck', editorial ? (en ? '🎞 Market carousels' : '🎞 Carrousels du marché') : K.btn, editorial ? (en ? 'Download the prepared market carousels (PDF)' : 'Télécharger les carrousels du marché préparés (PDF)') : K.hint, 'ppme-deck');
+      }
       b.addEventListener('mousedown', function (e) {
         var x = e.target.closest('button[data-cmd]');
         if (x && x.getAttribute('data-cmd') !== 'status') e.preventDefault();      // le curseur reste dans le texte
@@ -1354,7 +1390,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   // ✓ v3 · 14:04) ; puis la mise en forme en icônes (•, T, 🖼, ▶ — 📄 PDF, ✓ v3) ; puis tout en icônes.
   // L'infobulle garde l'intitulé complet. Deux lignes seulement si même les icônes ne tiennent pas.
   var SHORT = {
-    pdf: [en ? '📄 Export PDF' : '📄 Exporter en PDF', '📄 PDF'], deck: ['🎞 Deck'], offsec: ['✕ Section'],
+    pdf: [en ? '📄 Export PDF' : '📄 Exporter en PDF', '📄 PDF'], deck: editorial ? [en ? '🎞 Market carousels' : '🎞 Carrousels du marché', en ? '🎞 Carousels' : '🎞 Carrousels'] : ['🎞 Deck'], offsec: ['✕ Section'],
     list: [null, '•'], heading: [null, en ? 'H' : 'T'], image: [null, '🖼'], video: [null, '▶'],
     preview: [null, null, '👁'], save: [null, null, '💾'], login: [null, null, '🔑'], plan: [null, null, '☰']
   };
@@ -1413,6 +1449,12 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     doc.state = kind;
     var s = doc.bar && doc.bar.querySelector('.ppme-st');
     if (!s) return;
+    if (editorial) {
+      s.className = 'ppme-st';
+      s.textContent = (en ? 'Read only' : 'Lecture seule') + (/^\d{4}-\d{2}-\d{2}$/.test(editorial.day || '') ? ' · ' + editorial.day : '');
+      s.title = s.textContent;
+      return;
+    }
     var h = state.head || {};
     if (READER && !h.n && pageVersion()) {
       var latest = '';
@@ -3519,6 +3561,39 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     });
     return Promise.race([Promise.all(loads), new Promise(function (ok) { setTimeout(ok, ms); })]);
   }
+  // A standalone editorial must not export blank slides or fallback fonts.
+  // Keep the existing memo export path unchanged.
+  function editorialPrintReady(root, ms) {
+    var cleanups = [];
+    var images = Array.prototype.map.call(root.querySelectorAll('img'), function (image) {
+      return new Promise(function (ok, fail) {
+        function cleanup() { image.removeEventListener('load', loaded); image.removeEventListener('error', broken); }
+        function broken() { cleanup(); fail(new Error('image')); }
+        function loaded() {
+          cleanup();
+          if (!image.naturalWidth) { broken(); return; }
+          try { Promise.resolve(image.decode ? image.decode() : null).then(ok, broken); } catch (_) { broken(); }
+        }
+        cleanups.push(cleanup);
+        if (image.complete) loaded();
+        else { image.addEventListener('load', loaded, { once: true }); image.addEventListener('error', broken, { once: true }); }
+      });
+    });
+    if (document.fonts && document.fonts.ready) images.push(document.fonts.ready.then(function () {
+      if (!document.fonts.load) return;
+      return Promise.all([400, 500, 600, 700].map(function (weight) {
+        return document.fonts.load(weight + ' 16px "Instrument Sans"').then(function (faces) {
+          if (!faces.length || faces.some(function (face) { return face.status !== 'loaded'; })) throw new Error('font');
+        });
+      }));
+    }));
+    return new Promise(function (ok, fail) {
+      var timeout = setTimeout(function () { cleanups.forEach(function (f) { f(); }); fail(new Error('timeout')); }, ms);
+      Promise.all(images).then(function () { clearTimeout(timeout); ok(); }, function (error) {
+        clearTimeout(timeout); cleanups.forEach(function (f) { f(); }); fail(error);
+      });
+    });
+  }
   // ce qui ne part pas dans le PDF : décoché dans le dossier (ou, hors édition, marqué dans la page)
   function printOff(id) {
     if (doc.on) return !inPdf(id);
@@ -3526,9 +3601,95 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     var flag = n && n.getAttribute('data-pp-print');
     return flag ? flag === 'off' : DEFAULT_OFF.indexOf(id) >= 0;
   }
+  // The editorial iframe remains transport-free. The trusted parent downloads
+  // a deterministic A4 or the two already prepared PDFs; no memo API is used.
+  var editorialExportJob = null;
+  function editorialExport(kind) {
+    if (!editorial || !editorial.exportBridge || editorialExportJob) return;
+    var lang = en ? 'en' : 'fr';
+    var origin = String(editorial.parentOrigin || '');
+    if (!/^https?:\/\//.test(origin)) {
+      toast(en ? 'The export connection is unavailable. Please retry.' : 'La connexion d’export est indisponible. Réessayez.');
+      return;
+    }
+    closeMenu(); hideTools(); unselectMedia();
+    var requestId = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID()
+      : Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+    var request = { type: 'proplace:editorial:export', requestId: requestId,
+      day: editorial.day, lang: lang, kind: kind };
+    if (kind === 'a4') {
+      var kept = sections().filter(function (sec) { return !printOff(sec.id); });
+      var hidden = sections().filter(function (sec) { return printOff(sec.id); }).map(function (sec) { return sec.id; });
+      var copy = area.cloneNode(true);
+      Array.prototype.forEach.call(copy.querySelectorAll('[id]'), function (node) {
+        if (hidden.indexOf(node.id) >= 0) node.remove();
+      });
+      Array.prototype.forEach.call(copy.querySelectorAll('script,style,iframe,form,input,button,select,textarea,'
+        + '.ppme-dbar,.ppme-rail,.ppme-menu,.ppme-toast,.ppme-print-cover,.ppme-tools,'
+        + '.editorial-newsletter-footer,.editorial-market-newsletter'), function (node) { node.remove(); });
+      Array.prototype.forEach.call(copy.querySelectorAll('details'), function (node) { node.open = true; });
+      var size = document.querySelector('.ppme-image-width');
+      request.html = copy.outerHTML;
+      request.title = String(editorial.title || memoName() || '');
+      request.subtitle = String(editorial.subtitle || '');
+      request.imageWidth = Math.max(25, Math.min(50, Number(size && size.value) || Number(editorial.imageWidth) || 25));
+      request.sectionIds = kept.map(function (sec) { return sec.id; });
+    } else request.market = 'both';
+    var buttons = kind === 'a4' ? pdfButtons() : Array.prototype.slice.call(document.querySelectorAll('[data-cmd="deck"]'));
+    var labels = buttons.map(function (button) { return button.textContent; });
+    buttons.forEach(function (button) { button.disabled = true; button.setAttribute('aria-busy', 'true'); });
+    var making = kind === 'a4' ? (en ? 'Formatting the editorial PDF…' : 'Mise en forme de l’édito en PDF…')
+      : (en ? 'Preparing both decks…' : 'Préparation des deux decks…');
+    var note = progress(making), timeout = 0;
+    editorialExportJob = requestId;
+    function restore() {
+      clearTimeout(timeout); window.removeEventListener('message', receive);
+      buttons.forEach(function (button, index) {
+        button.disabled = false; button.removeAttribute('aria-busy');
+        if (button.hasAttribute('data-l0')) applyLabel(button); else button.textContent = labels[index];
+      });
+      editorialExportJob = null;
+    }
+    function failed(message) {
+      restore(); note.done(message || (en ? 'The export failed. Please retry.' : 'L’export a échoué. Réessayez.'),
+        [{ label: en ? 'Retry' : 'Réessayer', run: function () { editorialExport(kind); } }]);
+    }
+    function receive(event) {
+      var data = event.data || {};
+      if (event.source !== window.parent || event.origin !== origin || data.type !== 'proplace:editorial:export-result'
+          || data.requestId !== requestId || data.day !== editorial.day || data.lang !== lang) return;
+      if (!data.ok) { failed(typeof data.error === 'string' ? data.error.slice(0, 300) : ''); return; }
+      var bytes;
+      try {
+        if (Object.prototype.toString.call(data.data) !== '[object ArrayBuffer]') throw new Error('binary');
+        bytes = new Uint8Array(data.data);
+        var pdf = kind === 'a4';
+        if (bytes.length < (pdf ? 800 : 22) || bytes.length > 50 * 1024 * 1024
+            || data.mime !== (pdf ? 'application/pdf' : 'application/zip')
+            || (pdf ? String.fromCharCode.apply(null, bytes.slice(0, 5)) !== '%PDF-'
+                    : bytes[0] !== 80 || bytes[1] !== 75 || bytes[2] !== 3 || bytes[3] !== 4)) throw new Error('file');
+        var extension = pdf ? '.pdf' : '.zip';
+        var filename = String(data.filename || ('Proplace - ' + editorial.day + ' - ' + lang))
+          .replace(/[\\/:*?"<>|\x00-\x1f]+/g, ' ').trim();
+        if (filename.slice(-extension.length).toLowerCase() !== extension) filename += extension;
+        var url = URL.createObjectURL(new Blob([bytes], { type: data.mime }));
+        var link = el('a', { href: url, download: filename }); link.style.display = 'none';
+        document.body.appendChild(link); link.click(); link.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 600000);
+        restore();
+        note.done(pdf ? (en ? 'Editorial PDF downloaded.' : 'Édito téléchargé en PDF.')
+          : (en ? 'Both decks downloaded.' : 'Les deux decks ont été téléchargés.'));
+      } catch (_) { failed(en ? 'The downloaded file is invalid. Please retry.' : 'Le fichier téléchargé est invalide. Réessayez.'); }
+    }
+    window.addEventListener('message', receive);
+    timeout = setTimeout(function () { failed(en ? 'The export timed out. Please retry.' : 'L’export a pris trop de temps. Réessayez.'); }, 60000);
+    try { window.parent.postMessage(request, origin); } catch (_) { failed(''); }
+  }
   function printPack() {
     if (READER && readerPrinting) return;
     if (READER) readerPrinting = true;
+    var pdfButton = editorial && document.querySelector('[data-cmd="pdf"]');
+    if (pdfButton) pdfButton.disabled = true;
     hideTools();
     closeMenu();
     unselectMedia();
@@ -3537,7 +3698,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     var head = state.head || {};
     var kept = sections().filter(function (sec) { return !printOff(sec.id); });
     var cover = el('section', { class: 'ppme-print-cover' });
-    cover.appendChild(el('span', { class: 'ppme-print-k' }, 'PROPLACE · ' + P.kicker + (state.fund ? ' · ' + state.fund : '')));
+    cover.appendChild(el('span', { class: 'ppme-print-k' }, 'PROPLACE · ' + (editorial ? (en ? 'EDITORIAL' : 'ÉDITO') : P.kicker) + (state.fund ? ' · ' + state.fund : '')));
     cover.appendChild(el('h1', {}, name));
     if (head.n) cover.appendChild(el('p', {}, head.kind === 'generated' ? P.published(when(head.at)) : P.version(head.n, shortWho(head.by), when(head.at))));
     if (kept.length) {
@@ -3560,9 +3721,10 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     closed.forEach(function (d) { d.open = true; });
     Array.prototype.forEach.call(area.querySelectorAll('img[loading="lazy"]'), function (i) { i.loading = 'eager'; });
     var title = document.title;
-    document.title = P.file(name, head.n);
+    document.title = editorial ? (en ? 'Editorial - ' : 'Édito - ') + name + (editorial.day ? ' - ' + editorial.day : '') : P.file(name, head.n);
     function restore() {
       if (READER) readerPrinting = false;
+      if (pdfButton) pdfButton.disabled = false;
       cover.remove();
       hidden.forEach(function (n) { n.classList.remove('ppme-print-off'); });
       if (place) place.parent.insertBefore(contact, place.next && place.next.parentNode === place.parent ? place.next : null);
@@ -3571,7 +3733,18 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       window.removeEventListener('afterprint', restore);
     }
     window.addEventListener('afterprint', restore);
-    imagesReady(area, 8000).then(function () { window.print(); });
+    if (editorial) {
+      editorialPrintReady(area, 15000).then(function () {
+        try { window.print(); } catch (_) { restore(); toast(en ? 'Printing is unavailable in this browser.' : 'L’impression est indisponible dans ce navigateur.'); }
+      }).catch(function (error) {
+        restore();
+        toast(error && error.message === 'image'
+          ? (en ? 'An editorial image is unavailable. Retry after it has loaded.' : 'Une image de l’édito est indisponible. Réessayez après son chargement.')
+          : error && error.message === 'font'
+          ? (en ? 'The editorial font is unavailable. Please retry after it has loaded.' : 'La police de l’édito est indisponible. Réessayez après son chargement.')
+          : (en ? 'Editorial images or fonts are still loading. Please retry.' : 'Les images ou polices de l’édito sont encore en cours de chargement. Réessayez.'));
+      });
+    } else imagesReady(area, 8000).then(function () { window.print(); });
   }
 
   function checkAccess() {
@@ -3960,13 +4133,18 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     var css = el('style', { id: 'ppme-content-css' });
     css.textContent = [
       '.section-container::after{content:"";display:block;clear:both}',
+      editorial ? '.ppme-editorial .split-container{display:flex;flex-flow:row nowrap;gap:24px}.ppme-editorial .split-container>.text-col{flex:1 1 0;max-width:none;min-width:0;width:auto}.ppme-editorial .split-container>.img-col{flex:0 0 var(--pp-img-w,40%);max-width:var(--pp-img-w,40%);min-width:0;width:auto}.ppme-editorial .img-col img{display:block;width:100%;height:auto;object-fit:contain}.ppme-editorial .section-container{list-style:none}.ppme-editorial .ppme-image-width{font:inherit;border:1px solid #D5DDE7;background:#fff;border-radius:6px;padding:6px;color:inherit}.ppme-editorial .pros-inline li{padding:0;border:0;display:list-item}.ppme-editorial .pros-inline ul{columns:1}.ppme-editorial .tb-eval{cursor:pointer}@media(max-width:700px){.ppme-editorial .split-container{flex-direction:column;gap:18px}.ppme-editorial .split-container>.text-col,.ppme-editorial .split-container>.img-col{flex:1 1 auto;max-width:100%;width:100%;position:static}}' : '',
       'figure.pp-img figcaption,figure.pp-embed figcaption{margin:6px 0 0;font-size:12.5px;line-height:1.45;color:#5B6B82;text-align:center}',
       'figure.pp-embed figcaption a{color:inherit}',
+      editorial ? '.ppme-editorial .carousel-focus{outline:2px solid #12A150;outline-offset:6px;border-radius:8px;scroll-margin-top:var(--ppme-reader-bar-h,84px)}' : '',
+      editorial ? '.ppme-editorial .editorial-market-intro{background:transparent!important;border:0!important;border-radius:0!important;box-shadow:none!important;padding:0!important;margin:28px 0!important}.ppme-editorial .editorial-market-intro>.section-title{margin:0 0 18px!important}.ppme-editorial .editorial-market-intro .opcard,.ppme-editorial .editorial-market-intro .art-mktcard,.ppme-editorial .editorial-market-intro .editorial-cover,.ppme-editorial .editorial-market-intro .ppme-r-c{background:transparent!important;border:0!important;box-shadow:none!important;padding:0!important}.ppme-editorial .editorial-market-intro .img-col img{width:100%!important;border:0!important}.ppme-editorial .editorial-market-intro .text-col>.lead{margin:0!important;font-size:16px!important;line-height:1.65!important}' : '',
+      editorial ? '@media print{.ppme-editorial .editorial-deal-card.section-container{break-inside:auto!important;page-break-inside:auto!important}}' : '',
       '@media (min-width:1001px){.split-container[style*="--pp-img-w"]>.img-col{flex:0 0 var(--pp-img-w)!important;max-width:var(--pp-img-w)!important;min-width:0!important}'
         + '.split-container[style*="--pp-img-w"]>.text-col{flex:1 1 0!important;max-width:none!important}'
         + '.split-container[data-pp-img-side="left"]{flex-direction:row-reverse}}',
       '@media (max-width:700px){figure.pp-img[data-pp-align="left"],figure.pp-img[data-pp-align="right"],figure.pp-embed[data-pp-align="left"],figure.pp-embed[data-pp-align="right"]{float:none!important;width:100%!important;margin:12px 0!important}}',
       '@media print{figure.pp-embed .pp-embed-box{display:none!important}figure.pp-img,figure.pp-embed{break-inside:avoid}}'
+      , editorial ? '@media print{.ppme-editorial .split-container{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;break-inside:auto!important}.ppme-editorial .split-container>.text-col{flex:1 1 0!important;width:auto!important;max-width:none!important}.ppme-editorial .split-container>.img-col{flex:0 0 var(--pp-img-w,40%)!important;width:var(--pp-img-w,40%)!important;max-width:var(--pp-img-w,40%)!important;min-width:0!important;position:static!important;align-self:flex-start;break-inside:avoid!important}.ppme-editorial .img-col img{max-height:190mm;object-fit:contain;break-inside:avoid!important}.ppme-editorial .editorial-market-intro{break-inside:avoid!important}.ppme-editorial .editorial-deal-card .section-title{break-after:avoid!important}.ppme-editorial .editorial-deal-card .section-title+*{break-before:avoid!important}.ppme-editorial .text-col p{orphans:3;widows:3}}' : ''
     ].join('\n');
     document.head.appendChild(css);
   }
@@ -3987,7 +4165,24 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
   injectEmbedCss();
   injectContentCss();
-  if (READER) {
+  if (editorial) {
+    document.body.classList.add('ppme-editorial');
+    startReader();
+    // Presentation-only controls and explicit actions. Never start a memo
+    // transport, access check, edit session or background poll for an editorial.
+    area.addEventListener('click', function (e) {
+      var target = e.target.closest && e.target.closest('.tb-eval, button.op-eval');
+      if (target) {
+        e.preventDefault();
+        var name = target.getAttribute('data-name') || target.getAttribute('data-c') || '';
+        if (name && window.parent !== window) window.parent.postMessage({ type: 'proplace:editorial:evaluate', name: name, day: editorial.day }, editorial.parentOrigin || 'https://proplace.co');
+        return;
+      }
+      var image = e.target.closest && e.target.closest('img');
+      if (image) { e.preventDefault(); zoomImage(image); }
+    });
+    return;
+  } else if (READER) {
     refreshReader(true).then(checkAccess);
     setInterval(function () { refreshReader(false); }, 30000);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshReader(false); });
