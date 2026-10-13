@@ -1394,16 +1394,21 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     var first = doc.bar;
     if (editorial && READER) {
       if (!doc.barShell) {
-        doc.barShell = el('div', { class: 'ppme-ui ppme-editorial-tools' });
+        doc.barShell = el('div', { class: 'ppme-ui ppme-editorial-tools', role: 'toolbar', 'aria-label': en ? 'Reading tools' : 'Outils de lecture' });
         doc.bar.id = 'ppme-editorial-toolbar';
+        doc.bar.setAttribute('role', 'group');
+        var note = doc.bar.querySelector('.ppme-readnote');
+        if (note) note.title = D.reading;
         var toggle = el('button', { type: 'button', class: 'ppme-editorial-toggle', 'aria-controls': doc.bar.id });
         var expanded = typeof editorial.toolbarExpanded === 'boolean' ? editorial.toolbarExpanded
           : !(typeof editorial.compactToolbar === 'boolean' ? editorial.compactToolbar
             : window.matchMedia && window.matchMedia('(max-width:700px)').matches);
         var reveal = function () {
           doc.bar.hidden = !expanded;
+          doc.barShell.classList.toggle('ppme-tools-closed', !expanded);
           toggle.setAttribute('aria-expanded', String(expanded));
           toggle.textContent = expanded ? (en ? 'Hide tools' : 'Masquer les outils') : (en ? 'Show tools' : 'Afficher les outils');
+          toggle.title = toggle.textContent;
           if (!expanded) { closeMenu(); doc.railOpen = false; renderRail(); }
           else fitBar();
         };
@@ -1450,6 +1455,13 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     var b = doc.bar;
     if (!b || b.hidden) return;
     b.classList.remove('ppme-narrow');
+    if (editorial && READER) {
+      // Editorial tools stay on one line; the control group scrolls without
+      // moving its show/hide button or clipping the outline popover.
+      setBarLevel(2);
+      document.documentElement.style.setProperty('--ppme-reader-bar-h', ((doc.barShell || b).offsetHeight + 12) + 'px');
+      return;
+    }
     var level = 0;
     while (true) {
       setBarLevel(level);
@@ -2447,7 +2459,8 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
         doc.rail.hidden = true;
       });
     }
-    if (doc.bar && doc.rail.parentNode !== doc.bar) doc.bar.appendChild(doc.rail);
+    var railHost = editorial && doc.barShell ? doc.barShell : doc.bar;
+    if (railHost && doc.rail.parentNode !== railHost) railHost.appendChild(doc.rail);
     doc.rail.hidden = !doc.railOpen;
     doc.rail.innerHTML = '';
     var h = el('div', { class: 'ppme-rail-h' });
@@ -3822,10 +3835,15 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-dbar .ppme-login{background:#0F1D33;color:#fff;border-color:#0F1D33;font-weight:700;padding:7px 11px;margin-right:4px}',
       '.ppme-dbar .ppme-login:hover{background:#1B2F4E;border-color:#1B2F4E}',
       '.ppme-dbar .ppme-planbtn{font-weight:700}',
-      '.ppme-editorial .ppme-editorial-tools{position:sticky;top:0;z-index:905;margin:0 0 16px;display:flex;flex-direction:column;align-items:stretch;gap:6px}',
-      '.ppme-editorial .ppme-editorial-tools>.ppme-dbar{position:static;margin:0}',
+      '.ppme-editorial .ppme-editorial-tools{position:sticky;top:0;z-index:905;margin:0 0 16px;display:flex;flex-flow:row nowrap;align-items:center;gap:6px;min-width:0;max-width:100%;width:100%;box-sizing:border-box;padding:6px;background:#fff;border:1px solid #D5DDE7;border-radius:12px;box-shadow:0 6px 18px rgba(15,29,51,.08)}',
+      '.ppme-editorial .ppme-editorial-tools.ppme-tools-closed{width:fit-content}',
+      '.ppme-editorial .ppme-editorial-tools>.ppme-dbar{position:static;margin:0;padding:0;border:0;border-radius:0;box-shadow:none;flex:1 1 0;min-width:0;max-width:100%;flex-wrap:nowrap;align-items:center;justify-content:flex-start;gap:6px;overflow-x:auto;overflow-y:hidden;white-space:nowrap;scrollbar-width:thin}',
+      '.ppme-editorial .ppme-editorial-tools>.ppme-dbar .ppme-dbar-tools,.ppme-editorial .ppme-editorial-tools>.ppme-dbar .ppme-dbar-side{flex:0 0 auto;flex-wrap:nowrap;max-width:none;min-width:0;order:0;margin:0}',
+      '.ppme-editorial .ppme-editorial-tools>.ppme-dbar .ppme-dbar-side button{max-width:none;white-space:nowrap}',
+      '.ppme-editorial .ppme-editorial-tools>.ppme-dbar .ppme-readnote{flex:0 0 auto;white-space:nowrap;line-height:1.2}',
+      '.ppme-editorial .ppme-editorial-tools>.ppme-dbar .ppme-st{display:none}',
       '.ppme-editorial .ppme-editorial-tools>.ppme-dbar[hidden]{display:none!important}',
-      '.ppme-editorial .ppme-editorial-toggle{align-self:flex-end;font:600 12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#0E7F3F;background:#fff;border:1px solid #C8E6D5;border-radius:20px;padding:8px 12px;min-height:36px;cursor:pointer;box-shadow:0 3px 10px rgba(15,29,51,.05)}',
+      '.ppme-editorial .ppme-editorial-toggle{flex:0 0 auto;white-space:nowrap;font:600 12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#0E7F3F;background:#F4FAF6;border:1px solid #C8E6D5;border-radius:8px;padding:8px 10px;min-height:36px;cursor:pointer}',
       '.ppme-editorial .ppme-editorial-toggle:after{content:"▾";margin-left:7px}.ppme-editorial .ppme-editorial-toggle[aria-expanded="true"]:after{content:"▴"}',
       '.ppme-editorial .ppme-editorial-toggle:hover{background:#F4FAF6}.ppme-editorial .ppme-editorial-toggle:focus-visible{outline:2px solid #12A150;outline-offset:3px}',
       '.ppme-reader .ppme-railpop{position:absolute;top:calc(100% + 6px);left:6px;z-index:906;width:min(340px,calc(100vw - 28px));max-height:min(70vh,560px);overflow:auto;margin:0!important;box-shadow:0 12px 30px rgba(15,29,51,.2)!important}',
