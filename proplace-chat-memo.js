@@ -15,7 +15,7 @@
   if (!demo && !document.getElementById('ppme-script')) {
     var memoEditor = document.createElement('script');
     memoEditor.id = 'ppme-script';
-    memoEditor.src = assetBase + 'memo-editor.js?v=23';
+    memoEditor.src = assetBase + 'memo-editor.js?v=24';
     memoEditor.defer = true;
     document.head.appendChild(memoEditor);
   }
@@ -858,5 +858,6 @@
     pendingDossier = { text: e.data.text }; active = 'committee'; open('roadmap');
     e.source.postMessage({ type: 'proplace:journey:received' }, e.origin);
   });
+  window.addEventListener('proplace:memo:content-ready', upgradeLegacyPreview);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build); else build();
 }());

@@ -240,6 +240,9 @@
     }
     replayScripts(area);
     paintHumanReview();
+    // A saved version may still contain the old quality banner. Let the
+    // presentation layer refresh this new DOM after every document/version load.
+    window.dispatchEvent(new Event('proplace:memo:content-ready'));
   }
   function loadVersion(n, asHead) {
     return api('/content' + (asHead ? '' : '?n=' + n)).then(function (c) {
