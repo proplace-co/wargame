@@ -344,7 +344,74 @@
     });
   }
   function close() { opened = false; shell.hidden = true; fab.hidden = false; clearTimeout(poll); fab.focus(); }
+  // Existing published previews (including Payhawk) receive the same readable
+  // recovery card when this shared asset updates. No regeneration or paid call.
+  function upgradeLegacyPreview() {
+    var box = document.querySelector('.pp-preview:not([data-recovery-ready])');
+    if (!box) return;
+    var reason = (box.textContent || '').replace(/\s+/g, ' ').trim();
+    var en = (context.lang || document.documentElement.lang || '').indexOf('en') === 0;
+    var action = /identité de la société non confirmée|la recherche est à refaire/i.test(reason) ? 'full'
+      : /pertinence pour la thèse\s+[01]\/4/i.test(reason) ? 'none' : 'resume';
+    var questions = reason.match(/(\d+) questions? de la thèse n['’](?:ont|a) pas de réponse étayée/i);
+    var summary = action === 'full'
+      ? (en ? 'The company’s identity or official website could not be verified.' : 'L’identité de la société ou son site officiel n’a pas pu être confirmé.')
+      : action === 'none'
+        ? (en ? 'The company does not match your current investment thesis.' : 'La société correspond peu à votre thèse actuelle.')
+        : questions
+          ? (en ? questions[1] + ' key questions still need answers backed by sources.' : questions[1] + ' questions clés restent sans réponse étayée par des sources.')
+          : (en ? 'The memo needs corrections before it can be validated.' : 'Le mémo nécessite des corrections avant de pouvoir être validé.');
+    var label = en ? { resume: 'Resume the memo', full: 'Redo the research', none: 'Review the thesis' }
+      : { resume: 'Reprendre le mémo', full: 'Refaire la recherche', none: 'Revoir la thèse' };
+    var explanations = en ? {
+      resume: 'Reuse the saved research to rewrite the memo, then run quality control again.',
+      full: 'Research the company and its website again before rewriting the memo.',
+      none: 'Review your criteria first. Relaunching with the same thesis is unlikely to help.'
+    } : {
+      resume: 'Réutiliser les recherches enregistrées pour réécrire le mémo, puis repasser le contrôle qualité.',
+      full: 'Rechercher à nouveau la société et son site avant de réécrire le mémo.',
+      none: 'Vérifiez d’abord vos critères. Une relance avec la même thèse a peu de chances d’aider.'
+    };
+    var fund = context.fund || context.fund_type || context.fund_slug || '';
+    if (!fund) {
+      try {
+        var sidebar = document.querySelector('a.sidebar-fund-link');
+        var match = sidebar && new URL(sidebar.href, location.href).pathname.match(/^\/cibles\/([^/]+)/);
+        if (match && !/^[a-zA-Z0-9]{16}$/.test(match[1])) fund = decodeURIComponent(match[1]);
+      } catch (_) {}
+    }
+    var company = context.name || context.company_name || '';
+    box.textContent = ''; box.setAttribute('data-recovery-ready', '1');
+    box.setAttribute('contenteditable', 'false'); box.classList.add('ppme-ui');
+    box.style.cssText = 'margin:0 0 22px;padding:22px;border:1px solid #e8d6ae;border-left:4px solid #c88824;border-radius:14px;background:#fffbf3;color:#17263d;font:14px/1.5 system-ui,sans-serif';
+    var tag = el('div', {}, en ? 'PUBLISHED PREVIEW · QUALITY IMPROVEMENTS NEEDED' : 'PUBLIÉ EN APERÇU · QUALITÉ À COMPLÉTER');
+    tag.style.cssText = 'font-size:11px;font-weight:750;letter-spacing:.08em;color:#93651b'; box.appendChild(tag);
+    var heading = el('h2', {}, summary); heading.style.cssText = 'margin:7px 0;font-size:20px;line-height:1.3;color:#17263d'; box.appendChild(heading);
+    var explanation = el('p', {}, explanations[action]); explanation.style.margin = '0'; box.appendChild(explanation);
+    if (fund && company) {
+      var base = 'https://proplace.co/cibles/go/?' + new URLSearchParams({ fund: String(fund), company_name: String(company), memo_recovery: action });
+      var row = el('div'); row.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:17px';
+      var cta = el('a', { href: base, target: '_blank', rel: 'noopener noreferrer', class: 'pp-preview-cta' }, label[action] + ' →');
+      cta.style.cssText = 'display:inline-block;padding:11px 16px;background:#0f5132;color:white;border-radius:8px;font-weight:700;text-decoration:none';
+      var help = el('span', {}, en ? 'Choose and confirm the next step in your workspace. No analysis starts when you open it.' : 'Choisissez et confirmez la suite dans votre espace. L’ouverture ne lance aucune analyse.');
+      help.style.cssText = 'font-size:12px;color:#637083;max-width:48ch';
+      cta.addEventListener('click', function (event) {
+        cta.href = base;
+        var signed = memberSession || readMemberSession();
+        if (signed) { var target = new URL(base); target.searchParams.set('session', signed); cta.href = target.href; return; }
+        event.preventDefault(); login();
+        help.textContent = en ? 'Sign in, then select this button again to continue.' : 'Connectez-vous, puis cliquez à nouveau sur ce bouton pour continuer.';
+      });
+      row.appendChild(cta); row.appendChild(help); box.appendChild(row);
+    }
+    var detail = el('details'); detail.style.cssText = 'margin-top:17px;border-top:1px solid #ebdfc7;padding-top:11px';
+    var toggle = el('summary', {}, en ? 'See quality control details' : 'Voir le détail du contrôle qualité');
+    toggle.style.cssText = 'cursor:pointer;color:#586275;font-size:12px;font-weight:650'; detail.appendChild(toggle);
+    var text = el('p', {}, reason); text.style.cssText = 'margin:9px 0 0;font-size:12px;color:#586275;overflow-wrap:anywhere';
+    detail.appendChild(text); box.appendChild(detail);
+  }
   function build() {
+    upgradeLegacyPreview();
     // A cached legacy editor may initialize just before this production widget.
     // The supported dossier workflow now owns edits; remove its obsolete UI.
     ['plEditor', 'plModal'].forEach(function (id) { var old = document.getElementById(id); if (old) old.remove(); });
