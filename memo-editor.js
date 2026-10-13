@@ -92,6 +92,84 @@
       body: body ? JSON.stringify(body) : undefined })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { j.status = r.status; return j; }); });
   }
+
+  // The human opinion is live Airtable content, separate from editable memo versions.
+  // Suggestions remain private until an authenticated operator explicitly validates them.
+  var humanReview = null, humanReviewSequence = 0, humanReviewEditing = false, humanReviewSaving = false;
+  var humanReviewReadOnly = READER, humanReviewSession = session();
+  function paintHumanReview() {
+    if (editorial || !humanReview || !humanReview.ok) return;
+    var old = area.querySelector('.ppme-human-review');
+    if (old) old.remove();
+    var anchor = area.querySelector('#conviction') || area.querySelector('#verdict');
+    if (!anchor) return;
+    var box = el('aside', { class: 'ppme-ui ppme-human-review', contenteditable: 'false', 'aria-label': en ? 'Human opinion' : 'Avis humain' });
+    box.style.cssText = 'margin:16px 0;padding:18px;border:1px solid #dfc484;border-left:3px solid #b58835;border-radius:10px;background:#fffaf0;color:#243449;font:14px/1.55 system-ui,sans-serif';
+    box.appendChild(el('strong', {}, en ? 'Your Corporate Developer’s opinion' : 'L’avis de votre Corporate Developer'));
+    if (humanReview.note) {
+      var note = el('p', {}, humanReview.note);
+      note.style.whiteSpace = 'pre-wrap'; note.style.overflowWrap = 'anywhere';
+      box.appendChild(note);
+    } else box.appendChild(el('p', {}, en ? 'The human opinion has not been validated yet.' : 'L’avis humain n’a pas encore été validé.'));
+    var editable = humanReview.can_edit && !humanReviewReadOnly;
+    if (editable) {
+      var open = el('button', { type: 'button' }, humanReview.note ? (en ? 'Edit the human opinion' : 'Modifier l’avis humain') : (en ? 'Review and validate the suggested opinion' : 'Relire et valider l’avis proposé'));
+      open.onclick = function () { humanReviewEditing = !humanReviewEditing; paintHumanReview(); };
+      box.appendChild(open);
+      if (humanReviewEditing) {
+        var label = el('label', {}, humanReview.note ? (en ? 'Opinion shared with the client' : 'Avis partagé avec le client') : (en ? 'Stan’s draft · review before validating' : 'Proposition de Stan · à relire et valider'));
+        label.style.cssText = 'display:block;margin-top:12px;font-weight:600';
+        var input = el('textarea', { rows: '6', maxlength: '4000', 'aria-label': en ? 'Opinion shared with the client' : 'Avis partagé avec le client' });
+        input.value = humanReview.note || humanReview.suggestion || '';
+        input.style.cssText = 'display:block;box-sizing:border-box;width:100%;padding:10px;margin:8px 0;background:#fff;border:1px solid #c5ccd6;border-radius:6px;font:14px/1.5 system-ui;color:#243449;resize:vertical';
+        label.appendChild(input); box.appendChild(label);
+        if (humanReview.note && humanReview.suggestion) {
+          var latest = el('button', { type: 'button' }, en ? 'Use Stan’s latest draft' : 'Reprendre la dernière proposition de Stan');
+          latest.onclick = function () { if (!humanReviewSaving) input.value = humanReview.suggestion; };
+          box.appendChild(latest);
+        }
+        box.appendChild(el('p', {}, en ? 'Your validation shares this opinion in the cockpit and daily / weekly briefs. Stan’s verdict is preserved.' : 'Votre validation partage cet avis dans le cockpit et les briefs quotidiens / hebdomadaires. Le verdict de Stan est conservé.'));
+        var status = el('p', { role: 'status' });
+        var save = el('button', { type: 'button' }, en ? 'Validate the opinion for the client' : 'Valider l’avis pour le client');
+        save.style.cssText = 'background:#0e8a44;color:white;border:0;padding:9px 14px;border-radius:6px;cursor:pointer';
+        save.onclick = function () {
+          if (!input.value.trim() || humanReviewSaving) return;
+          humanReviewSaving = true; save.disabled = true;
+          var submittedSession = session();
+          var body = { op: 'save', text: input.value.trim(), expected_note: humanReview.note || '', lang: en ? 'en' : 'fr' };
+          api('/human-review', 'POST', body).then(function (result) {
+            if (session() !== submittedSession) { refreshHumanReview(); return; }
+            if (!result.ok) throw new Error(result.error || result.detail || result.status);
+            humanReview = result; humanReviewEditing = false; paintHumanReview();
+          }).catch(function (error) { status.textContent = T.error + error.message; })
+            .finally(function () {
+              humanReviewSaving = false; save.disabled = false;
+              if (session() !== submittedSession) refreshHumanReview();
+            });
+        };
+        box.appendChild(save); box.appendChild(status);
+      }
+    }
+    anchor.insertAdjacentElement('afterend', box);
+  }
+  function refreshHumanReview() {
+    if (humanReviewSession !== session()) {
+      humanReviewSession = session(); humanReview = null; humanReviewEditing = false;
+      humanReviewSequence++;
+      var previous = area.querySelector('.ppme-human-review');
+      if (previous) previous.remove();
+    }
+    if (editorial || humanReviewSaving || humanReviewEditing) return;
+    var sequence = ++humanReviewSequence;
+    api('/human-review').then(function (result) {
+      if (!result.ok) return null;
+      if (result.can_edit && !humanReviewReadOnly) return api('/human-review', 'POST', { op: 'get', lang: en ? 'en' : 'fr' });
+      return result;
+    }).then(function (result) {
+      if (sequence !== humanReviewSequence || !result || !result.ok) return;
+      humanReview = result; paintHumanReview();
+    }).catch(function () { /* Existing memo content remains readable if the opinion service is unavailable. */ });
+  }
   function pageVersion() {
     var m = document.querySelector('meta[name="pp-memo-version"]');
     return m ? parseInt(m.getAttribute('content'), 10) || 0 : 0;
@@ -161,6 +239,7 @@
       });
     }
     replayScripts(area);
+    paintHumanReview();
   }
   function loadVersion(n, asHead) {
     return api('/content' + (asHead ? '' : '?n=' + n)).then(function (c) {
@@ -692,6 +771,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   // ce que le serveur reçoit : le contenu de la section, chaque îlot réduit à son repère
   function serialize(sec) {
     var c = sec.cloneNode(true);
+    Array.prototype.forEach.call(c.querySelectorAll('.ppme-human-review'), function (n) { n.remove(); });
     Array.prototype.forEach.call(c.querySelectorAll('[data-pp-island]'), function (n) {
       if (!n.parentNode) return;
       var mark = document.createElement('span');
@@ -4242,6 +4322,9 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     setInterval(function () { refreshReader(false); }, 30000);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshReader(false); });
   } else syncLatest().then(checkAccess).then(function (member) { if (!member) startGuest(); });
+  refreshHumanReview();
+  window.addEventListener('focus', refreshHumanReview);
+  window.addEventListener('proplace:member-session', refreshHumanReview);
   // connexion faite dans le panneau Stan (cookie posé) : l'édition s'ouvre au retour
   window.addEventListener('focus', checkAccess);
   window.addEventListener('proplace:member-session', checkAccess);

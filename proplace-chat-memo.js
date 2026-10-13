@@ -15,7 +15,7 @@
   if (!demo && !document.getElementById('ppme-script')) {
     var memoEditor = document.createElement('script');
     memoEditor.id = 'ppme-script';
-    memoEditor.src = assetBase + 'memo-editor.js?v=22';
+    memoEditor.src = assetBase + 'memo-editor.js?v=23';
     memoEditor.defer = true;
     document.head.appendChild(memoEditor);
   }
