@@ -228,21 +228,7 @@
       return auth && typeof auth.email === 'string' ? auth.email : '';
     } catch (_) { return ''; }
   }
-  // 13/10 (Antoine) — « en haut à droite, ● Connecté · alexandre@proplace.co · Profund VC » :
-  // l'adresse ENTIÈRE et le fonds, au bout de la barre du mémo.
-  function renderTopAccount() {
-    var side = doc.bar && doc.bar.querySelector('.ppme-dbar-side');
-    if (!side) return;
-    var chip = side.querySelector('.ppme-acc-top');
-    var who = session() ? (state.email || accountEmail()) : '';
-    if (EMBED || !who) { if (chip) chip.remove(); return; }
-    if (!chip) { chip = el('span', { class: 'ppme-acc-top' }); side.appendChild(chip); }
-    var label = '● ' + D.signedIn + ' · ' + who + (state.fund ? ' · ' + fundLabel(state.fund) : '');
-    chip.textContent = label;
-    chip.setAttribute('title', label);
-  }
   function renderAccount() {
-    renderTopAccount();
     var sb = document.querySelector('.sidebar');
     if (EMBED || !sb) return;
     injectCss();
@@ -253,7 +239,9 @@
     box.innerHTML = '';
     if (session()) {
       var who = state.email || accountEmail();
-      box.appendChild(el('span', { class: 'ppme-acc-who', title: who }, '● ' + D.signedIn + (who ? ' · ' + who : '')));
+      // 13/10 (Antoine) — « ● Connecté · alexandre@proplace.co · Profund VC », sous « Ouvrir le deal flow »
+      var label = '● ' + D.signedIn + (who ? ' · ' + who : '') + (state.fund ? ' · ' + fundLabel(state.fund) : '');
+      box.appendChild(el('span', { class: 'ppme-acc-who', title: label }, label));
       var out = el('button', { type: 'button', class: 'ppme-acc-btn', title: D.signOutHint }, D.signOut);
       out.onclick = logout;
       box.appendChild(out);
@@ -1426,7 +1414,6 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       first = doc.barShell;
     }
     if (first.parentNode !== area || area.firstChild !== first) area.insertBefore(first, area.firstChild);
-    renderTopAccount();
     updateBar();
   }
   // 11/10 — « ça doit tenir sur une ligne, sinon raccourcis le texte des boutons » (Antoine) : la
@@ -3902,8 +3889,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-read .content-area h4.ppme-r-q{font-size:15px}',
       '@media print{.ppme-read .section-container>h2.section-title::before,.ppme-read .section-container>h2.section-title::after{display:none}}',
       '.ppme-account{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:2px 0 14px;font:500 12px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;color:#5B6B82}',
-      '.ppme-acc-who{color:#0E7F3F;font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-      '.ppme-dbar .ppme-acc-top{align-self:center;flex:0 1 auto;min-width:0;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;font-weight:600;color:#0E7F3F;padding:6px 4px 6px 10px}',
+      '.ppme-acc-who{color:#0E7F3F;font-weight:600;max-width:100%;overflow-wrap:anywhere;line-height:1.35}',
       '.ppme-acc-btn{font:inherit;font-weight:700;color:#0F1D33;background:#fff;border:1px solid #D5DDE7;border-radius:999px;padding:4px 10px;cursor:pointer;line-height:1.2}',
       '.ppme-acc-btn:hover{background:#EEF2F6}',
       '.ppme-acc-btn.ppme-acc-in{color:#fff;background:#0F1D33;border-color:#0F1D33}',
