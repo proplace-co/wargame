@@ -388,7 +388,7 @@
       num++;
       var fam = FAMILY.filter(function (f) { return sec.id.indexOf(f[0]) === 0 || sec.id.indexOf(f[0]) >= 0; })[0];
       var label = fam ? fam[en ? 2 : 1] : (en ? 'Analysis' : 'Analyse');
-      sec.style.setProperty('--ppme-kicker', JSON.stringify((num < 10 ? '0' : '') + num + '  ·  ' + label.toUpperCase()));
+      if (!editorial) sec.style.setProperty('--ppme-kicker', JSON.stringify((num < 10 ? '0' : '') + num + '  ·  ' + label.toUpperCase()));
       composeFlow(sec);
       Array.prototype.forEach.call(sec.querySelectorAll(FLOWS), composeFlow);
     });
@@ -1335,7 +1335,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
         var size = el('select', { class: 'ppme-image-width', 'aria-label': en ? 'Image width' : 'Taille des images' });
         [25, 33, 40, 50].forEach(function (width) {
           var option = el('option', { value: String(width) }, (en ? 'Images ' : 'Images ') + width + ' %');
-          option.selected = width === 40; size.appendChild(option);
+          option.selected = width === ([25, 33, 40, 50].indexOf(editorial.imageWidth) >= 0 ? editorial.imageWidth : 25); size.appendChild(option);
         });
         size.onchange = function () {
           Array.prototype.forEach.call(area.querySelectorAll('.split-container'), function (split) {
@@ -1382,7 +1382,29 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       // la barre suit SA largeur (page du mémo, onglet du cockpit) : étroite, deux lignes nettes
       if (window.ResizeObserver) new ResizeObserver(fitBar).observe(b);
     }
-    if (doc.bar.parentNode !== area || area.firstChild !== doc.bar) area.insertBefore(doc.bar, area.firstChild);
+    var first = doc.bar;
+    if (editorial && READER) {
+      if (!doc.barShell) {
+        doc.barShell = el('div', { class: 'ppme-ui ppme-editorial-tools' });
+        doc.bar.id = 'ppme-editorial-toolbar';
+        var toggle = el('button', { type: 'button', class: 'ppme-editorial-toggle', 'aria-controls': doc.bar.id });
+        var expanded = typeof editorial.toolbarExpanded === 'boolean' ? editorial.toolbarExpanded
+          : !(typeof editorial.compactToolbar === 'boolean' ? editorial.compactToolbar
+            : window.matchMedia && window.matchMedia('(max-width:700px)').matches);
+        var reveal = function () {
+          doc.bar.hidden = !expanded;
+          toggle.setAttribute('aria-expanded', String(expanded));
+          toggle.textContent = expanded ? (en ? 'Hide tools' : 'Masquer les outils') : (en ? 'Show tools' : 'Afficher les outils');
+          if (!expanded) { closeMenu(); doc.railOpen = false; renderRail(); }
+          else fitBar();
+        };
+        toggle.addEventListener('click', function () { expanded = !expanded; reveal(); });
+        doc.barShell.appendChild(toggle); doc.barShell.appendChild(doc.bar);
+        reveal();
+      }
+      first = doc.barShell;
+    }
+    if (first.parentNode !== area || area.firstChild !== first) area.insertBefore(first, area.firstChild);
     updateBar();
   }
   // 11/10 — « ça doit tenir sur une ligne, sinon raccourcis le texte des boutons » (Antoine) : la
@@ -1417,7 +1439,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
   function fitBar() {
     var b = doc.bar;
-    if (!b) return;
+    if (!b || b.hidden) return;
     b.classList.remove('ppme-narrow');
     var level = 0;
     while (true) {
@@ -3625,7 +3647,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
         if (hidden.indexOf(node.id) >= 0) node.remove();
       });
       Array.prototype.forEach.call(copy.querySelectorAll('script,style,iframe,form,input,button,select,textarea,'
-        + '.ppme-dbar,.ppme-rail,.ppme-menu,.ppme-toast,.ppme-print-cover,.ppme-tools,'
+        + '.ppme-editorial-tools,.ppme-dbar,.ppme-rail,.ppme-menu,.ppme-toast,.ppme-print-cover,.ppme-tools,'
         + '.editorial-newsletter-footer,.editorial-market-newsletter'), function (node) { node.remove(); });
       Array.prototype.forEach.call(copy.querySelectorAll('details'), function (node) { node.open = true; });
       var size = document.querySelector('.ppme-image-width');
@@ -3791,6 +3813,12 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-dbar .ppme-login{background:#0F1D33;color:#fff;border-color:#0F1D33;font-weight:700;padding:7px 11px;margin-right:4px}',
       '.ppme-dbar .ppme-login:hover{background:#1B2F4E;border-color:#1B2F4E}',
       '.ppme-dbar .ppme-planbtn{font-weight:700}',
+      '.ppme-editorial .ppme-editorial-tools{position:sticky;top:0;z-index:905;margin:0 0 16px;display:flex;flex-direction:column;align-items:stretch;gap:6px}',
+      '.ppme-editorial .ppme-editorial-tools>.ppme-dbar{position:static;margin:0}',
+      '.ppme-editorial .ppme-editorial-tools>.ppme-dbar[hidden]{display:none!important}',
+      '.ppme-editorial .ppme-editorial-toggle{align-self:flex-end;font:600 12px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;color:#0E7F3F;background:#fff;border:1px solid #C8E6D5;border-radius:20px;padding:8px 12px;min-height:36px;cursor:pointer;box-shadow:0 3px 10px rgba(15,29,51,.05)}',
+      '.ppme-editorial .ppme-editorial-toggle:after{content:"▾";margin-left:7px}.ppme-editorial .ppme-editorial-toggle[aria-expanded="true"]:after{content:"▴"}',
+      '.ppme-editorial .ppme-editorial-toggle:hover{background:#F4FAF6}.ppme-editorial .ppme-editorial-toggle:focus-visible{outline:2px solid #12A150;outline-offset:3px}',
       '.ppme-reader .ppme-railpop{position:absolute;top:calc(100% + 6px);left:6px;z-index:906;width:min(340px,calc(100vw - 28px));max-height:min(70vh,560px);overflow:auto;margin:0!important;box-shadow:0 12px 30px rgba(15,29,51,.2)!important}',
       '.ppme-toast-wait .ppme-spin{flex:0 0 auto;margin-right:2px}',
       // ── la lecture (11/10) : la grammaire du dossier comité, sur la page ──
