@@ -62,7 +62,7 @@
     conflict: function (by) { return 'Le mémo a été modifié par ' + by + ' entre-temps : rechargez la dernière version.'; }
   };
   var state = { head: null, role: '', email: '', company: '', fund: '', preview: 0 };
-  window.PPMemoEditor = { version: 19, state: state, embed: EMBED, reader: READER, editorial: !!editorial };
+  window.PPMemoEditor = { version: 20, state: state, embed: EMBED, reader: READER, editorial: !!editorial };
 
   function el(tag, attrs, text) {
     var node = document.createElement(tag);
@@ -97,8 +97,65 @@
   // Suggestions remain private until an authenticated operator explicitly validates them.
   var humanReview = null, humanReviewSequence = 0, humanReviewEditing = false, humanReviewSaving = false;
   var humanReviewReadOnly = READER, humanReviewSession = session();
+  // 15/10 (Antoine) — « Avis humain » dans la barre, à gauche d'Aperçu : l'avis se lit et se
+  // valide dans un popup, comme dans le cockpit ; l'encadré sous la conviction reste pour le lecteur.
+  var humanDialog = null;
+  function humanReviewShown() {
+    return !!(humanReview && humanReview.ok && (humanReview.note || (humanReview.can_edit && !humanReviewReadOnly)));
+  }
+  function syncHumanButton() {
+    var x = typeof doc !== 'undefined' && doc && doc.bar && doc.bar.querySelector('[data-cmd="human"]');
+    if (!x) return;
+    var shown = humanReviewShown();
+    if (x.hidden === !shown && x.classList.contains('ppme-human-done') === !!(humanReview && humanReview.note)) return;
+    x.hidden = !shown;
+    x.classList.toggle('ppme-human-done', !!(humanReview && humanReview.note));
+    x.setAttribute('data-l0', (humanReview && humanReview.note ? '✓ ' : '') + (en ? 'Human opinion' : 'Avis humain'));
+    applyLabel(x);
+    fitBar();
+  }
+  function openHumanDialog() {
+    if (!humanReviewShown()) return;
+    closeHumanDialog();
+    if (humanReview.can_edit && !humanReviewReadOnly && !humanReview.note) humanReviewEditing = true;
+    var back = el('div', { class: 'ppme-ui ppme-hr-back' });
+    var name = memoName();
+    var dlg = el('div', { class: 'ppme-hr-dialog', role: 'dialog', 'aria-modal': 'true',
+      'aria-label': (en ? 'Human opinion' : 'Avis humain') + (name ? ' · ' + name : '') });
+    var head = el('header');
+    head.appendChild(el('strong', {}, (en ? 'Human opinion' : 'Avis humain') + (name ? ' · ' + name : '')));
+    var x = el('button', { type: 'button', class: 'ppme-hr-x', 'aria-label': T.close, title: T.close }, '×');
+    x.onclick = closeHumanDialog;
+    head.appendChild(x);
+    dlg.appendChild(head);
+    dlg.appendChild(el('p', { class: 'ppme-hr-help' }, en
+      ? 'Your Corporate Developer’s perspective, alongside Stan’s verdict. The validated opinion is shared in the memo and the daily / weekly briefs.'
+      : 'Le regard de votre Corporate Developer, en complément du verdict de Stan. L’avis validé est partagé dans le mémo et les briefs quotidiens / hebdomadaires.'));
+    dlg.appendChild(el('div', { class: 'ppme-hr-body' }));
+    back.appendChild(dlg);
+    back.addEventListener('mousedown', function (e) { if (e.target === back) closeHumanDialog(); });
+    document.body.appendChild(back);
+    humanDialog = back;
+    paintHumanReview();
+    var first = dlg.querySelector('textarea') || x;
+    first.focus();
+  }
+  function closeHumanDialog() {
+    if (!humanDialog) return;
+    humanDialog.remove(); humanDialog = null;
+    if (!humanReviewSaving) { humanReviewEditing = false; paintHumanReview(); }
+    var b = typeof doc !== 'undefined' && doc && doc.bar && doc.bar.querySelector('[data-cmd="human"]');
+    if (b) b.focus();
+  }
+  document.addEventListener('keydown', function (e) { if (humanDialog && e.key === 'Escape') closeHumanDialog(); });
   function paintHumanReview() {
     if (editorial || !humanReview || !humanReview.ok) return;
+    syncHumanButton();
+    if (humanDialog) {
+      var body = humanDialog.querySelector('.ppme-hr-body');
+      body.textContent = '';
+      fillHumanReview(body);
+    }
     var old = area.querySelector('.ppme-human-review');
     if (old) old.remove();
     var anchor = area.querySelector('#conviction') || area.querySelector('#verdict');
@@ -106,12 +163,17 @@
     var box = el('aside', { class: 'ppme-ui ppme-human-review', contenteditable: 'false', 'aria-label': en ? 'Human opinion' : 'Avis humain' });
     box.style.cssText = 'margin:16px 0;padding:18px;border:1px solid #dfc484;border-left:3px solid #b58835;border-radius:10px;background:#fffaf0;color:#243449;font:14px/1.55 system-ui,sans-serif';
     box.appendChild(el('strong', {}, en ? 'Your Corporate Developer’s opinion' : 'L’avis de votre Corporate Developer'));
+    // l'édition se fait dans le popup quand il est ouvert : l'encadré n'y montre que l'avis
+    fillHumanReview(box, !!humanDialog);
+    anchor.insertAdjacentElement('afterend', box);
+  }
+  function fillHumanReview(box, readOnly) {
     if (humanReview.note) {
       var note = el('p', {}, humanReview.note);
       note.style.whiteSpace = 'pre-wrap'; note.style.overflowWrap = 'anywhere';
       box.appendChild(note);
     } else box.appendChild(el('p', {}, en ? 'The human opinion has not been validated yet.' : 'L’avis humain n’a pas encore été validé.'));
-    var editable = humanReview.can_edit && !humanReviewReadOnly;
+    var editable = humanReview.can_edit && !humanReviewReadOnly && !readOnly;
     if (editable) {
       var open = el('button', { type: 'button' }, humanReview.note ? (en ? 'Edit the human opinion' : 'Modifier l’avis humain') : (en ? 'Review and validate the suggested opinion' : 'Relire et valider l’avis proposé'));
       open.onclick = function () { humanReviewEditing = !humanReviewEditing; paintHumanReview(); };
@@ -150,7 +212,6 @@
         box.appendChild(save); box.appendChild(status);
       }
     }
-    anchor.insertAdjacentElement('afterend', box);
   }
   function refreshHumanReview() {
     if (humanReviewSession !== session()) {
@@ -158,6 +219,8 @@
       humanReviewSequence++;
       var previous = area.querySelector('.ppme-human-review');
       if (previous) previous.remove();
+      if (humanDialog) { humanDialog.remove(); humanDialog = null; }
+      syncHumanButton();
     }
     if (editorial || humanReviewSaving || humanReviewEditing) return;
     var sequence = ++humanReviewSequence;
@@ -1422,6 +1485,13 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
         return x;
       };
       var sep = function (cls) { into.appendChild(el('span', { class: 'ppme-sep ' + (cls || '') })); };
+      // 15/10 — « Avis humain » à gauche d'Aperçu : visible dès que l'avis se lit ou se valide ici
+      var humanButton = function () {
+        var h = add('human', (humanReview && humanReview.note ? '✓ ' : '') + (en ? 'Human opinion' : 'Avis humain'),
+          en ? 'Read or validate your Corporate Developer’s opinion' : 'Lire ou valider l’avis de votre Corporate Developer', 'ppme-human');
+        h.hidden = !humanReviewShown();
+        h.classList.toggle('ppme-human-done', !!(humanReview && humanReview.note));
+      };
       if (EMBED || GUEST) { add('plan', '☰ ' + D.outline, D.rail, 'ppme-planbtn'); sep(); }
       if (editorial && area.querySelector('.split-container > .img-col img')) {
         var size = el('select', { class: 'ppme-image-width', 'aria-label': en ? 'Image width' : 'Taille des images' });
@@ -1458,8 +1528,12 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
         sep('ppme-edonly');
         add('status', D.auto, D.versionsHint, 'ppme-st');
         add('save', D.save, D.saveHint, 'ppme-savebtn ppme-edonly');
+        humanButton();
         add('preview', D.preview, D.previewHint, 'ppme-prev');
-      } else side.appendChild(el('span', { class: 'ppme-st', role: 'status' }));
+      } else {
+        side.appendChild(el('span', { class: 'ppme-st', role: 'status' }));
+        if (!editorial) humanButton();
+      }
       if (GUEST) add('login', D.login, D.loginHint, 'ppme-login').hidden = !!session();
       add('pdf', D.pdf, D.pdfHint, 'ppme-pdf');
       if (!editorial || (editorial.decks || []).some(function (item) { return /^https:\/\//.test(String(item.url || '')); })) {
@@ -1511,7 +1585,8 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   var SHORT = {
     pdf: [en ? '📄 Export PDF' : '📄 Exporter en PDF', '📄 PDF'], deck: editorial ? [en ? '🎞 Market carousels' : '🎞 Carrousels du marché', en ? '🎞 Carousels' : '🎞 Carrousels'] : ['🎞 Deck'], offsec: ['✕ Section'],
     list: [null, '•'], heading: [null, en ? 'H' : 'T'], image: [null, '🖼'], video: [null, '▶'],
-    preview: [null, null, '👁'], save: [null, null, '💾'], login: [null, null, '🔑'], plan: [null, null, '☰']
+    preview: [null, null, '👁'], save: [null, null, '💾'], login: [null, null, '🔑'], plan: [null, null, '☰'],
+    human: [null, en ? 'Opinion' : 'Avis', '🟡']
   };
   function applyLabel(x) {
     if (!x || !x.hasAttribute('data-l0') || x.getAttribute('aria-busy') === 'true') return;
@@ -1605,7 +1680,8 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     var b = e.target.closest('button[data-cmd]');
     if (!b) return;
     var cmd = b.getAttribute('data-cmd');
-    if (READER && ['plan', 'pdf', 'deck', 'login'].indexOf(cmd) < 0) return;
+    if (READER && ['plan', 'pdf', 'deck', 'login', 'human'].indexOf(cmd) < 0) return;
+    if (cmd === 'human') { openHumanDialog(); return; }
     if (cmd === 'login') { login(); return; }
     if (cmd === 'save') { save(); return; }
     if (cmd === 'pdf') { exportPdf(); return; }
@@ -3911,6 +3987,16 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-dbar .ppme-savebtn{border-color:#BFE6CF;color:#0E7F3F;font-weight:700;background:#fff}',
       '.ppme-dbar .ppme-savebtn:hover{background:#E7F6EE;border-color:#12A150}',
       '.ppme-dbar .ppme-pdf{background:#12A150;color:#fff;border-color:#12A150;font-weight:700;padding:7px 12px}',
+      '.ppme-dbar .ppme-human{background:#FFF4CC;color:#6A4916;border-color:#E8C468;font-weight:700}',
+      '.ppme-dbar .ppme-human:hover{background:#FDE9A8;border-color:#C99A2E}',
+      '.ppme-dbar .ppme-human.ppme-human-done{background:#FFFAEB}',
+      '.ppme-dbar button[hidden]{display:none!important}',
+      '.ppme-hr-back{position:fixed;inset:0;z-index:2147483002;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(16,34,56,.5)}',
+      '.ppme-hr-dialog{width:min(680px,100%);max-height:90vh;overflow:auto;box-sizing:border-box;padding:18px 20px;border-radius:12px;background:#fff;color:#243449;font:14px/1.55 system-ui,sans-serif;text-align:left;box-shadow:0 16px 60px rgba(16,34,56,.33)}',
+      '.ppme-hr-dialog header{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:17px}',
+      '.ppme-hr-dialog .ppme-hr-x{padding:0 4px;border:0;background:none;color:#243449;font-size:25px;line-height:1;cursor:pointer}',
+      '.ppme-hr-help{margin:6px 0 10px;color:#667085;font-size:12px}',
+      '.ppme-hr-body button{margin:4px 8px 4px 0;padding:7px 10px;border:1px solid #d6bd83;border-radius:6px;background:#fff;color:#6a4916;font:600 12px/1.4 system-ui,sans-serif;cursor:pointer}',
       '.ppme-dbar .ppme-pdf:hover{background:#0E8A44;border-color:#0E8A44}',
       '.ppme-dbar .ppme-pdf[aria-busy="true"]{opacity:.8;cursor:progress}',
       '.ppme-dbar .ppme-deck{background:#fff;color:#0E7F3F;border-color:#12A150;font-weight:700;padding:7px 11px;margin-left:4px}',
@@ -4325,6 +4411,17 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     setInterval(function () { refreshReader(false); }, 30000);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshReader(false); });
   } else syncLatest().then(checkAccess).then(function (member) { if (!member) startGuest(); });
+  // 15/10 — dans l'onglet Mémo du cockpit, « Reprendre le mémo → » du bandeau d'aperçu se
+  // confirme dans le cockpit même, sur la ligne de la société, au lieu d'ouvrir un second onglet.
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest && e.target.closest('.pp-preview-cta');
+    var origin = a && cockpitOrigin();
+    if (!origin) return;
+    var action = 'resume';
+    try { action = new URL(a.href).searchParams.get('memo_recovery') || 'resume'; } catch (_) { /* reprise par défaut */ }
+    e.preventDefault(); e.stopPropagation();
+    try { window.parent.postMessage({ type: 'proplace:memo:recovery', record: record, action: action }, origin); } catch (_) { /* fenêtre parente fermée */ }
+  }, true);
   refreshHumanReview();
   window.addEventListener('focus', refreshHumanReview);
   window.addEventListener('proplace:member-session', refreshHumanReview);
