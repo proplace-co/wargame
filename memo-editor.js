@@ -1446,6 +1446,426 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     deck.dlg.hidden = true;
     if (deck.run && done !== true) toast(K.background);
   }
+  /* ── 16/10 — les modèles de mémo du fonds (option de l'offre Entreprise) ─────────────────────
+   * « Enregistrer en tant que template » (Antoine) : le plan de ce mémo — sections, ordre, titres,
+   * cases du PDF — devient un modèle du fonds. Pour chaque nouvelle société, Stan produit le mémo
+   * Proplace puis l'organise selon ce plan et rédige les sections du fonds selon leur consigne ;
+   * le texte de ce mémo n'est jamais repris. Le choix se fait dans « Analyser » (cockpit) ; le
+   * modèle par défaut (Mon compte) sert aux mémos que Stan lance seul. */
+  var TP = en ? {
+    title: 'Memo templates', saveBtn: '⭐ Save this outline as a template', applyBtn: function (n) { return '🧩 Apply a template (' + n + ')'; },
+    locked: 'Turn this outline into your fund’s template, reused for every new memo — an Enterprise plan option.',
+    saveTitle: 'Save this outline as a template',
+    saveIntro: 'For every new company, Stan writes the Proplace memo, then organises it like this outline and writes your own sections following their brief. The text of this memo is never reused.',
+    reading: 'Stan is reading your sections and drafting their brief…',
+    name: 'Template name', newOne: 'New template', update: 'Update an existing template',
+    outline: 'The outline', outlineHint: 'To change it (order, titles, sections), close this window and use “Memo contents”.',
+    proplace: 'Proplace', yours: 'Your section', pdfOn: 'PDF', pdfOff: 'Not in the PDF',
+    brief: 'Brief for Stan', briefHint: 'Stan follows it for each new company, using only the memo’s sources. Nothing about this company.',
+    briefPh: 'E.g. Assess whether the company could be sold to our key accounts: which products, what extra revenue, which obstacles. Conclude with a clear yes / no.',
+    removed: function (n) { return 'Removed from your memos (' + n + ')'; },
+    removedHint: 'Stan still computes them behind the scenes (some feed others), they simply won’t appear.',
+    others: 'A Proplace section the template doesn’t know (a new one, or one specific to the detailed memo) is kept after the one before it: nothing is lost.',
+    tooMany: function (m) { return 'At most ' + m + ' sections of your own per template: remove some from the outline first.'; },
+    yoursHead: function (n) { return n + (n > 1 ? ' sections of your own' : ' section of your own') + ', written by Stan for each company'; },
+    yoursGo: 'Check the brief ↓',
+    noneHead: 'No section of your own yet',
+    noneText: 'Your own sections are what makes a template yours: close this window, add them with “＋ Add a section” (title + what you expect), then save the outline. Stan will write them for every company.',
+    summary: function (n, c, r) { return n + ' sections · ' + c + ' of your own' + (r ? ' · ' + r + ' removed' : ''); },
+    needBrief: 'Each of your sections needs a brief (one or two sentences).',
+    needName: 'Give the template a name.',
+    def: 'Use it by default for the memos Stan launches on his own',
+    defHint: 'In “Analyse”, you can always pick another template or the official Proplace one.',
+    saveGo: 'Save the template', saving: 'Saving…',
+    saved: function (name) { return 'Template “' + name + '” saved'; },
+    savedNext: ['In the cockpit, “Analyse” now offers this template when launching a memo.', 'Stan writes your sections for each new company, from the memo’s sources.', 'Manage, rename or set the default template in My account.'],
+    account: 'My account →', done: 'Done',
+    applyTitle: 'Apply a template to this memo',
+    applyIntro: function (c) { return 'Stan reorganises this memo following the template and writes your sections for ' + (c || 'this company') + '. A new version is created: the current one stays in the history.'; },
+    applyGo: 'Apply the template', applyTime: 'About one minute.',
+    defaultTag: 'default', line: function (t) { return t.sections + ' sections' + (t.custom ? ' · ' + t.custom + ' of your own: ' + t.custom_titles.join(', ') : ''); },
+    steps: { queued: 'Starting…', writing: 'Stan is writing your sections…', applying: 'Applying the outline…' },
+    applied: function (name, n) { return 'Template “' + name + '” applied: version ' + n + '.'; },
+    background: 'The template keeps being applied: the memo will refresh when it is ready.',
+    failed: 'Failed: ', retry: 'Retry'
+  } : {
+    title: 'Modèles de mémo', saveBtn: '⭐ Enregistrer ce plan comme modèle', applyBtn: function (n) { return '🧩 Appliquer un modèle (' + n + ')'; },
+    locked: 'Faites de ce plan le modèle de votre fonds, réutilisé pour chaque nouveau mémo — une option de l’offre Entreprise.',
+    saveTitle: 'Enregistrer ce plan comme modèle',
+    saveIntro: 'Pour chaque nouvelle société, Stan rédige le mémo Proplace, puis l’organise selon ce plan et rédige vos propres sections selon leur consigne. Le texte de ce mémo n’est jamais repris.',
+    reading: 'Stan lit vos sections et propose leur consigne…',
+    name: 'Nom du modèle', newOne: 'Nouveau modèle', update: 'Mettre à jour un modèle existant',
+    outline: 'Le plan', outlineHint: 'Pour le changer (ordre, titres, sections), fermez cette fenêtre et utilisez « Contenu du dossier ».',
+    proplace: 'Proplace', yours: 'Votre section', pdfOn: 'PDF', pdfOff: 'Hors PDF',
+    brief: 'Consigne pour Stan', briefHint: 'Stan la suit pour chaque nouvelle société, à partir des seules sources du mémo. Rien de propre à cette société.',
+    briefPh: 'Ex. : Évalue si la société pourrait être vendue à nos clients grands comptes : quels produits, quel chiffre d’affaires en plus, quels freins. Conclus par oui / non.',
+    removed: function (n) { return 'Retirées de vos mémos (' + n + ')'; },
+    removedHint: 'Stan les calcule toujours en coulisses (certaines en alimentent d’autres) ; elles n’apparaîtront simplement pas.',
+    others: 'Une section Proplace que le modèle ne connaît pas (nouvelle, ou propre au mémo détaillé) reste après celle qui la précède : rien ne se perd.',
+    tooMany: function (m) { return m + ' sections à vous au plus par modèle : retirez-en d’abord du plan.'; },
+    yoursHead: function (n) { return n + (n > 1 ? ' sections à vous, rédigées' : ' section à vous, rédigée') + ' par Stan pour chaque société'; },
+    yoursGo: 'Vérifier la consigne ↓',
+    noneHead: 'Aucune section à vous pour l’instant',
+    noneText: 'Vos propres sections font de ce modèle le vôtre : fermez cette fenêtre, ajoutez-les avec « ＋ Ajouter une section » (un titre et ce que vous attendez), puis enregistrez le plan. Stan les rédigera pour chaque société.',
+    summary: function (n, c, r) { return n + ' sections · ' + c + ' à vous' + (r ? ' · ' + r + ' retirée' + (r > 1 ? 's' : '') : ''); },
+    needBrief: 'Chacune de vos sections a besoin d’une consigne (une ou deux phrases).',
+    needName: 'Donnez un nom au modèle.',
+    def: 'L’utiliser par défaut pour les mémos que Stan lance seul',
+    defHint: 'Dans « Analyser », vous pourrez toujours choisir un autre modèle, ou le modèle officiel Proplace.',
+    saveGo: 'Enregistrer le modèle', saving: 'Enregistrement…',
+    saved: function (name) { return 'Modèle « ' + name + ' » enregistré'; },
+    savedNext: ['Dans le cockpit, « Analyser » propose désormais ce modèle au lancement d’un mémo.', 'Stan rédige vos sections pour chaque nouvelle société, à partir des sources du mémo.', 'Renommez vos modèles ou choisissez celui par défaut dans Mon compte.'],
+    account: 'Mon compte →', done: 'Terminé',
+    applyTitle: 'Appliquer un modèle à ce mémo',
+    applyIntro: function (c) { return 'Stan réorganise ce mémo selon le modèle et rédige vos sections pour ' + (c || 'cette société') + '. Une nouvelle version est créée : la version actuelle reste dans l’historique.'; },
+    applyGo: 'Appliquer le modèle', applyTime: 'Environ une minute.',
+    defaultTag: 'par défaut', line: function (t) { return t.sections + ' sections' + (t.custom ? ' · ' + t.custom + ' à vous : ' + t.custom_titles.join(', ') : ''); },
+    steps: { queued: 'Démarrage…', writing: 'Stan rédige vos sections…', applying: 'Le plan s’applique…' },
+    applied: function (name, n) { return 'Modèle « ' + name + ' » appliqué : version ' + n + '.'; },
+    background: 'Le modèle continue de s’appliquer : le mémo se mettra à jour dès qu’il sera prêt.',
+    failed: 'Échec : ', retry: 'Réessayer'
+  };
+  var tpl = { info: null, loading: null, run: null, timer: 0, dlg: null };
+  function loadTemplates(force) {
+    if (tpl.loading && !force) return tpl.loading;
+    tpl.loading = api('/templates').then(function (j) {
+      if (j.ok) { tpl.info = j; renderRailSoon(); }
+      return j;
+    }).catch(function () { return {}; });
+    return tpl.loading;
+  }
+  function shortFund(name) {
+    var w = String(name || '').trim().split(/\s+/);
+    if (w.length >= 3 && (/\d/.test(w[0]) || (w[0] === w[0].toUpperCase() && w[0].length <= 6))) return w[0];
+    return w.join(' ') || fundLabel(state.fund);
+  }
+  function templateBlock() {
+    var box = el('div', { class: 'ppme-tpl-rail' });
+    var info = tpl.info;
+    if (!info) { loadTemplates(); return box; }
+    box.appendChild(el('b', { class: 'ppme-tpl-h' }, TP.title));
+    if (!info.allowed) {
+      box.classList.add('locked');
+      box.appendChild(el('span', { class: 'ppme-tpl-lock' }, '🔒 ' + TP.locked));
+      return box;
+    }
+    box.appendChild(el('button', { type: 'button', class: 'ppme-tpl-btn main', 'data-tpl': 'save' }, TP.saveBtn));
+    if ((info.templates || []).length) {
+      box.appendChild(el('button', { type: 'button', class: 'ppme-tpl-btn', 'data-tpl': 'apply' }, TP.applyBtn(info.templates.length)));
+    }
+    return box;
+  }
+  function tplDialog(title, wide) {
+    var back = el('div', { class: 'ppme-ui ppme-dlg-back' });
+    var box = el('div', { class: 'ppme-dlg ppme-tpl-dlg' + (wide ? ' wide' : ''), role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'ppme-tpl-t' });
+    var x = el('button', { type: 'button', class: 'ppme-dlg-x', 'aria-label': K.close }, '×');
+    box.appendChild(x);
+    box.appendChild(el('h2', { id: 'ppme-tpl-t' }, title));
+    var body = el('div', { class: 'ppme-tpl-body' });
+    box.appendChild(body);
+    var err = el('p', { class: 'ppme-dlg-err', role: 'alert' });
+    err.hidden = true;
+    box.appendChild(err);
+    var act = el('div', { class: 'ppme-dlg-act' });
+    var cancel = el('button', { type: 'button', class: 'ppme-dlg-cancel' }, K.cancel);
+    var go = el('button', { type: 'button', class: 'ppme-dlg-go' });
+    act.appendChild(cancel);
+    act.appendChild(go);
+    box.appendChild(act);
+    back.appendChild(box);
+    var d = { back: back, box: box, body: body, err: err, go: go, cancel: cancel, act: act };
+    var key = function (e) { if (e.key === 'Escape') { e.stopPropagation(); d.close(); } };
+    d.close = function () {
+      back.remove();
+      document.removeEventListener('keydown', key, true);
+      if (tpl.dlg === d) tpl.dlg = null;
+      if (tpl.run && d.running) toast(TP.background);
+    };
+    x.onclick = cancel.onclick = function () { d.close(); };
+    back.addEventListener('mousedown', function (e) { if (e.target === back) d.close(); });
+    document.addEventListener('keydown', key, true);
+    document.body.appendChild(back);
+    tpl.dlg = d;
+    return d;
+  }
+  function tplWait(d, text) {
+    var w = el('div', { class: 'ppme-dlg-run', role: 'status' });
+    w.appendChild(el('span', { class: 'ppme-spin', 'aria-hidden': 'true' }));
+    w.appendChild(el('span', { class: 'ppme-dlg-step' }, text));
+    d.body.appendChild(w);
+    return w;
+  }
+  function tplError(d, e) {
+    d.err.hidden = false;
+    d.err.textContent = TP.failed + String((e && e.message) || e);
+  }
+  function openSaveTemplate() {
+    var d = tplDialog('⭐ ' + TP.saveTitle, true);
+    d.body.appendChild(el('p', { class: 'ppme-dlg-intro' }, TP.saveIntro));
+    var wait = tplWait(d, TP.reading);
+    d.go.textContent = TP.saveGo;
+    d.go.disabled = true;
+    var ready = doc.on && !doc.reading ? save(true) : Promise.resolve(true);
+    Promise.resolve(ready).then(function () { return api('/templates/draft', 'POST', {}); }).then(function (j) {
+      if (!j.ok) throw new Error(j.detail || j.error || j.status);
+      tpl.info = j;
+      wait.remove();
+      renderSaveForm(d, j);
+    }).catch(function (e) { wait.remove(); tplError(d, e); });
+  }
+  function renderSaveForm(d, j) {
+    var draft = j.draft || { sections: [], removed: [] };
+    var list = j.templates || [];
+    var form = el('div', { class: 'ppme-tpl-form' });
+    // le nom, et le modèle à mettre à jour s'il y en a déjà
+    var nameRow = el('div', { class: 'ppme-tpl-field' });
+    nameRow.appendChild(el('label', { for: 'ppme-tpl-name' }, TP.name));
+    var name = el('input', { id: 'ppme-tpl-name', type: 'text', maxlength: '60', class: 'ppme-tpl-input' });
+    name.value = (en ? 'Template ' : 'Modèle ') + shortFund(j.fund_name || state.fund);
+    nameRow.appendChild(name);
+    form.appendChild(nameRow);
+    var replace = { id: '' };
+    if (list.length) {
+      var modes = el('div', { class: 'ppme-tpl-modes', role: 'radiogroup' });
+      var pick = el('select', { class: 'ppme-tpl-input', 'aria-label': TP.update });
+      list.forEach(function (t) { var o = el('option', { value: t.id }, t.name); pick.appendChild(o); });
+      var radio = function (val, label) {
+        var lab = el('label', { class: 'ppme-tpl-radio' });
+        var r = el('input', { type: 'radio', name: 'ppme-tpl-mode', value: val });
+        r.checked = val === 'new';
+        r.onchange = function () {
+          replace.id = val === 'new' ? '' : pick.value;
+          pick.disabled = val === 'new';
+          if (val !== 'new') { var t = list.filter(function (x) { return x.id === pick.value; })[0]; if (t) name.value = t.name; }
+        };
+        lab.appendChild(r);
+        lab.appendChild(document.createTextNode(' ' + label));
+        return lab;
+      };
+      modes.appendChild(radio('new', TP.newOne));
+      var upd = radio('update', TP.update);
+      modes.appendChild(upd);
+      pick.disabled = true;
+      pick.onchange = function () {
+        replace.id = pick.value;
+        var t = list.filter(function (x) { return x.id === pick.value; })[0];
+        if (t) name.value = t.name;
+      };
+      modes.appendChild(pick);
+      form.appendChild(modes);
+    }
+    // le plan : chaque section, Proplace ou du fonds ; la consigne des sections du fonds
+    var head = el('div', { class: 'ppme-tpl-sub' });
+    var mine = draft.sections.filter(function (x) { return x.kind === 'custom'; });
+    var ht = el('b', {}, TP.outline);
+    ht.appendChild(el('em', {}, TP.summary(draft.sections.length, mine.length, (draft.removed || []).length)));
+    head.appendChild(ht);
+    head.appendChild(el('span', {}, TP.outlineHint));
+    form.appendChild(head);
+    var ol = el('ol', { class: 'ppme-tpl-plan' });
+    var yours = el('div', { class: 'ppme-tpl-yours' + (mine.length ? '' : ' none') });
+    if (mine.length) {
+      var yt = el('div', {});
+      yt.appendChild(el('b', {}, '✍️ ' + TP.yoursHead(mine.length)));
+      yt.appendChild(el('span', {}, mine.map(function (x) { return x.title; }).join(' · ')));
+      yours.appendChild(yt);
+      var jump = el('button', { type: 'button', class: 'ppme-tpl-jump' }, TP.yoursGo);
+      jump.onclick = function () {
+        var first = ol.querySelector('.ppme-tpl-sec.custom');
+        if (!first) return;
+        ol.scrollTop += first.getBoundingClientRect().top - ol.getBoundingClientRect().top - 4;
+        var ta = first.querySelector('textarea');
+        if (ta) ta.focus({ preventScroll: true });
+      };
+      yours.appendChild(jump);
+    } else {
+      var nt = el('div', {});
+      nt.appendChild(el('b', {}, '✍️ ' + TP.noneHead));
+      nt.appendChild(el('span', {}, TP.noneText));
+      yours.appendChild(nt);
+    }
+    form.appendChild(yours);
+    var briefs = {};
+    var custom = 0;
+    draft.sections.forEach(function (sec, i) {
+      var li = el('li', { class: 'ppme-tpl-sec ' + sec.kind });
+      var top = el('div', { class: 'ppme-tpl-row' });
+      top.appendChild(el('span', { class: 'ppme-tpl-n' }, String(i + 1)));
+      top.appendChild(el('span', { class: 'ppme-tpl-name' }, sec.title));
+      var chips = el('span', { class: 'ppme-tpl-chips' });
+      chips.appendChild(el('span', { class: 'ppme-tpl-chip ' + sec.kind }, sec.kind === 'custom' ? TP.yours : TP.proplace));
+      chips.appendChild(el('span', { class: 'ppme-tpl-chip' + (sec.pdf ? ' pdf' : ' off') }, sec.pdf ? TP.pdfOn : TP.pdfOff));
+      top.appendChild(chips);
+      li.appendChild(top);
+      if (sec.kind === 'custom') {
+        custom += 1;
+        var lab = el('label', { class: 'ppme-tpl-brief' });
+        lab.appendChild(el('span', {}, TP.brief));
+        var ta = el('textarea', { rows: '3', maxlength: '1200', placeholder: TP.briefPh });
+        ta.value = sec.brief || '';
+        ta.oninput = function () { ta.classList.remove('bad'); };
+        briefs[sec.id] = ta;
+        lab.appendChild(ta);
+        lab.appendChild(el('small', {}, TP.briefHint));
+        li.appendChild(lab);
+      }
+      ol.appendChild(li);
+    });
+    form.appendChild(ol);
+    if ((draft.removed || []).length) {
+      var det = el('details', { class: 'ppme-tpl-removed' });
+      det.appendChild(el('summary', { style: 'font:700 13px system-ui,-apple-system,sans-serif!important;color:#0F1D33!important;cursor:pointer;padding:0!important;margin:0!important' }, TP.removed(draft.removed.length)));
+      var ul = el('ul');
+      draft.removed.forEach(function (sid) { ul.appendChild(el('li', {}, (draft.removed_titles || {})[sid] || sid)); });
+      det.appendChild(ul);
+      det.appendChild(el('small', {}, TP.removedHint));
+      form.appendChild(det);
+    }
+    form.appendChild(el('p', { class: 'ppme-tpl-note' }, TP.others));
+    var defLab = el('label', { class: 'ppme-tpl-def' });
+    var defBox = el('input', { type: 'checkbox' });
+    defLab.appendChild(defBox);
+    var defTxt = el('span', {});
+    defTxt.appendChild(el('b', {}, TP.def));
+    defTxt.appendChild(el('small', {}, TP.defHint));
+    defLab.appendChild(defTxt);
+    form.appendChild(defLab);
+    d.body.appendChild(form);
+    var max = j.max_custom || 5;
+    d.go.disabled = false;
+    if (custom > max) { tplError(d, TP.tooMany(max)); d.go.disabled = true; }
+    setTimeout(function () { name.focus(); name.select(); }, 0);
+    d.go.onclick = function () {
+      d.err.hidden = true;
+      if (!name.value.trim()) { tplError(d, TP.needName); name.focus(); return; }
+      var missing = Object.keys(briefs).filter(function (k) { return briefs[k].value.trim().length < 15; });
+      if (missing.length) {
+        missing.forEach(function (k) { briefs[k].classList.add('bad'); });
+        briefs[missing[0]].focus();
+        tplError(d, TP.needBrief);
+        return;
+      }
+      var body = {
+        name: name.value.trim(), replace: replace.id, default: defBox.checked,
+        removed: draft.removed || [], contact_pdf: draft.contact_pdf !== false,
+        sections: draft.sections.map(function (sec) {
+          var out = { kind: sec.kind, id: sec.id, title: sec.title, pdf: sec.pdf };
+          if (sec.kind === 'custom') out.brief = briefs[sec.id].value.trim();
+          return out;
+        })
+      };
+      d.go.disabled = true;
+      d.go.textContent = TP.saving;
+      api('/templates', 'POST', body).then(function (r) {
+        if (!r.ok) throw new Error(r.detail || r.error || r.status);
+        tpl.info = r;
+        renderRail();
+        savedView(d, r.template || { name: body.name });
+      }).catch(function (e) { d.go.disabled = false; d.go.textContent = TP.saveGo; tplError(d, e); });
+    };
+  }
+  function savedView(d, t) {
+    d.body.innerHTML = '';
+    d.err.hidden = true;
+    var ok = el('div', { class: 'ppme-tpl-ok' });
+    ok.appendChild(el('span', { class: 'ppme-tpl-check', 'aria-hidden': 'true' }, '✓'));
+    ok.appendChild(el('b', {}, TP.saved(t.name)));
+    var ul = el('ul');
+    TP.savedNext.forEach(function (x) { ul.appendChild(el('li', {}, x)); });
+    ok.appendChild(ul);
+    d.body.appendChild(ok);
+    d.cancel.remove();
+    var acc = el('a', { class: 'ppme-tpl-account', href: 'https://proplace.co/' + (en ? 'en' : 'fr') + '/compte' + (state.fund ? '?fund=' + encodeURIComponent(state.fund) : ''), target: '_blank', rel: 'noopener' }, TP.account);
+    d.act.insertBefore(acc, d.go);
+    d.go.disabled = false;
+    d.go.textContent = TP.done;
+    d.go.onclick = function () { d.close(); };
+  }
+  function openApplyTemplate() {
+    var info = tpl.info || {};
+    var list = info.templates || [];
+    if (!list.length) return;
+    var d = tplDialog('🧩 ' + TP.applyTitle);
+    d.body.appendChild(el('p', { class: 'ppme-dlg-intro' }, TP.applyIntro(memoName())));
+    var pick = info.default && list.some(function (t) { return t.id === info.default; }) ? info.default : list[0].id;
+    var group = el('div', { class: 'ppme-dlg-modes', role: 'radiogroup', 'aria-label': TP.applyTitle });
+    var draw = function () {
+      group.innerHTML = '';
+      list.forEach(function (t) {
+        var on = t.id === pick;
+        var lab = el('label', { class: 'ppme-dlg-mode' + (on ? ' is-on' : '') });
+        var r = el('input', { type: 'radio', name: 'ppme-tpl-pick', value: t.id });
+        r.checked = on;
+        r.onchange = function () { pick = t.id; draw(); };
+        lab.appendChild(r);
+        var txt = el('span', { class: 'ppme-dlg-mtxt' });
+        var h = el('span', { class: 'ppme-dlg-mhead' });
+        h.appendChild(el('b', {}, t.name));
+        if (t.id === info.default) h.appendChild(el('span', { class: 'ppme-dlg-tag ok' }, TP.defaultTag));
+        txt.appendChild(h);
+        txt.appendChild(el('small', {}, TP.line(t)));
+        lab.appendChild(txt);
+        group.appendChild(lab);
+      });
+    };
+    draw();
+    d.body.appendChild(group);
+    var cost = el('p', { class: 'ppme-dlg-cost' }, TP.applyTime);
+    d.body.appendChild(cost);
+    d.go.textContent = TP.applyGo;
+    d.go.onclick = function () {
+      d.err.hidden = true;
+      d.go.disabled = true;
+      var ready = doc.on && !doc.reading ? save(true) : Promise.resolve(true);
+      Promise.resolve(ready).then(function () { return api('/templates/apply', 'POST', { template_id: pick }); }).then(function (r) {
+        if (!r.ok) throw new Error(r.detail || r.error || r.status);
+        tpl.run = { rid: r.run_id, name: r.name, t0: Date.now(), step: 'queued' };
+        group.hidden = true;
+        cost.hidden = true;
+        d.running = true;
+        showTplRun();
+        pollTpl();
+      }).catch(function (e) { d.go.disabled = false; d.go.textContent = TP.retry; tplError(d, e); });
+    };
+  }
+  function showTplRun() {
+    var d = tpl.dlg, run = tpl.run;
+    if (!d || !run) return;
+    if (!d.prog) { d.prog = el('div', { class: 'ppme-dlg-run', role: 'status' }); d.body.appendChild(d.prog); }
+    d.prog.innerHTML = '';
+    d.prog.appendChild(el('span', { class: 'ppme-spin', 'aria-hidden': 'true' }));
+    d.prog.appendChild(el('span', { class: 'ppme-dlg-step' }, run.name + ' — ' + (TP.steps[run.step] || TP.steps.queued)));
+    d.prog.appendChild(el('span', { class: 'ppme-dlg-time' }, Math.round((Date.now() - run.t0) / 1000) + ' s'));
+    d.go.disabled = true;
+    d.go.textContent = TP.steps[run.step] || TP.steps.queued;
+  }
+  function pollTpl() {
+    clearTimeout(tpl.timer);
+    var run = tpl.run;
+    if (!run) return;
+    tpl.timer = setTimeout(function () {
+      api('/templates/runs/' + run.rid).then(function (s) {
+        if (tpl.run !== run) return;
+        if (!s.ok) throw new Error(s.detail || s.error || s.status);
+        if (s.state === 'error') { tpl.run = null; throw new Error(s.error || 'erreur'); }
+        if (s.state === 'done') {
+          tpl.run = null;
+          if (tpl.dlg) { tpl.dlg.running = false; tpl.dlg.close(); }
+          (state.role ? startEditor() : loadVersion(s.n, true)).then(function () { toast(TP.applied(run.name, s.n)); renderRail(); });
+          return;
+        }
+        run.step = s.step || run.step;
+        showTplRun();
+        pollTpl();
+      }).catch(function (e) {
+        var msg = String((e && e.message) || '');
+        if (tpl.run === run && (e instanceof TypeError || /^(5\d\d|0|429)$/.test(msg))) { pollTpl(); return; }
+        tpl.run = null;
+        if (tpl.dlg) { tpl.dlg.running = false; tpl.dlg.go.disabled = false; tpl.dlg.go.textContent = TP.retry; tplError(tpl.dlg, e); }
+        else toast(TP.failed + msg);
+      });
+    }, 2500);
+  }
   function pdfName() {
     var named = document.querySelector('.sidebar-company-name');
     var name = String(state.company || ctx.name || ctx.company_name || (named && named.textContent) || '').trim();
@@ -2676,6 +3096,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     r.appendChild(ol);
     var addBtn = el('button', { type: 'button', class: 'ppme-rail-add', 'data-add': '1' }, D.addSection);
     r.appendChild(addBtn);
+    if (state.role && !state.preview) r.appendChild(templateBlock());      // 16/10 — les modèles de mémo du fonds
   }
   function railRow(o) {
     var li = el('li', { class: (o.fixed ? 'fixed' : '') + (o.id && !inPdf(o.id) ? ' off' : '') });
@@ -2693,6 +3114,8 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   function railClick(e) {
     var go = e.target.closest('[data-go]'), more = e.target.closest('[data-more]');
     if (e.target.closest('[data-add]')) { addSection(null); return; }
+    var tb = e.target.closest('[data-tpl]');
+    if (tb) { if (tb.getAttribute('data-tpl') === 'save') openSaveTemplate(); else openApplyTemplate(); return; }
     if (more) { sectionMenu(more.getAttribute('data-more'), more); return; }
     if (!go) return;
     var id = go.getAttribute('data-go');
@@ -4164,6 +4587,69 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '@media (hover:none){.ppme-rail-more{opacity:1}}',
       '.ppme-rail-add{margin-top:8px;width:100%;border:1px dashed #BFE6CF;background:#F6FBF8;color:#0E7F3F;border-radius:8px;padding:7px;font:700 12px system-ui,-apple-system,sans-serif;cursor:pointer}',
       '.ppme-rail-add:hover{background:#E7F6EE}',
+      // 16/10 — les modèles de mémo : le bloc sous le plan, et ses deux fenêtres
+      '.ppme-tpl-rail{margin-top:12px;padding-top:11px;border-top:1px solid #E3E8F0;display:flex;flex-direction:column;gap:6px}',
+      '.ppme-tpl-h{font:800 10.5px system-ui,-apple-system,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#5B6B82}',
+      '.ppme-tpl-btn{width:100%;text-align:left;border:1px solid #D5DDE7;background:#fff;color:#0F1D33;border-radius:8px;padding:7px 9px;font:700 12px system-ui,-apple-system,sans-serif;cursor:pointer}',
+      '.ppme-tpl-btn:hover{border-color:#BFE6CF;background:#F6FBF8}',
+      '.ppme-tpl-btn.main{border-color:#12A150;color:#0B6B35;background:#F3FBF6}',
+      '.ppme-tpl-btn.main:hover{background:#E7F6EE}',
+      '.ppme-tpl-lock{font:500 11.5px/1.4 system-ui,-apple-system,sans-serif;color:#5B6B82}',
+      '.ppme-dlg.ppme-tpl-dlg.wide{width:min(760px,100%)}',
+      '.ppme-tpl-form{display:flex;flex-direction:column;gap:12px}',
+      '.ppme-tpl-field{display:flex;flex-direction:column;gap:5px}',
+      '.ppme-tpl-field label,.ppme-tpl-sub b{font-weight:800;font-size:12.5px;color:#0F1D33}',
+      '.ppme-tpl-input{font:inherit;font-size:14px;border:1.5px solid #D5DDE7;border-radius:9px;padding:8px 10px;color:#0F1D33;background:#fff}',
+      '.ppme-tpl-input:focus,.ppme-tpl-brief textarea:focus{outline:none;border-color:#12A150;box-shadow:0 0 0 3px rgba(18,161,80,.14)}',
+      '.ppme-tpl-modes{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:13px}',
+      '.ppme-tpl-modes select{min-width:200px}',
+      '.ppme-tpl-radio{display:flex;align-items:center;gap:4px;cursor:pointer}',
+      '.ppme-tpl-radio input{accent-color:#12A150}',
+      '.ppme-tpl-sub{display:flex;flex-direction:column;gap:2px;margin-top:4px}',
+      '.ppme-tpl-sub span{font-size:12px;color:#5B6B82}',
+      '.ppme-tpl-plan{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;max-height:40vh;overflow:auto;padding-right:4px;position:relative}',
+      '.ppme-tpl-sec{border:1px solid #E3E8F0;border-radius:9px;padding:4px 9px;background:#fff}',
+      '.ppme-tpl-sec.custom{border-color:#12A150;background:#F6FBF8;padding:10px 12px}',
+      '.ppme-tpl-row{display:flex;align-items:center;gap:9px;min-width:0}',
+      '.ppme-tpl-n{flex:0 0 20px;height:20px;border-radius:50%;background:#EEF2F7;color:#5B6B82;font:800 10.5px/20px system-ui,sans-serif;text-align:center}',
+      '.ppme-tpl-sec.custom .ppme-tpl-n{background:#12A150;color:#fff}',
+      '.ppme-tpl-name{flex:1 1 auto;min-width:0;font-size:13px;font-weight:600;color:#0F1D33;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.ppme-tpl-sec.custom .ppme-tpl-name{font-size:14px;font-weight:800}',
+      '.ppme-tpl-sub b em{font-style:normal;font-weight:600;color:#5B6B82;margin-left:8px;font-size:12px}',
+      '.ppme-tpl-yours{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:11px;background:#F3FBF6;border:1px solid #BFE6CF}',
+      '.ppme-tpl-yours>div{display:flex;flex-direction:column;gap:2px;min-width:0}',
+      '.ppme-tpl-yours b{font-size:13.5px;color:#0B6B35}',
+      '.ppme-tpl-yours span{font-size:12.5px;color:#2A3A52}',
+      '.ppme-tpl-yours.none{background:#FFF8EB;border-color:#F1D79A}',
+      '.ppme-tpl-yours.none b{color:#8A5A00}',
+      '.ppme-tpl-jump{flex:0 0 auto;border:0;border-radius:8px;background:#12A150;color:#fff;font:700 12.5px system-ui,-apple-system,sans-serif;padding:7px 10px;cursor:pointer}',
+      '.ppme-tpl-jump:hover{background:#0E8A44}',
+      '.ppme-tpl-chips{display:flex;gap:5px;flex:0 0 auto}',
+      '.ppme-tpl-chip{font-size:10.5px;font-weight:700;border-radius:999px;padding:2px 8px;background:#EEF2F7;color:#5B6B82;white-space:nowrap}',
+      '.ppme-tpl-chip.custom{background:#12A150;color:#fff}',
+      '.ppme-tpl-chip.pdf{background:#E7F6EE;color:#0B6B35}',
+      '.ppme-tpl-chip.off{background:#F7F9FC;color:#9AA7B8}',
+      '.ppme-tpl-brief{display:flex;flex-direction:column;gap:4px;margin:9px 0 0 31px}',
+      '.ppme-tpl-brief span{font-size:11.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#0B6B35}',
+      '.ppme-tpl-brief textarea{font:inherit;font-size:13.5px;line-height:1.45;border:1.5px solid #CFE7D9;border-radius:9px;padding:8px 10px;resize:vertical;min-height:62px;background:#fff;color:#0F1D33}',
+      '.ppme-tpl-brief textarea.bad{border-color:#E5484D;box-shadow:0 0 0 3px rgba(229,72,77,.12)}',
+      '.ppme-tpl-brief small{font-size:11.5px;color:#5B6B82}',
+      '.ppme-tpl-removed{font-size:12.5px;color:#5B6B82;border:1px dashed #D5DDE7;border-radius:10px;padding:8px 11px}',
+      '.ppme-tpl-dlg .ppme-tpl-removed summary{cursor:pointer;font:700 13px system-ui,-apple-system,sans-serif;color:#0F1D33;list-style-position:inside}',
+      '.ppme-tpl-removed ul{margin:6px 0 4px 18px;padding:0}',
+      '.ppme-tpl-removed small{display:block;font-size:11.5px}',
+      '.ppme-tpl-note{margin:0;font-size:12px;color:#5B6B82}',
+      '.ppme-tpl-def{display:flex;gap:10px;align-items:flex-start;padding:11px 13px;border:1.5px solid #E3E8F0;border-radius:12px;cursor:pointer}',
+      '.ppme-tpl-def input{margin-top:3px;accent-color:#12A150;flex:0 0 auto}',
+      '.ppme-tpl-def span{display:flex;flex-direction:column;gap:2px}',
+      '.ppme-tpl-def b{font-size:13.5px;color:#0F1D33}',
+      '.ppme-tpl-def small{font-size:12px;color:#5B6B82}',
+      '.ppme-tpl-ok{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;padding:10px 6px 2px}',
+      '.ppme-tpl-check{width:48px;height:48px;border-radius:50%;background:#12A150;color:#fff;font:800 24px/48px system-ui,sans-serif}',
+      '.ppme-tpl-ok b{font-size:17px;color:#0F1D33}',
+      '.ppme-tpl-ok ul{margin:4px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:5px;font-size:13.5px;color:#4B5E78}',
+      '.ppme-tpl-account{align-self:center;margin-right:auto;font-weight:700;color:#0E7F3F;text-decoration:none}',
+      '.ppme-tpl-account:hover{text-decoration:underline}',
       '.ppme-editing:not(.ppme-reading) .sidebar>.sb-nav-heading,.ppme-editing:not(.ppme-reading) .sidebar>a.nav-item[href^="#"]{display:none!important}',
       '.ppme-reading:not(.ppme-reader) .ppme-rail{display:none}',
       '.ppme-menu{position:absolute;z-index:2147483002;min-width:210px;padding:4px;background:#fff;border:1px solid #D5DDE7;border-radius:10px;box-shadow:0 10px 30px rgba(15,29,51,.18)}',
