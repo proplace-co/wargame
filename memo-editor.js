@@ -316,9 +316,134 @@
       return c;
     });
   }
+  /* ── 17/10 — la page du mémo en marque blanche (fonds Entreprise, en essai ou en aperçu privé) ───
+   * Le dossier comité et le deck étaient déjà aux couleurs du fonds ; la page aussi désormais, pour
+   * TOUS ses lecteurs (les QR codes du dossier y mènent) : sa couleur à la place du vert de marque
+   * (le vert de sens — scores, verdicts, forces — reste vert), son logo, plus de « Proplace » ni de
+   * « Stan » dans ce que lit un lecteur. L'adresse reste analysis.proplace.co. L'équipe du fonds, quand
+   * elle modifie le mémo, voit son texte tel quel : rien de ce nettoyage n'est jamais enregistré. */
+  var BRAND_KEY = 'ppme-brand:' + record;
+  var brandOn = null;
+  var BRAND_HEX = /#12A150|#0E7F3F|#0E8A44|#0B6B35|#BFE6CF|#E7F6EE|#F3FBF6|#F6FBF8|#CFE7D9|rgba\(18,\s*161,\s*80,/gi;
+  function hexRgb(h) {
+    var m = /^#?([0-9a-f]{6})$/i.exec(String(h || ''));
+    if (!m) return '15,29,51';
+    return [0, 2, 4].map(function (i) { return parseInt(m[1].slice(i, i + 2), 16); }).join(',');
+  }
+  function brandSwap(b, m) {
+    var k = m.toUpperCase().replace(/\s+/g, '');
+    if (k.indexOf('RGBA(') === 0) return 'rgba(' + hexRgb(b.accent) + ',';
+    // le vert des boutons (texte blanc dessus) prend la teinte FONCÉE de la marque : lisible même pour un rose
+    return ({ '#12A150': b.accent_d, '#0E7F3F': b.accent_d, '#0E8A44': b.ink, '#0B6B35': b.ink, '#BFE6CF': b.line,
+              '#E7F6EE': b.soft, '#F3FBF6': b.tint, '#F6FBF8': b.tint, '#CFE7D9': b.line })[k] || m;
+  }
+  function recolorEditorCss() {
+    var st = document.getElementById('ppme-css');
+    if (!st || !brandOn) return;
+    if (st.ppOrig == null) st.ppOrig = st.textContent;
+    st.textContent = st.ppOrig.replace(BRAND_HEX, function (m) { return brandSwap(brandOn, m); });
+  }
+  function wlText(t, b) {
+    var who = b.short || b.name || '';
+    var out = String(t)
+      .replace(/\b(préparée?s?|rédigée?s?|prepared|written)\s+(?:par|by)\s+proplace(?:\.co|\.tech)?\s+(pour|for)\b/gi, '$1 $2')
+      .replace(/\s+(?:de|by|from|d['’]après)\s+Stan(?![\w-])/g, '')
+      .replace(/\bStan['’]s\s+/g, '')
+      .replace(/,?\s+(?:avec|with)\s+Stan(?![\w-])/g, '');
+    if (who) {
+      out = out.replace(/(^|[^\w-])Stan(?![\w-])/g, '$1' + who)
+        .replace(/(^|[^\w./@-])proplace(?:\.co|\.tech)?(?!\.?[\w/@-])/gi, '$1' + who);
+      if (b.slug && b.slug.toLowerCase() !== who.toLowerCase()) {
+        out = out.replace(new RegExp('(^|[^\\w./@-])' + b.slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\w/@-])', 'gi'), '$1' + who);
+      }
+    }
+    return out;
+  }
+  function cleanText(root, b) {
+    if (!root) return;
+    var walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (n) {
+        var p = n.parentNode;
+        return p && /^(SCRIPT|STYLE|TEMPLATE|NOSCRIPT|TEXTAREA)$/.test(p.nodeName) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    var n, todo = [];
+    while ((n = walk.nextNode())) if (/Stan|proplace/i.test(n.nodeValue) || (b.slug && n.nodeValue.toLowerCase().indexOf(b.slug.toLowerCase()) >= 0)) todo.push(n);
+    todo.forEach(function (x) { var v = wlText(x.nodeValue, b); if (v !== x.nodeValue) x.nodeValue = v; });
+  }
+  // le lecteur (pas l'équipe en train de modifier) : le texte sans Proplace ni Stan, le lien du cockpit retiré
+  function brandReader() {
+    var b = brandOn;
+    if (!b || (state.role && !READER) || (doc.on && !doc.reading)) return;
+    cleanText(area, b);
+    cleanText(document.querySelector('.sidebar'), b);
+    var link = document.querySelector('.sidebar-fund-link');
+    if (link) {
+      link.removeAttribute('href');
+      link.style.cursor = 'default';
+      var cta = link.querySelector('.sidebar-fund-cta');
+      if (cta) cta.style.setProperty('display', 'none', 'important');
+    }
+    var fab = document.getElementById('stan-fabBtn');
+    if (fab && !session()) fab.style.setProperty('display', 'none', 'important');   // l'espace de travail du fonds n'est pas pour son comité
+  }
+  function applyBrand(b) {
+    brandOn = b;
+    var st = document.getElementById('ppme-brand');
+    if (!st) { st = el('style', { id: 'ppme-brand' }); document.head.appendChild(st); }
+    st.textContent = ':root{--pp-green:' + b.accent + ';--pp-green-h:' + b.accent_d + ';--pp-green-tx:' + b.accent_d
+      + ';--pp-green-bg:' + b.soft + ';--pp-green-bd:' + b.line + ';--pp-green-chip:' + b.soft + '}'
+      + '.content-area sup.pp-cite a,.content-area a[href^="#src-"]{color:' + b.accent_d + '!important}'
+      + '.sidebar .meta-block a,.sidebar-logo-wrap a{color:' + b.accent_d + '!important}'
+      + '[contenteditable="true"]:focus{outline-color:' + b.accent_d + '!important}'
+      + '.pp-preview .pp-preview-cta{background:' + b.ink + '!important}';
+    recolorEditorCss();
+    var wrap = document.querySelector('.sidebar-logo-wrap');
+    var meta = wrap && wrap.querySelector('p.meta-text');
+    if (meta) meta.textContent = en ? 'Memo prepared for ' + b.name + ' with AI tools; key facts are sourced in the memo.'
+      : 'Mémo préparé pour ' + b.name + ' à l’aide d’outils d’IA ; les faits clés sont sourcés dans le mémo.';
+    if (b.logo_url) {
+      Array.prototype.forEach.call(document.querySelectorAll('.sidebar-fund-logo, .sidebar-logo-wrap img'), function (img) {
+        if (img.getAttribute('src') !== b.logo_url) img.setAttribute('src', b.logo_url);
+        img.setAttribute('alt', b.name);
+      });
+    }
+    var company = memoName();
+    document.title = (company ? company + ' — ' : '') + (en ? 'Investment memo' : 'Mémo d’investissement') + (b.name ? ' · ' + b.name : '');
+    D.loginHint = en ? 'Sign in to edit the memo' : 'Connectez-vous pour modifier le mémo';
+    D.signOutHint = en ? 'Sign out on this browser' : 'Vous déconnecter sur ce navigateur';
+    var relabel = function () {
+      var fab = document.getElementById('stan-fabBtn');
+      if (!fab) return;
+      fab.textContent = en ? 'Workspace' : 'Parcours';
+      fab.setAttribute('aria-label', en ? 'Open the workspace' : 'Ouvrir le Parcours');
+    };
+    relabel();
+    setTimeout(relabel, 1500);
+    setTimeout(function () { relabel(); brandReader(); }, 5000);
+    brandReader();
+  }
+  function brandFromHead(h) {
+    try {
+      if (h && h.white_label && h.brand && h.brand.accent) {
+        localStorage.setItem(BRAND_KEY, JSON.stringify(h.brand));
+        applyBrand(h.brand);
+      } else if (h && h.ok && h.white_label === false) {
+        localStorage.removeItem(BRAND_KEY);
+      }
+    } catch (_) { if (h && h.brand && h.brand.accent) applyBrand(h.brand); }
+  }
+  function restoreBrand() {
+    try {
+      var b = JSON.parse(localStorage.getItem(BRAND_KEY) || 'null');
+      if (b && b.accent) applyBrand(b);
+    } catch (_) { /* pas de stockage : la marque arrive avec /head */ }
+  }
+  window.addEventListener('proplace:memo:content-ready', function () { brandReader(); });
   function syncLatest() {
     return api('/head').then(function (h) {
       if (!h.ok) return;
+      brandFromHead(h);
       var mine = pageVersion();
       if (READER && mine > h.n) return;
       var previous = state.head;
@@ -4394,6 +4519,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
   function injectCss() {
     if (document.getElementById('ppme-css')) return;
+    setTimeout(recolorEditorCss, 0);         // 17/10 — la barre aux couleurs du fonds en marque blanche
     var css = el('style', { id: 'ppme-css' });
     css.textContent = [
       // la barre d'édition, en tête du mémo (comme celle du dossier comité du cockpit)
@@ -4880,6 +5006,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
   injectEmbedCss();
   injectContentCss();
+  if (!editorial) restoreBrand();          // 17/10 — la marque du fonds dès l'affichage (puis confirmée par /head)
   if (editorial) {
     document.body.classList.add('ppme-editorial');
     startReader();
@@ -4901,7 +5028,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     refreshReader(true).then(checkAccess);
     setInterval(function () { refreshReader(false); }, 30000);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshReader(false); });
-  } else syncLatest().then(checkAccess).then(function (member) { if (!member) startGuest(); });
+  } else syncLatest().then(checkAccess).then(function (member) { if (!member) { startGuest(); brandReader(); } });
   // 15/10 — dans l'onglet Mémo du cockpit, « Reprendre le mémo → » du bandeau d'aperçu se
   // confirme dans le cockpit même, sur la ligne de la société, au lieu d'ouvrir un second onglet.
   document.addEventListener('click', function (e) {
