@@ -3901,7 +3901,8 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     var head = state.head || {};
     var kept = sections().filter(function (sec) { return !printOff(sec.id); });
     var cover = el('section', { class: 'ppme-print-cover' });
-    cover.appendChild(el('span', { class: 'ppme-print-k' }, 'PROPLACE · ' + (editorial ? (en ? 'EDITORIAL' : 'ÉDITO') : P.kicker) + (state.fund ? ' · ' + state.fund : '')));
+    // 16/10 — marque blanche (fonds Entreprise) : l'impression de secours sans Proplace
+    cover.appendChild(el('span', { class: 'ppme-print-k' }, (head.white_label && !editorial ? '' : 'PROPLACE · ') + (editorial ? (en ? 'EDITORIAL' : 'ÉDITO') : P.kicker) + (state.fund ? ' · ' + state.fund : '')));
     cover.appendChild(el('h1', {}, name));
     if (head.n) cover.appendChild(el('p', {}, head.kind === 'generated' ? P.published(when(head.at)) : P.version(head.n, shortWho(head.by), when(head.at))));
     if (kept.length) {
