@@ -1453,7 +1453,8 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
    * le texte de ce mémo n'est jamais repris. Le choix se fait dans « Analyser » (cockpit) ; le
    * modèle par défaut (Mon compte) sert aux mémos que Stan lance seul. */
   var TP = en ? {
-    title: 'Memo templates', saveBtn: '⭐ Save this outline as a template', applyBtn: function (n) { return '🧩 Apply a template (' + n + ')'; },
+    title: 'Memo templates', trial: 'Included during your trial · Enterprise plan option',
+    preview: 'Included during your preview · Enterprise plan option', saveBtn: '⭐ Save this outline as a template', applyBtn: function (n) { return '🧩 Apply a template (' + n + ')'; },
     locked: 'Turn this outline into your fund’s template, reused for every new memo — an Enterprise plan option.',
     saveTitle: 'Save this outline as a template',
     saveIntro: 'For every new company, Stan writes the Proplace memo, then organises it like this outline and writes your own sections following their brief. The text of this memo is never reused.',
@@ -1489,7 +1490,8 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     background: 'The template keeps being applied: the memo will refresh when it is ready.',
     failed: 'Failed: ', retry: 'Retry'
   } : {
-    title: 'Modèles de mémo', saveBtn: '⭐ Enregistrer ce plan comme modèle', applyBtn: function (n) { return '🧩 Appliquer un modèle (' + n + ')'; },
+    title: 'Modèles de mémo', trial: 'Inclus pendant votre essai · option de l’offre Entreprise',
+    preview: 'Inclus pendant votre aperçu · option de l’offre Entreprise', saveBtn: '⭐ Enregistrer ce plan comme modèle', applyBtn: function (n) { return '🧩 Appliquer un modèle (' + n + ')'; },
     locked: 'Faites de ce plan le modèle de votre fonds, réutilisé pour chaque nouveau mémo — une option de l’offre Entreprise.',
     saveTitle: 'Enregistrer ce plan comme modèle',
     saveIntro: 'Pour chaque nouvelle société, Stan rédige le mémo Proplace, puis l’organise selon ce plan et rédige vos propres sections selon leur consigne. Le texte de ce mémo n’est jamais repris.',
@@ -1549,6 +1551,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       box.appendChild(el('span', { class: 'ppme-tpl-lock' }, '🔒 ' + TP.locked));
       return box;
     }
+    if (info.reason === 'trial' || info.reason === 'preview') box.appendChild(el('span', { class: 'ppme-tpl-trial' }, '✓ ' + TP[info.reason]));
     box.appendChild(el('button', { type: 'button', class: 'ppme-tpl-btn main', 'data-tpl': 'save' }, TP.saveBtn));
     if ((info.templates || []).length) {
       box.appendChild(el('button', { type: 'button', class: 'ppme-tpl-btn', 'data-tpl': 'apply' }, TP.applyBtn(info.templates.length)));
@@ -4595,6 +4598,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-tpl-btn.main{border-color:#12A150;color:#0B6B35;background:#F3FBF6}',
       '.ppme-tpl-btn.main:hover{background:#E7F6EE}',
       '.ppme-tpl-lock{font:500 11.5px/1.4 system-ui,-apple-system,sans-serif;color:#5B6B82}',
+      '.ppme-tpl-trial{font:700 11px/1.35 system-ui,-apple-system,sans-serif;color:#0B6B35;background:#E7F6EE;border-radius:8px;padding:4px 8px}',
       '.ppme-dlg.ppme-tpl-dlg.wide{width:min(760px,100%)}',
       '.ppme-tpl-form{display:flex;flex-direction:column;gap:12px}',
       '.ppme-tpl-field{display:flex;flex-direction:column;gap:5px}',
