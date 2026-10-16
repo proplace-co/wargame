@@ -403,6 +403,22 @@
     if (meta) meta.textContent = en ? 'Memo prepared for ' + b.name + ' with AI tools; key facts are sourced in the memo.'
       : 'Mémo préparé pour ' + b.name + ' à l’aide d’outils d’IA ; les faits clés sont sourcés dans le mémo.';
     if (b.logo_url) {
+      // un mémo généré avant que le fonds ait un logo n'a pas d'image : on la pose (en haut, et au pied de la barre)
+      var fundLink = document.querySelector('.sidebar-fund-link');
+      if (fundLink && !fundLink.querySelector('img')) {
+        fundLink.insertBefore(el('img', { class: 'sidebar-fund-logo', src: b.logo_url, alt: b.name }), fundLink.firstChild);
+      } else if (!fundLink && !document.querySelector('.sidebar-fund-logo')) {
+        var sbar = document.querySelector('.sidebar');
+        if (sbar) {
+          var top = el('div', { class: 'sidebar-fund-link ppme-brand-logo' });
+          top.appendChild(el('img', { class: 'sidebar-fund-logo', src: b.logo_url, alt: b.name }));
+          sbar.insertBefore(top, sbar.firstChild);
+        }
+      }
+      if (wrap && !wrap.querySelector('img')) {
+        wrap.insertBefore(el('img', { src: b.logo_url, alt: b.name,
+          style: 'max-width:110px;height:auto;margin:0 0 10px 0;display:block;opacity:.85' }), wrap.firstChild);
+      }
       Array.prototype.forEach.call(document.querySelectorAll('.sidebar-fund-logo, .sidebar-logo-wrap img'), function (img) {
         if (img.getAttribute('src') !== b.logo_url) img.setAttribute('src', b.logo_url);
         img.setAttribute('alt', b.name);
