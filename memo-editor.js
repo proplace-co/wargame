@@ -455,7 +455,7 @@
       if (b && b.accent) applyBrand(b);
     } catch (_) { /* pas de stockage : la marque arrive avec /head */ }
   }
-  window.addEventListener('proplace:memo:content-ready', function () { brandReader(); });
+  window.addEventListener('proplace:memo:content-ready', function () { brandReader(); mountGesture(); });
   function syncLatest() {
     return api('/head').then(function (h) {
       if (!h.ok) return;
@@ -978,7 +978,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   // ce que le serveur reçoit : le contenu de la section, chaque îlot réduit à son repère
   function serialize(sec) {
     var c = sec.cloneNode(true);
-    Array.prototype.forEach.call(c.querySelectorAll('.ppme-human-review'), function (n) { n.remove(); });
+    Array.prototype.forEach.call(c.querySelectorAll('.ppme-human-review, .ppme-gesture'), function (n) { n.remove(); });
     Array.prototype.forEach.call(c.querySelectorAll('[data-pp-island]'), function (n) {
       if (!n.parentNode) return;
       var mark = document.createElement('span');
@@ -4518,6 +4518,40 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     } else imagesReady(area, 8000).then(function () { window.print(); });
   }
 
+  // 18/10 (Antoine) — « VOTRE GESTE » : sous la carte du verdict, pour le CEO du fonds seulement (titulaire
+  // ou membre connecté ; jamais en lecture publique, jamais pour un opérateur Proplace), le geste qui
+  // étalonne Stan. Rien ne s'écrit d'ici et aucune clé n'est dans la page : le lien mène au cockpit, où
+  // le geste s'enregistre. Bloc d'interface (ppme-ui) : jamais sauvegardé, jamais imprimé.
+  function mountGesture() {
+    var old = document.querySelector('.ppme-gesture');
+    if (old) old.remove();
+    if (READER || GUEST || !(state.role === 'owner' || state.role === 'member')) return;
+    var card = document.querySelector('[data-ct-card]');
+    var vb = document.querySelector('[data-ct-verdict]');
+    var m = vb && /\b(CALL|CONSIDER|MONITOR|PASS)\b/.exec(vb.textContent || '');
+    if (!card || !m) return;
+    var G = en ? {
+      title: 'Your move', call: 'YES or NO in your cockpit, then one line on why.',
+      other: '👍 if you agree with this verdict, 👎 if not, in your cockpit — and one line if Stan got it wrong.',
+      why: 'This is how Stan is calibrated: he learns to judge like you, and it is decisive. After a YES, keep the deal stage up to date (meeting, LOI, closing).',
+      open: 'Open in my cockpit →'
+    } : {
+      title: 'Votre geste', call: 'OUI ou NON dans votre cockpit, puis une ligne pour dire pourquoi.',
+      other: '👍 si vous êtes d’accord avec ce verdict, 👎 sinon, dans votre cockpit — et une ligne si Stan s’est trompé.',
+      why: 'C’est l’étalonnage de Stan : il apprend à juger comme vous, et c’est décisif. Après un OUI, tenez l’étape du deal à jour (rendez-vous, LOI, closing).',
+      open: 'Ouvrir dans mon cockpit →'
+    };
+    var slug = String(state.fund || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
+    var box = el('aside', { class: 'ppme-ui ppme-gesture', contenteditable: 'false', 'aria-label': G.title });
+    box.style.cssText = 'margin:16px 0;padding:16px 18px;border:1px solid #BFE6CF;border-left:3px solid #12A150;border-radius:10px;background:#F3FBF6;color:#16233A;font:14px/1.55 system-ui,sans-serif';
+    box.appendChild(el('strong', {}, G.title));
+    box.appendChild(el('p', { style: 'margin:6px 0 0' }, m[1] === 'CALL' ? G.call : G.other));
+    box.appendChild(el('p', { style: 'margin:6px 0 0;color:#4B5E78' }, G.why));
+    if (slug) box.appendChild(el('a', { href: 'https://proplace.co/cibles/' + slug + '/', target: '_blank', rel: 'noopener',
+      style: 'display:inline-block;margin-top:8px;color:#0E8A44;font-weight:700;text-decoration:underline' }, G.open));
+    card.insertAdjacentElement('afterend', box);
+  }
+
   function checkAccess() {
     if (state.role || !session()) { syncAccount(); return Promise.resolve(!!state.role); }
     return api('/access').then(function (a) {
@@ -4530,6 +4564,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       injectCss();
       if (READER && !GUEST) startReader();
       else { stopGuest(); startEditor(); whenStan(mountStan); }
+      mountGesture();
       return true;
     }).catch(function () { return false; }).then(function (member) { syncAccount(); return member; });
   }
