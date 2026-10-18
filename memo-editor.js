@@ -4533,12 +4533,12 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     var G = en ? {
       title: 'Your move', call: 'YES or NO in your cockpit, then one line on why.',
       other: '👍 if you agree with this verdict, 👎 if not, in your cockpit — and one line if Stan got it wrong.',
-      why: 'This is how Stan is calibrated: he learns to judge like you, and it is decisive. After a YES, keep the deal stage up to date (meeting, LOI, closing).',
+      why: 'Every Monday, Stan rereads your decisions and corrects his criteria: that is how he learns to judge like you. After a YES, keep the deal stage up to date (meeting, LOI, closing).',
       open: 'Open in my cockpit →'
     } : {
       title: 'Votre geste', call: 'OUI ou NON dans votre cockpit, puis une ligne pour dire pourquoi.',
       other: '👍 si vous êtes d’accord avec ce verdict, 👎 sinon, dans votre cockpit — et une ligne si Stan s’est trompé.',
-      why: 'C’est l’étalonnage de Stan : il apprend à juger comme vous, et c’est décisif. Après un OUI, tenez l’étape du deal à jour (rendez-vous, LOI, closing).',
+      why: 'Chaque lundi, Stan relit vos décisions et corrige ses critères : c’est ainsi qu’il apprend à juger comme vous. Après un OUI, tenez l’étape du deal à jour (rendez-vous, LOI, closing).',
       open: 'Ouvrir dans mon cockpit →'
     };
     var slug = String(state.fund || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
