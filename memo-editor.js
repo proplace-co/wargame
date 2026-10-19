@@ -668,6 +668,8 @@
   }
   function clearReading() {
     document.body.classList.remove('ppme-read');
+    Array.prototype.forEach.call(area.querySelectorAll('.ppme-r-vchead, .ppme-r-vcdeshead'), vcPlain);
+    vcStages = [];
     Array.prototype.forEach.call(area.querySelectorAll('[class*="ppme-r-"]'), function (n) {
       Array.prototype.slice.call(n.classList).forEach(function (c) { if (c.indexOf('ppme-r-') === 0) n.classList.remove(c); });
       if (!n.classList.length) n.removeAttribute('class');
@@ -686,9 +688,120 @@
       if (!editorial) sec.style.setProperty('--ppme-kicker', JSON.stringify((num < 10 ? '0' : '') + num + '  ·  ' + label.toUpperCase()));
       composeFlow(sec);
       Array.prototype.forEach.call(sec.querySelectorAll(FLOWS), composeFlow);
+      if (sec.id.indexOf('value-chain') === 0) composeValueChain(sec);
     });
     document.body.classList.add('ppme-read');
   }
+  /* ── 19/10 — la chaîne de valeur (Antoine) : « beaucoup trop de scroll pour dérouler toutes ces
+   * étapes ; mettre en haut le Top 3 des positions stratégiques, puis le détail des étapes en dessous,
+   * chacune s'ouvrant et se fermant » ; et des intertitres (Activités clés, Synthèse de l'étape…)
+   * lisibles. Les intertitres se lisent partout ; le reste en lecture seulement : le Top 3 passe devant
+   * par l'ordre CSS (aucun nœud déplacé), chaque « Étape N — … » se replie sur son titre et son score,
+   * un clic l'ouvre. À l'édition, la section reste dans l'ordre du document, tout ouvert. */
+  var VC_TOP = /^top\s*3\b/i, VC_DESC = /^(description des [ée]tapes|value chain stage)/i;
+  var VC_STAGE = /^(?:[ée]tape|stage|step)\s*\d+\s*[—–:-]/i;
+  var vcOpen = {}, vcStages = [];
+  function vcPlain(n) { ['role', 'tabindex', 'aria-expanded'].forEach(function (a) { n.removeAttribute(a); }); }
+  function vcButton(n, open) {
+    n.setAttribute('role', 'button');
+    n.setAttribute('tabindex', '0');
+    n.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  function paintStage(st) {
+    var open = !!vcOpen[st.key];
+    st.head.classList.add('ppme-r-vchead');
+    st.head.classList.toggle('ppme-r-vcopen', open);
+    vcButton(st.head, open);
+    st.body.forEach(function (n) {
+      n.classList.add('ppme-r-vcbody');
+      n.classList.toggle('ppme-r-vcshut', !open && n !== st.score);
+    });
+    if (st.score) st.score.classList.add('ppme-r-vcscore');
+  }
+  function paintDescHead() {
+    var h = area.querySelector('.ppme-r-vcdeshead');
+    if (!h) return;
+    var all = vcStages.length && vcStages.every(function (st) { return vcOpen[st.key]; });
+    h.classList.toggle('ppme-r-vcall', !!all);
+    vcButton(h, all);
+  }
+  // « Étape N — … » puis tout ce qui suit jusqu'à l'étape suivante, un filet ou un titre de partie
+  function collectStages(nodes, out) {
+    var cur = null;
+    nodes.forEach(function (n) {
+      if (n.tagName === 'H4' && !n.querySelector('.vc-rank') && VC_STAGE.test(rText(n))) {
+        cur = { head: n, body: [], score: null, key: rText(n) };
+        out.push(cur);
+      } else if (/^(H2|H3|HR)$/.test(n.tagName)) {
+        cur = null;
+      } else if (cur) {
+        cur.body.push(n);
+        if (!cur.score && (n.classList.contains('score-row') || /^(score strat[ée]gique|strategic score)/i.test(rText(n)))) cur.score = n;
+      } else if (n.tagName === 'DIV' && n.querySelector(':scope > h4')) {
+        collectStages(Array.prototype.slice.call(n.children), out);   // le mémo éclair : les étapes dans un bloc
+      }
+    });
+  }
+  function composeValueChain(sec) {
+    // les intertitres en chasse fixe 11 px (« Activités clés », « Défensibilité (7.5/10) »…) et les
+    // pastilles des critères ; pas les cartes des acteurs, qui ont leur propre mise en page
+    var own = function (n) { return !n.closest('[class*="battlefield"], details'); };
+    Array.prototype.forEach.call(sec.querySelectorAll('div.vc-label, div[style*="DM Mono"], div[style*="monospace"]'), function (n) {
+      if (own(n) && !n.classList.contains('score-row') && n.children.length <= 2 && rText(n).length <= 80) n.classList.add('ppme-r-vcsub');
+    });
+    Array.prototype.forEach.call(sec.querySelectorAll('div'), function (n) {
+      var kids = n.children;
+      if (kids.length && own(n) && Array.prototype.every.call(kids, function (k) { return k.tagName === 'SPAN' && /border/.test(k.getAttribute('style') || ''); })) {
+        n.classList.add('ppme-r-vcchips');
+      }
+    });
+    if (!doc.reading) return;
+    var desc = Array.prototype.filter.call(sec.querySelectorAll('h3'), function (h) { return VC_DESC.test(rText(h)); })[0];
+    if (!desc) return;
+    var flow = desc.parentNode;
+    var kids = Array.prototype.filter.call(flow.children, function (c) { return !c.classList.contains('ppme-ui'); });
+    var top = kids.filter(function (h) { return h.tagName === 'H3' && VC_TOP.test(rText(h)); })[0];
+    // un texte nu dans le conteneur serait une boîte anonyme que l'ordre CSS ne place pas : on ne réordonne pas
+    var bare = Array.prototype.some.call(flow.childNodes, function (c) { return c.nodeType === 3 && c.textContent.trim(); });
+    var reorder = top && !bare, group = '', descKids = [];
+    if (reorder) flow.classList.add('ppme-r-vcflow');
+    kids.forEach(function (n) {
+      if (n.tagName === 'H3') group = n === top ? 'top' : n === desc ? 'desc' : 'rest';
+      if (group === 'desc') descKids.push(n);
+      if (reorder) n.classList.add(group === 'top' ? 'ppme-r-vctop' : group === 'desc' ? 'ppme-r-vcdesc' : group ? 'ppme-r-vcrest' : 'ppme-r-vcpre');
+    });
+    var stages = [];
+    collectStages(descKids, stages);
+    if (!stages.length) return;
+    vcStages = vcStages.concat(stages);
+    stages.forEach(paintStage);
+    desc.classList.add('ppme-r-vcdeshead');
+    paintDescHead();
+  }
+  function toggleStage(head) {
+    if (head.classList.contains('ppme-r-vcdeshead')) {
+      var all = vcStages.every(function (st) { return vcOpen[st.key]; });
+      vcStages.forEach(function (st) { vcOpen[st.key] = !all; paintStage(st); });
+    } else {
+      var st = vcStages.filter(function (s) { return s.head === head; })[0];
+      if (!st) return;
+      vcOpen[st.key] = !vcOpen[st.key];
+      paintStage(st);
+    }
+    paintDescHead();
+  }
+  area.addEventListener('click', function (e) {
+    var head = doc.reading && e.target.closest && e.target.closest('.ppme-r-vchead, .ppme-r-vcdeshead');
+    if (!head || e.target.closest('a')) return;
+    toggleStage(head);
+  });
+  area.addEventListener('keydown', function (e) {
+    if (!doc.reading || (e.key !== 'Enter' && e.key !== ' ')) return;
+    var head = e.target.closest && e.target.closest('.ppme-r-vchead, .ppme-r-vcdeshead');
+    if (!head || head !== e.target) return;
+    e.preventDefault();
+    toggleStage(head);
+  });
   // chaque changement du contenu (frappe, Entrée, bloc déplacé, annuler, version rechargée…) recompose
   // la page : un paragraphe né d'un Entrée hérite des classes de son voisin, la passe suivante les remet
   // d'aplomb. Seuls les classes et le surtitre bougent (des attributs, que l'observateur ne suit pas).
@@ -989,6 +1102,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       d.removeAttribute('open');
       d.removeAttribute('data-ppme-closed');
     });
+    Array.prototype.forEach.call(c.querySelectorAll('.ppme-r-vchead, .ppme-r-vcdeshead'), vcPlain);
     Array.prototype.forEach.call(c.querySelectorAll('*'), function (n) {
       n.removeAttribute('contenteditable');
       n.removeAttribute('spellcheck');
@@ -4678,6 +4792,39 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-read .content-area p.ppme-r-eval.ppme-r-c.ppme-r-ko{background:#FDF3F3}',
       '.ppme-read .content-area p.ppme-r-eval.ppme-r-c.ppme-r-warn{background:#FFF8EA}',
       '.ppme-read .content-area h4.ppme-r-q{font-size:15px}',
+      // 19/10 — la chaîne de valeur : des intertitres lisibles ; en lecture, le Top 3 en tête et les
+      // étapes repliées sur leur titre et leur score
+      '.ppme-read .content-area .ppme-r-vcsub{font-family:inherit!important;font-size:14.5px!important;font-weight:700!important;line-height:1.35;color:#0F1D33!important;letter-spacing:0;text-transform:none;margin:22px 0 8px!important}',
+      '.ppme-read .content-area .ppme-r-vcchips>span{font-size:12.5px!important;padding:3px 9px!important;line-height:1.45}',
+      '.ppme-reading .content-area .ppme-r-vcflow{display:flex;flex-direction:column}',
+      '.ppme-reading .content-area .ppme-r-vcflow>.ppme-r-vcpre{order:0}',
+      '.ppme-reading .content-area .ppme-r-vcflow>.ppme-r-vctop{order:1}',
+      '.ppme-reading .content-area .ppme-r-vcflow>.ppme-r-vcdesc{order:2}',
+      '.ppme-reading .content-area .ppme-r-vcflow>.ppme-r-vcrest{order:3}',
+      '.ppme-reading .content-area .ppme-r-vcflow>hr{margin:10px 0 0!important}',
+      '.ppme-reading .content-area h3.ppme-r-vcdeshead{cursor:pointer}',
+      '.ppme-reading .content-area h4.ppme-r-vchead{position:relative;cursor:pointer;margin:0!important;padding:16px 40px 4px 0!important;border-top:1px solid #E3E8F0!important;font-size:16px;line-height:1.35}',
+      '.ppme-reading .content-area h4.ppme-r-vchead::after{content:"";position:absolute;right:12px;top:21px;width:8px;height:8px;border:solid #0E7F3F;border-width:0 2px 2px 0;transform:rotate(45deg);transition:transform .15s}',
+      '.ppme-reading .content-area h4.ppme-r-vchead.ppme-r-vcopen{padding-bottom:12px!important}',
+      '.ppme-reading .content-area h4.ppme-r-vchead.ppme-r-vcopen::after{top:25px;transform:rotate(-135deg)}',
+      '.ppme-reading .content-area h4.ppme-r-vchead:hover{color:#0E7F3F}',
+      '.ppme-reading .content-area .ppme-r-vchead:focus-visible,.ppme-reading .content-area .ppme-r-vcdeshead:focus-visible{outline:2px solid #12A150;outline-offset:3px}',
+      '.ppme-reading .content-area .ppme-r-vcscore{margin-top:8px!important;margin-bottom:14px!important}',
+      '@media screen{.ppme-reading .content-area .ppme-r-vcshut{display:none!important}'
+        + '.ppme-reading .content-area h3.ppme-r-vcdeshead::after{content:' + JSON.stringify(en
+          ? 'Click a stage to expand it, or this heading to expand them all.'
+          : 'Cliquez sur une étape pour la déplier, ou sur ce titre pour toutes les déplier.')
+        + ';display:block;margin-top:5px;font-size:13px;font-weight:500;letter-spacing:0;color:#5B6B82}'
+        + '.ppme-reading .content-area h3.ppme-r-vcdeshead.ppme-r-vcall::after{content:' + JSON.stringify(en
+          ? 'Click this heading to collapse every stage.' : 'Cliquez sur ce titre pour toutes les replier.') + '}}',
+      // 19/10 — les sources numérotées comme les renvois [n] du texte (_base.css retire les numéros
+      // de #sources) ; la source visée par un renvoi surlignée, sous la barre du mémo et non derrière
+      '.content-area #sources ol{counter-reset:ppme-src}',
+      '.content-area #sources ol:has(>li[id^="src-"]){margin-left:0!important;padding-left:0!important}',
+      '.content-area #sources ol>li[id^="src-"]{counter-increment:ppme-src;position:relative;padding-left:3.1em!important;scroll-margin-top:96px!important}',
+      '.content-area #sources ol>li[id^="src-"]::before{content:"[" counter(ppme-src) "]"!important;display:inline!important;position:absolute;left:0;top:0;font-weight:650;color:#0E7F3F;font-variant-numeric:tabular-nums}',
+      '.content-area #sources li[id^="src-"]:target{background:#FFF4CC;border-radius:6px;box-shadow:0 0 0 5px #FFF4CC}',
+      '@media (max-width:700px){.content-area #sources ol>li[id^="src-"]{scroll-margin-top:170px!important}}',
       '@media print{.ppme-read .section-container>h2.section-title::before,.ppme-read .section-container>h2.section-title::after{display:none}}',
       '.ppme-account{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:2px 0 14px;font:500 12px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;color:#5B6B82}',
       '.ppme-acc-who{color:#0E7F3F;font-weight:600;max-width:100%;overflow-wrap:anywhere;line-height:1.35}',
