@@ -422,7 +422,7 @@
     shell.innerHTML = '<div class="ppj-resize" role="separator" tabindex="0" aria-label="Largeur du panneau" aria-orientation="vertical"></div>' +
       '<header class="ppj-header"><div><span class="ppj-eyebrow">STAN · POSTE DE TRAVAIL</span><h2>' + esc(context.name || context.company_name || 'Votre dossier') + '</h2></div>' +
       '<div>' + button('⤢', '', 'full') + button('×', '', 'close') + '</div></header>' +
-      (demo ? '<div class="ppj-demo">Démonstration · dossier fictif · aucun envoi ni crédit consommé</div>' : '') +
+      (demo ? '<div class="ppj-demo">Démonstration · pièces d’exemple fictives · aucun envoi ni crédit consommé</div>' : '') +
       '<nav class="ppj-tabs" aria-label="Vues du dossier"><button id="stan-tab-roadmap" type="button" data-do="roadmap">Parcours</button><button id="stan-tab-hist" type="button" data-do="history">Historique</button></nav>' +
       '<p class="ppj-status" role="status" aria-live="polite"></p><div class="ppj-connection-progress ppj-loading-bar" role="progressbar" aria-label="Ouverture du dossier privé" hidden></div><section class="ppj-notice ppj-reconnect" hidden aria-label="Reprendre l’accès au dossier">' +
       '<strong>Votre accès privé doit être renouvelé.</strong><p>Vos résultats et votre saisie restent affichés pendant la connexion.</p>' +
