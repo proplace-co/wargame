@@ -175,7 +175,7 @@
     } else box.appendChild(el('p', {}, en ? 'The human opinion has not been validated yet.' : 'L’avis humain n’a pas encore été validé.'));
     var editable = humanReview.can_edit && !humanReviewReadOnly && !readOnly;
     if (editable) {
-      var open = el('button', { type: 'button' }, humanReview.note ? (en ? 'Edit the human opinion' : 'Modifier l’avis humain') : (en ? 'Review and validate the suggested opinion' : 'Relire et valider l’avis proposé'));
+      var open = el('button', { type: 'button', class: 'ppme-hr-open' }, humanReview.note ? (en ? 'Edit the human opinion' : 'Modifier l’avis humain') : (en ? 'Review and validate the suggested opinion' : 'Relire et valider l’avis proposé'));
       open.onclick = function () { humanReviewEditing = !humanReviewEditing; paintHumanReview(); };
       box.appendChild(open);
       if (humanReviewEditing) {
@@ -192,8 +192,7 @@
         }
         box.appendChild(el('p', {}, en ? 'Your validation shares this opinion in the cockpit and daily / weekly briefs. Stan’s verdict is preserved.' : 'Votre validation partage cet avis dans le cockpit et les briefs quotidiens / hebdomadaires. Le verdict de Stan est conservé.'));
         var status = el('p', { role: 'status' });
-        var save = el('button', { type: 'button' }, en ? 'Validate the opinion for the client' : 'Valider l’avis pour le client');
-        save.style.cssText = 'background:#0e8a44;color:white;border:0;padding:9px 14px;border-radius:6px;cursor:pointer';
+        var save = el('button', { type: 'button', class: 'ppme-hr-go' }, en ? 'Validate the opinion for the client' : 'Valider l’avis pour le client');
         save.onclick = function () {
           if (!input.value.trim() || humanReviewSaving) return;
           humanReviewSaving = true; save.disabled = true;
@@ -697,7 +696,9 @@
    * chacune s'ouvrant et se fermant » ; et des intertitres (Activités clés, Synthèse de l'étape…)
    * lisibles. Les intertitres se lisent partout ; le reste en lecture seulement : le Top 3 passe devant
    * par l'ordre CSS (aucun nœud déplacé), chaque « Étape N — … » se replie sur son titre et son score,
-   * un clic l'ouvre. À l'édition, la section reste dans l'ordre du document, tout ouvert. */
+   * un clic l'ouvre. À l'édition, la section reste dans l'ordre du document ; depuis le 22/10
+   * (Alexandre : « réduire / agrandir le détail de chaque étape ne marche plus ») les étapes s'y
+   * replient aussi, par le chevron, le titre restant modifiable. */
   var VC_TOP = /^top\s*3\b/i, VC_DESC = /^(description des [ée]tapes|value chain stage)/i;
   var VC_STAGE = /^(?:[ée]tape|stage|step)\s*\d+\s*[—–:-]/i;
   var vcOpen = {}, vcStages = [];
@@ -755,7 +756,6 @@
         n.classList.add('ppme-r-vcchips');
       }
     });
-    if (!doc.reading) return;
     var desc = Array.prototype.filter.call(sec.querySelectorAll('h3'), function (h) { return VC_DESC.test(rText(h)); })[0];
     if (!desc) return;
     var flow = desc.parentNode;
@@ -763,7 +763,7 @@
     var top = kids.filter(function (h) { return h.tagName === 'H3' && VC_TOP.test(rText(h)); })[0];
     // un texte nu dans le conteneur serait une boîte anonyme que l'ordre CSS ne place pas : on ne réordonne pas
     var bare = Array.prototype.some.call(flow.childNodes, function (c) { return c.nodeType === 3 && c.textContent.trim(); });
-    var reorder = top && !bare, group = '', descKids = [];
+    var reorder = doc.reading && top && !bare, group = '', descKids = [];   // à l'édition, l'ordre du document
     if (reorder) flow.classList.add('ppme-r-vcflow');
     kids.forEach(function (n) {
       if (n.tagName === 'H3') group = n === top ? 'top' : n === desc ? 'desc' : 'rest';
@@ -791,8 +791,12 @@
     paintDescHead();
   }
   area.addEventListener('click', function (e) {
-    var head = doc.reading && e.target.closest && e.target.closest('.ppme-r-vchead, .ppme-r-vcdeshead');
+    var head = e.target.closest && e.target.closest('.ppme-r-vchead, .ppme-r-vcdeshead');
     if (!head || e.target.closest('a')) return;
+    // à l'édition, le titre reste modifiable : seul le chevron (le bord droit) replie l'étape
+    if (!doc.reading && (!head.classList.contains('ppme-r-vchead')
+        || e.clientX < head.getBoundingClientRect().right - 44)) return;
+    if (!doc.reading) e.preventDefault();
     toggleStage(head);
   });
   area.addEventListener('keydown', function (e) {
@@ -1082,8 +1086,11 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       n.setAttribute('contenteditable', 'false');
       if (!n.matches(QUIET)) n.setAttribute('title', D.island);
     });
+    // 22/10 (Alexandre) — les cartes repliables (acteurs de la chaîne de valeur, entreprises par
+    // quadrant, scénarios, quantification des synergies) restent repliées à l'édition aussi : un clic
+    // sur leur titre les ouvre (Chrome les déplie dans un contenteditable). Elles se ré-enregistrent
+    // repliées (serialize).
     Array.prototype.forEach.call(sec.querySelectorAll('details:not([open])'), function (d) {
-      d.open = true;
       d.setAttribute('data-ppme-closed', '1');
     });
     prepareMedia(sec);
@@ -2409,7 +2416,6 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     composeReading();                      // la même mise en page à l'édition qu'à la lecture
     sections().forEach(function (sec) { sec.setAttribute('contenteditable', doc.reading ? 'false' : 'true'); });
     if (byId(CONTACT)) byId(CONTACT).setAttribute('contenteditable', doc.reading ? 'false' : 'true');
-    Array.prototype.forEach.call(area.querySelectorAll('details[data-ppme-closed]'), function (d) { d.open = !doc.reading; });
     hideTools();
     closeMenu();
     updateBar();
@@ -4714,7 +4720,13 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-hr-dialog header{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:17px}',
       '.ppme-hr-dialog .ppme-hr-x{padding:0 4px;border:0;background:none;color:#243449;font-size:25px;line-height:1;cursor:pointer}',
       '.ppme-hr-help{margin:6px 0 10px;color:#667085;font-size:12px}',
-      '.ppme-hr-body button{margin:4px 8px 4px 0;padding:7px 10px;border:1px solid #d6bd83;border-radius:6px;background:#fff;color:#6a4916;font:600 12px/1.4 system-ui,sans-serif;cursor:pointer}',
+      // 22/10 (Alexandre) — « Relire et valider l'avis proposé » était un bouton brut dans l'encadré
+      // sous la conviction : les mêmes boutons que la barre, dans l'encadré comme dans le popup
+      '.ppme-hr-body button,.ppme-human-review button{display:inline-flex;align-items:center;margin:10px 8px 4px 0;padding:7px 12px;border:1px solid #E8C468;border-radius:8px;background:#FFF4CC;color:#6A4916;font:700 13px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}',
+      '.ppme-hr-body button:hover,.ppme-human-review button:hover{background:#FDE9A8;border-color:#C99A2E}',
+      '.ppme-hr-body button.ppme-hr-go,.ppme-human-review button.ppme-hr-go{background:#12A150;border-color:#12A150;color:#fff}',
+      '.ppme-hr-body button.ppme-hr-go:hover,.ppme-human-review button.ppme-hr-go:hover{background:#0E8A44;border-color:#0E8A44}',
+      '.ppme-hr-body button:disabled,.ppme-human-review button:disabled{opacity:.6;cursor:default}',
       '.ppme-dbar .ppme-pdf:hover{background:#0E8A44;border-color:#0E8A44}',
       '.ppme-dbar .ppme-pdf[aria-busy="true"]{opacity:.8;cursor:progress}',
       '.ppme-dbar .ppme-deck{background:#fff;color:#0E7F3F;border-color:#12A150;font-weight:700;padding:7px 11px;margin-left:4px}',
@@ -4803,14 +4815,18 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-reading .content-area .ppme-r-vcflow>.ppme-r-vcrest{order:3}',
       '.ppme-reading .content-area .ppme-r-vcflow>hr{margin:10px 0 0!important}',
       '.ppme-reading .content-area h3.ppme-r-vcdeshead{cursor:pointer}',
-      '.ppme-reading .content-area h4.ppme-r-vchead{position:relative;cursor:pointer;margin:0!important;padding:16px 40px 4px 0!important;border-top:1px solid #E3E8F0!important;font-size:16px;line-height:1.35}',
-      '.ppme-reading .content-area h4.ppme-r-vchead::after{content:"";position:absolute;right:12px;top:21px;width:8px;height:8px;border:solid #0E7F3F;border-width:0 2px 2px 0;transform:rotate(45deg);transition:transform .15s}',
-      '.ppme-reading .content-area h4.ppme-r-vchead.ppme-r-vcopen{padding-bottom:12px!important}',
-      '.ppme-reading .content-area h4.ppme-r-vchead.ppme-r-vcopen::after{top:25px;transform:rotate(-135deg)}',
+      '.ppme-read .content-area h4.ppme-r-vchead{position:relative;cursor:pointer;margin:0!important;padding:16px 40px 4px 0!important;border-top:1px solid #E3E8F0!important;font-size:16px;line-height:1.35}',
+      '.ppme-read .content-area h4.ppme-r-vchead::after{content:"";position:absolute;right:12px;top:21px;width:8px;height:8px;border:solid #0E7F3F;border-width:0 2px 2px 0;transform:rotate(45deg);transition:transform .15s}',
+      '.ppme-read .content-area h4.ppme-r-vchead.ppme-r-vcopen{padding-bottom:12px!important}',
+      '.ppme-read .content-area h4.ppme-r-vchead.ppme-r-vcopen::after{top:25px;transform:rotate(-135deg)}',
       '.ppme-reading .content-area h4.ppme-r-vchead:hover{color:#0E7F3F}',
+      // à l'édition le titre s'écrit (curseur texte) ; le chevron, lui, replie
+      '.ppme-editing:not(.ppme-reading) .content-area h4.ppme-r-vchead{cursor:text}',
+      '.ppme-editing:not(.ppme-reading) .content-area h4.ppme-r-vchead::after{cursor:pointer}',
+      '.ppme-editing .content-area .section-container[contenteditable="true"] details>summary{cursor:pointer}',
       '.ppme-reading .content-area .ppme-r-vchead:focus-visible,.ppme-reading .content-area .ppme-r-vcdeshead:focus-visible{outline:2px solid #12A150;outline-offset:3px}',
-      '.ppme-reading .content-area .ppme-r-vcscore{margin-top:8px!important;margin-bottom:14px!important}',
-      '@media screen{.ppme-reading .content-area .ppme-r-vcshut{display:none!important}'
+      '.ppme-read .content-area .ppme-r-vcscore{margin-top:8px!important;margin-bottom:14px!important}',
+      '@media screen{.ppme-read .content-area .ppme-r-vcshut{display:none!important}'
         + '.ppme-reading .content-area h3.ppme-r-vcdeshead::after{content:' + JSON.stringify(en
           ? 'Click a stage to expand it, or this heading to expand them all.'
           : 'Cliquez sur une étape pour la déplier, ou sur ce titre pour toutes les déplier.')
@@ -4819,6 +4835,17 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
           ? 'Click this heading to collapse every stage.' : 'Cliquez sur ce titre pour toutes les replier.') + '}}',
       // 19/10 — les sources numérotées comme les renvois [n] du texte (_base.css retire les numéros
       // de #sources) ; la source visée par un renvoi surlignée, sous la barre du mémo et non derrière
+      // 22/10 (Alexandre) — les matrices de sensibilité MOIC / IRR (capture × prix) se lisaient avec
+      // une barre de défilement horizontale : chaque matrice prend toute la largeur, ses colonnes se
+      // partagent la place (mémos déjà publiés ; les nouveaux sortent ainsi de html_table_renderer)
+      // (_base.css fige les tableaux des sections financières : display:block, max-content, nowrap ;
+      // d'où l'id dans les sélecteurs, pour passer devant)
+      '.content-area div[style*="flex:1;min-width:340px"]{flex:1 1 100%!important;min-width:0!important}',
+      '.content-area div[style*="min-width:340px"] .table-container{overflow-x:visible!important}',
+      '.content-area div[style*="min-width:340px"] table,#financial-forecast div[style*="min-width:340px"] table,#roi-analysis div[style*="min-width:340px"] table{display:table!important;table-layout:fixed!important;width:100%!important;max-width:100%!important;min-width:0!important}',
+      '.content-area div[style*="min-width:340px"] td,#financial-forecast div[style*="min-width:340px"] table td,#roi-analysis div[style*="min-width:340px"] table td{display:table-cell!important;min-width:0!important;white-space:normal!important;overflow-wrap:break-word}',
+      '.content-area div[style*="min-width:340px"] tr+tr>td:first-child,#financial-forecast div[style*="min-width:340px"] table tr+tr>td:first-child,#roi-analysis div[style*="min-width:340px"] table tr+tr>td:first-child{white-space:nowrap!important}',
+      '.content-area div[style*="min-width:340px"] tr:first-child>td:first-child{width:19%}',
       '.content-area #sources ol{counter-reset:ppme-src}',
       '.content-area #sources ol:has(>li[id^="src-"]){margin-left:0!important;padding-left:0!important}',
       '.content-area #sources ol>li[id^="src-"]{counter-increment:ppme-src;position:relative;padding-left:3.1em!important;scroll-margin-top:96px!important}',
