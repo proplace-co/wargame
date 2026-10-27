@@ -28,6 +28,23 @@
   var record = ctx.airtable_record || ctx.deal_id || '';
   if (!editorial && !/^rec[a-zA-Z0-9]{10,30}$/.test(record)) return;
   var API = (window.__PP_MEMO_EDITS_API__ || 'https://alexandre-79537--memo-edits-fastapi-app.modal.run') + '/memos/' + record;
+  // 27/10 — le lien « Mémo interactif » du mail porte #ppedit=… : un droit d'édition sur CE
+  // dossier, pour le navigateur intégré de Gmail qui n'a pas le cookie de connexion de Chrome
+  // (execution/memo_edit_token.py). Gardé pour ce dossier, retiré de l'adresse affichée.
+  var GRANT = editGrant();
+  function editGrant() {
+    if (editorial || !record) return '';
+    var key = 'ppme-edit:' + record;
+    try {
+      var m = /[#&]ppedit=([^&]+)/.exec(location.hash || '');
+      if (!m) return localStorage.getItem(key) || '';
+      var tok = decodeURIComponent(m[1]);
+      try { localStorage.setItem(key, tok); } catch (_) { /* navigation privée : gardé en mémoire */ }
+      var rest = location.hash.replace(/[#&]ppedit=[^&]*/, '').replace(/^&/, '');
+      history.replaceState(null, '', location.pathname + location.search + (rest ? '#' + rest.replace(/^#/, '') : ''));
+      return tok;
+    } catch (_) { return ''; }
+  }
   var en = (document.documentElement.lang || 'fr').toLowerCase().indexOf('en') === 0;
   // 10/10 — l'onglet Mémo du cockpit montre CETTE page, intégrée (?embed=cockpit) : même éditeur,
   // sans barre latérale ni bouton Stan ; le contenu du dossier passe dans la barre (☰ Plan)
@@ -83,11 +100,15 @@
     var SJ = window.StanJourney;
     try { return SJ && typeof SJ.session === 'function' ? String(SJ.session() || '') : ''; } catch (_) { return ''; }
   }
-  function api(path, method, body) {
-    if (editorial) return Promise.resolve({ ok: false, status: 0 });
-    var headers = body ? { 'Content-Type': 'application/json' } : {};
+  function authHeaders(headers) {
     var s = session();
     if (s) headers['X-Member-Session'] = s;
+    if (GRANT) headers['X-Memo-Edit'] = GRANT;
+    return headers;
+  }
+  function api(path, method, body) {
+    if (editorial) return Promise.resolve({ ok: false, status: 0 });
+    var headers = authHeaders(body ? { 'Content-Type': 'application/json' } : {});
     return fetch(API + path, { method: method || 'GET', headers: headers, credentials: 'omit',
       body: body ? JSON.stringify(body) : undefined })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { j.status = r.status; return j; }); });
@@ -522,7 +543,7 @@
     if (link) { if (link.nextSibling !== box) sb.insertBefore(box, link.nextSibling); }
     else if (box.parentNode !== sb) sb.insertBefore(box, sb.firstChild);
     box.innerHTML = '';
-    if (session()) {
+    if (session() || state.role) {
       var who = state.email || accountEmail();
       // 13/10 (Antoine) — « ● Connecté · alexandre@proplace.co · Profund VC », sous « Ouvrir le deal flow »
       var label = '● ' + D.signedIn + (who ? ' · ' + who : '') + (state.fund ? ' · ' + fundLabel(state.fund) : '');
@@ -539,7 +560,7 @@
   function syncAccount() {
     renderAccount();
     var b = doc.bar && doc.bar.querySelector('[data-cmd="login"]');
-    if (b) b.hidden = !!session();
+    if (b) b.hidden = !!(session() || state.role);
     fitBar();
   }
   function logout() {
@@ -549,6 +570,7 @@
     var SJ = window.StanJourney;
     try { if (SJ && typeof SJ.logout === 'function') SJ.logout(); } catch (_) { /* panneau absent */ }
     try { sessionStorage.removeItem('ppj-access:' + record); sessionStorage.removeItem('ppj-key:' + record); } catch (_) { /* stockage bloqué */ }
+    try { localStorage.removeItem('ppme-edit:' + record); } catch (_) { /* stockage bloqué */ }
     location.reload();
   }
   function login() {
@@ -1450,9 +1472,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     var wait = doc.on && !doc.reading ? save(true) : Promise.resolve(true);
     pdfJob = Promise.resolve(wait).then(function (ok) {
       saved = ok !== false;
-      var headers = {};
-      var s = session();
-      if (s) headers['X-Member-Session'] = s;
+      var headers = authHeaders({});
       return fetch(API + '/pdf' + (state.preview ? '?n=' + state.preview : ''), { headers: headers, credentials: 'omit' });
     }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -1670,9 +1690,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     }, 2500);
   }
   function downloadDeck(mode, n) {
-    var headers = {};
-    var s = session();
-    if (s) headers['X-Member-Session'] = s;
+    var headers = authHeaders({});
     fetch(API + '/deck/pdf?mode=' + encodeURIComponent(mode) + (n ? '&n=' + n : ''), { headers: headers, credentials: 'omit' })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
       .then(function (blob) {
@@ -2219,7 +2237,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
         side.appendChild(el('span', { class: 'ppme-st', role: 'status' }));
         if (!editorial) humanButton();
       }
-      if (GUEST) add('login', D.login, D.loginHint, 'ppme-login').hidden = !!session();
+      if (GUEST) add('login', D.login, D.loginHint, 'ppme-login').hidden = !!(session() || state.role);
       add('pdf', D.pdf, D.pdfHint, 'ppme-pdf');
       if (!editorial || (editorial.decks || []).some(function (item) { return /^https:\/\//.test(String(item.url || '')); })) {
         add('deck', editorial ? (en ? '🎞 Market carousels' : '🎞 Carrousels du marché') : K.btn, editorial ? (en ? 'Download the prepared market carousels (PDF)' : 'Télécharger les carrousels du marché préparés (PDF)') : K.hint, 'ppme-deck');
@@ -4673,7 +4691,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
 
   function checkAccess() {
-    if (state.role || !session()) { syncAccount(); return Promise.resolve(!!state.role); }
+    if (state.role || (!session() && !GRANT)) { syncAccount(); return Promise.resolve(!!state.role); }
     return api('/access').then(function (a) {
       if (!a.ok) return false;
       state.role = a.role;
@@ -5253,7 +5271,19 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     refreshReader(true).then(checkAccess);
     setInterval(function () { refreshReader(false); }, 30000);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshReader(false); });
-  } else syncLatest().then(checkAccess).then(function (member) { if (!member) { startGuest(); brandReader(); } });
+  } else syncLatest().then(checkAccess).then(function (member) { if (!member) { startGuest(); brandReader(); } openAskedDeck(); });
+  // 27/10 — « Slidedeck (PDF) » du mail de fin de mémo (?deck=1) : la page s'ouvre sur la
+  // synthèse en deck, une fois l'accès connu ; rien ne part sans le clic de la fenêtre
+  function openAskedDeck() {
+    if (EMBED || editorial || !/[?&]deck=1(&|$)/.test(location.search)) return;
+    try {
+      var u = new URL(location.href);
+      u.searchParams.delete('deck');
+      history.replaceState(null, '', u.pathname + u.search + u.hash);
+    } catch (_) { /* adresse laissée telle quelle */ }
+    injectCss();
+    openDeck();
+  }
   // 15/10 — dans l'onglet Mémo du cockpit, « Reprendre le mémo → » du bandeau d'aperçu se
   // confirme dans le cockpit même, sur la ligne de la société, au lieu d'ouvrir un second onglet.
   document.addEventListener('click', function (e) {
