@@ -1458,8 +1458,9 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   function exportPdf() {
     unselectMedia();
     if (editorial) { if (editorial.exportBridge) editorialExport('a4'); else printPack(); return; }
-    // l'aperçu Profund du cockpit, sans session : l'impression du navigateur (son propre parcours)
-    if (READER && !GUEST && !session()) { printPack(); return; }
+    // 28/10 (Antoine) — l'aperçu du cockpit sans session (téléphone, lien /cibles, profund.vc)
+    // ouvrait l'impression du navigateur : il reçoit le vrai dossier comité, comme tout lecteur
+    // (le serveur sert la dernière version à tout lecteur ; l'impression reste le recours).
     if (pdfJob) return;
     var btns = pdfButtons();
     var labels = btns.map(function (b) { return b.textContent; });
@@ -1551,11 +1552,8 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       }
       return;
     }
-    if (READER && !GUEST && !session()) {
-      toast(en ? 'Sign in with an authorised fund account to summarise this memo as a deck.'
-        : 'Connectez-vous avec un compte autorisé du fonds pour synthétiser ce mémo en deck.');
-      return;
-    }
+    // 28/10 — même règle que le PDF : le lecteur sans session synthétise la dernière version
+    // (le serveur borne les nouveaux decks des lecteurs non connectés et le dit lui-même).
     if (!deck.dlg) buildDeckDialog();
     deck.dlg.hidden = false;
     deck.err.hidden = true;
