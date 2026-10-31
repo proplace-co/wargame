@@ -859,5 +859,179 @@
     e.source.postMessage({ type: 'proplace:journey:received' }, e.origin);
   });
   window.addEventListener('proplace:memo:content-ready', upgradeLegacyPreview);
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build); else build();
+
+  // 31/10 (Antoine) — LE FIL DE LA PRISE DE DÉCISION sur la page du mémo : le même fil que le
+  // bouton « Avis humain » et l'onglet « Prise de décision » du cockpit (route
+  // /cibles/decision-thread du proxy). Accès : le token du cockpit passé dans le fragment
+  // (#pp_cb=…&pp_lpk=…&pp_guest=…, jamais envoyé au serveur du mémo), sinon le billet de ce
+  // poste de travail (X-Journey-Access, après connexion). Le fil ne change jamais un statut.
+  var THREAD_API = 'https://alexandre-79537--proplace-chat-proxy-fastapi-app.modal.run/cibles/decision-thread';
+  var threadBox = null, threadData = null, threadBusy = false, threadEditing = '';
+  var threadRole = '', threadWho = '';
+  try { threadRole = localStorage.getItem('ppf-role') || ''; threadWho = localStorage.getItem('ppf-who') || ''; } catch (_) {}
+  function threadHash() {
+    var h = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+    var cb = h.get('pp_cb') || '', lpk = h.get('pp_lpk') || '', guest = h.get('pp_guest') || '';
+    return { token: /^[A-Za-z0-9]{16}$/.test(cb) ? cb : '', lpk: /^[A-Za-z0-9_-]{16,64}$/.test(lpk) ? lpk : '',
+      guest: guest === 'lp' || guest === 'gp' ? guest : '' };
+  }
+  var ROLE_LABEL = { ceo: 'Décideur final (CEO)', cd: 'Corporate developer', gp: 'GP du fonds', lp: 'LP' };
+  var DECISION_LABEL = { yes: 'OUI · CALL YES', no: 'NON · CALL NO', pending: 'CALL PENDING · au décideur final' };
+  async function threadCall(extra) {
+    var link = threadHash();
+    var h = { 'Content-Type': 'application/json' };
+    if (!link.token) {
+      if (!accessToken) throw Object.assign(new Error('connect'), { connect: true });
+      h['X-Journey-Access'] = accessToken;
+    }
+    var body = Object.assign({ record_id: record || '', check_id: '', company: context.name || context.company_name || '' },
+      link.token ? { token: link.token } : {}, link.lpk ? { lpk: link.lpk } : {},
+      link.guest === 'lp' ? { view: 'lp' } : {}, extra || { op: 'list' });
+    var res = await fetch(THREAD_API, { method: 'POST', headers: h, body: JSON.stringify(body), credentials: 'omit' });
+    var out = await res.json().catch(function () { return {}; });
+    if (!res.ok || !out.ok) throw new Error(out.error || ('HTTP ' + res.status));
+    return out;
+  }
+  function threadWhen(s) {
+    var d = new Date(s); if (isNaN(d)) return esc(s || '');
+    return esc(d.toLocaleString(context.lang === 'en' ? 'en-GB' : 'fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }));
+  }
+  function threadEntries(d) {
+    var out = [];
+    (d.events || []).forEach(function (e) {
+      var title = '', text = e.note || '';
+      if (e.kind === 'decision') title = 'Décision : ' + (/^y/i.test(e.decision) ? 'OUI · CALL YES' : /^n/i.test(e.decision) ? 'NON · CALL NO' : esc(e.decision || ''));
+      else if (e.kind === 'status') title = 'Statut : ' + esc(e.ceo_status || e.decision || '');
+      else if (e.kind === 'stage') title = 'Étape du deal : ' + esc(e.stage || '');
+      else if (e.kind === 'override') title = 'Verdict passé à ' + esc(e.new_verdict || '') + (e.verdict ? ' (Stan : ' + esc(e.verdict) + ')' : '');
+      else if (e.kind === 'thumb') title = (e.up ? '👍 Pouce levé' : '👎 Pouce baissé') + (e.verdict ? ' · sur le verdict ' + esc(e.verdict) : '');
+      else if (e.kind === 'note') title = 'Note';
+      else return;
+      out.push({ at: e.at, title: title, text: text });
+    });
+    (d.opinions || []).forEach(function (o) {
+      out.push({ at: o.ts, title: (ROLE_LABEL[o.role] || 'Avis') + (o.who ? ' · ' + esc(o.who) : ''), role: o.role,
+        decision: o.decision, text: o.text, edited: o.edited, ref: o.can_edit ? 'op:' + o.id : '' });
+    });
+    (d.notes || []).forEach(function (n) {
+      out.push({ at: (n.date || '') + (n.time ? 'T' + n.time : ''), title: n.role ? (ROLE_LABEL[n.role] || 'Message') + (n.who ? ' · ' + esc(n.who) : '') : 'Note du fonds',
+        role: n.role, text: n.text, ref: n.can_edit ? 'note:' + n.id : '' });
+    });
+    return out.sort(function (a, b) { return String(a.at).localeCompare(String(b.at)); });
+  }
+  function threadRender(message, error) {
+    if (!threadBox) return;
+    var d = threadData, html = '<div class="ppf"><h3>Fil de la prise de décision</h3><p class="ppf-sub">Tout ce qui est arrivé à ce dossier, dans l’ordre. Chacun y ajoute son avis.</p>';
+    if (message) html += '<p class="ppf-msg' + (error ? ' ppf-err' : '') + '">' + esc(message) + '</p>';
+    if (!d) { threadBox.innerHTML = html + '</div>'; return; }
+    var s = d.dossier;
+    if (s && (s.verdict || s.summary || s.human_note || s.ceo_status)) {
+      html += '<div class="ppf-card ppf-snap">' + (s.verdict ? '<b>Verdict du mémo : ' + esc(s.verdict) + '</b>' : '')
+        + (s.summary ? '<p>' + esc(s.summary.length > 600 ? s.summary.slice(0, 600) + '…' : s.summary) + '</p>' : '')
+        + (s.human_note ? '<p><b>Avis humain validé :</b> ' + esc(s.human_note) + '</p>' : '')
+        + (s.ceo_status ? '<p><b>Décision :</b> ' + esc(s.ceo_status) + (s.ceo_note ? ' · ' + esc(s.ceo_note) : '') + '</p>' : '') + '</div>';
+    }
+    var items = threadEntries(d);
+    html += '<ol class="ppf-line">' + (items.length ? items.map(function (e) {
+      var editing = e.ref && threadEditing === e.ref;
+      return '<li class="ppf-item' + (e.role ? ' ppf-' + esc(e.role) : '') + '"><span class="ppf-dot"></span><div class="ppf-card">'
+        + '<div class="ppf-meta">' + threadWhen(e.at) + (e.edited ? ' · modifié' : '') + '</div>'
+        + '<div class="ppf-title">' + e.title + (e.decision ? ' <span class="ppf-chip">' + esc(DECISION_LABEL[e.decision] || e.decision) + '</span>' : '') + '</div>'
+        + (editing ? '<textarea class="ppf-edit" rows="3" maxlength="4000">' + esc(e.text || '') + '</textarea><div class="ppf-acts">'
+            + '<button type="button" class="ppj-btn ppj-primary" data-ppf="save" data-ref="' + esc(e.ref) + '">Enregistrer</button>'
+            + '<button type="button" class="ppj-btn" data-ppf="cancel">Annuler</button></div>'
+          : (e.text ? '<p class="ppf-text">' + esc(e.text) + '</p>' : '')
+            + (e.ref ? '<div class="ppf-acts"><button type="button" class="ppf-lk" data-ppf="edit" data-ref="' + esc(e.ref) + '">Modifier</button>'
+              + '<button type="button" class="ppf-lk ppf-del" data-ppf="delete" data-ref="' + esc(e.ref) + '">Supprimer</button></div>' : ''))
+        + '</div></li>';
+    }).join('') : '<li class="ppf-item"><span class="ppf-dot"></span><div class="ppf-card">Rien encore sur ce dossier.</div></li>') + '</ol>';
+    var v = d.viewer || {}, readOnly = v.fixed && !v.role;
+    if (!readOnly) {
+      html += '<form class="ppf-form" data-ppf-form><b>Ajouter votre avis</b>';
+      if (!v.fixed) {
+        html += '<div class="ppf-roles">Qui êtes-vous sur ce dossier ? '
+          + ['ceo', 'cd'].map(function (r) { return '<label><input type="radio" name="role" value="' + r + '"' + (threadRole === r ? ' checked' : '') + '> ' + ROLE_LABEL[r] + '</label>'; }).join(' ')
+          + ' <input name="who" placeholder="Votre nom (facultatif)" maxlength="40" value="' + esc(threadWho) + '"></div>';
+      } else {
+        html += '<p class="ppf-sub">Vous écrivez en tant que ' + esc(ROLE_LABEL[v.role] || v.role) + (v.who ? ' · ' + esc(v.who) : '') + '.</p>';
+      }
+      var decisions = v.decisions || [];
+      if (decisions.length) {
+        html += '<label class="ppf-dec">Joindre une décision <select name="decision"><option value="">Aucune</option>'
+          + decisions.map(function (x) { return '<option value="' + esc(x) + '">' + esc(DECISION_LABEL[x] || x) + '</option>'; }).join('')
+          + '</select></label><p class="ppf-sub">Le statut du dossier se change dans le cockpit ; ici, la décision accompagne votre avis.</p>';
+      }
+      html += '<textarea name="text" rows="4" maxlength="4000" placeholder="Votre avis sur ce dossier : ce qui vous convainc, ce qui manque, la suite à donner."></textarea>'
+        + '<div class="ppf-acts"><button class="ppj-btn ppj-primary"' + (threadBusy ? ' disabled' : '') + '>Ajouter au fil</button></div></form>';
+    }
+    threadBox.innerHTML = html + '</div>';
+  }
+  async function threadLoad(extra, okMessage) {
+    if (threadBusy) return;
+    threadBusy = true;
+    try {
+      threadData = await threadCall(extra);
+      threadEditing = '';
+      threadRender(okMessage || '');
+    } catch (error) {
+      if (error.connect) {
+        threadRender('');
+        threadBox.querySelector('.ppf').insertAdjacentHTML('beforeend',
+          '<p class="ppf-msg">Connectez votre compte Proplace pour lire et compléter le fil de ce dossier.</p>'
+          + '<button type="button" class="ppj-btn ppj-primary" data-ppf="connect">Se connecter</button>');
+      } else threadRender('Le fil n’a pas pu être chargé ou enregistré (' + error.message + '). Réessayez.', true);
+    } finally { threadBusy = false; }
+  }
+  function threadSetup() {
+    if (demo || !record) return;
+    threadBox = addView('fil', 'Fil de décision', function () { threadLoad(); });
+    if (!threadBox) return;
+    if (!document.getElementById('ppf-style')) {
+      var css = el('style', { id: 'ppf-style' });
+      css.textContent = '.ppf{display:grid;gap:12px;padding:4px 2px 18px}.ppf h3{margin:0;font-size:17px}.ppf-sub{margin:0;color:#64748b;font-size:13px}'
+        + '.ppf-msg{margin:0;font-size:13px;color:#0f5132}.ppf-err{color:#b42318}.ppf-line{list-style:none;margin:0;padding:0 0 0 14px;border-left:2px solid #e2e8f0;display:grid;gap:10px}'
+        + '.ppf-item{position:relative}.ppf-dot{position:absolute;left:-21px;top:14px;width:10px;height:10px;border-radius:50%;background:#94a3b8;box-shadow:0 0 0 3px #fff}'
+        + '.ppf-ceo .ppf-dot{background:#7c3aed}.ppf-cd .ppf-dot{background:#d97706}.ppf-gp .ppf-dot{background:#15803d}.ppf-lp .ppf-dot{background:#2563eb}'
+        + '.ppf-card{border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;background:#fff;font-size:13.5px;line-height:1.5}.ppf-snap{background:#f8fafc}'
+        + '.ppf-meta{font-size:11.5px;color:#94a3b8}.ppf-title{font-weight:700;margin:2px 0}.ppf-text{margin:4px 0 0;white-space:pre-wrap}'
+        + '.ppf-chip{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;background:#ede9fe;color:#5b21b6;font-size:11px;font-weight:700}'
+        + '.ppf-acts{display:flex;gap:8px;margin-top:6px}.ppf-lk{border:0;background:none;padding:0;color:#475569;font-size:12px;text-decoration:underline;cursor:pointer}.ppf-del{color:#b42318}'
+        + '.ppf-form{display:grid;gap:8px;border:1px solid #fde68a;background:#fffbeb;border-radius:12px;padding:12px}.ppf-form textarea,.ppf-edit{width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:10px;padding:8px;font:inherit}'
+        + '.ppf-roles{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:13px}.ppf-roles input[name=who]{border:1px solid #e2e8f0;border-radius:8px;padding:4px 8px}.ppf-dec{font-size:13px;display:flex;gap:8px;align-items:center}';
+      document.head.appendChild(css);
+    }
+    threadBox.addEventListener('click', async function (event) {
+      var b = event.target.closest('[data-ppf]'); if (!b || threadBusy) return;
+      var cmd = b.getAttribute('data-ppf'), ref = b.getAttribute('data-ref') || '';
+      if (cmd === 'connect') { try { await openDossier(); } catch (e) { threadRender(e.message, true); return; } threadLoad(); return; }
+      if (cmd === 'edit') { threadEditing = ref; threadRender(''); return; }
+      if (cmd === 'cancel') { threadEditing = ''; threadRender(''); return; }
+      if (cmd === 'save') {
+        var t = threadBox.querySelector('.ppf-edit'); if (!t || !t.value.trim()) return;
+        threadLoad({ op: 'edit', target: ref, text: t.value.trim() }, 'Modification enregistrée.'); return;
+      }
+      if (cmd === 'delete') {
+        if (!window.confirm('Supprimer cet avis du fil ? Il reste conservé dans l’historique du dossier.')) return;
+        threadLoad({ op: 'delete', target: ref }, 'Avis supprimé du fil.');
+      }
+    });
+    threadBox.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var f = event.target, text = (f.text.value || '').trim(); if (!text) return;
+      var v = (threadData && threadData.viewer) || {}, extra = { op: 'add', text: text };
+      if (!v.fixed) {
+        var r = f.querySelector('input[name=role]:checked');
+        if (!r) { threadRender('Dites d’abord si vous êtes le décideur final (CEO) ou le corporate developer.', true); return; }
+        extra.role = r.value; extra.who = (f.who.value || '').trim();
+        threadRole = r.value; threadWho = extra.who;
+        try { localStorage.setItem('ppf-role', threadRole); localStorage.setItem('ppf-who', threadWho); } catch (_) {}
+      }
+      if (f.decision && f.decision.value) extra.decision = f.decision.value;
+      threadLoad(extra, 'Votre avis est dans le fil.');
+    });
+    // ouvert depuis le cockpit avec le fil demandé (#…&pp_cb=…) : l'onglet s'ouvre directement
+    if (threadHash().token && /pp_thread=1/.test(location.hash)) open('fil');
+  }
+  function start() { build(); threadSetup(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 }());
