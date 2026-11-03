@@ -45,12 +45,43 @@
       return tok;
     } catch (_) { return ''; }
   }
-  var en = (document.documentElement.lang || 'fr').toLowerCase().indexOf('en') === 0;
+  // 03/11 (Antoine) — FR / EN. Le mémo, sa barre, son dossier PDF et son deck sont par défaut dans la
+  // langue du mémo (celle du fonds) ; le bouton FR / EN (?lang=fr|en) les donne dans l'autre langue,
+  // traduits par le serveur (lecture seule : seul le mémo d'origine se modifie). <html lang> vaut « fr »
+  // sur les pages publiées avant le 03/11 : la langue vient de data-memo-lang, du texte, puis de la méta.
+  var MEMO_LANG = editorial ? ((document.documentElement.lang || 'fr').toLowerCase().indexOf('en') === 0 ? 'en' : 'fr') : memoLang();
+  var PARAM_LANG = editorial ? '' : urlLang();
+  var VIEW_LANG = PARAM_LANG || MEMO_LANG;
+  var LANGVIEW = !!PARAM_LANG && (PARAM_LANG !== MEMO_LANG || MEMO_LANG === 'en');
+  // un mémo anglais publié avant le 03/11 garde des passages en français : ses lecteurs le lisent corrigé
+  var LEGACY_EN = !editorial && MEMO_LANG === 'en' && !document.documentElement.getAttribute('data-memo-lang');
+  var LANGQ = LANGVIEW ? VIEW_LANG : '';        // la langue demandée au serveur pour le contenu
+  var en = VIEW_LANG === 'en';
+  if (!editorial) { try { document.documentElement.lang = VIEW_LANG; } catch (_) { /* attribut en lecture seule */ } }
+  function urlLang() {
+    var m = /[?&]lang=(fr|en)(?:&|$)/i.exec(location.search);
+    return m ? m[1].toLowerCase() : '';
+  }
+  function memoLang() {
+    var h = document.documentElement;
+    var marked = String(h.getAttribute('data-memo-lang') || '').toLowerCase();
+    if (marked === 'fr' || marked === 'en') return marked;
+    var text = String(area.textContent || '').slice(0, 60000).toLowerCase();
+    var fr = (text.match(/(?:^|[^a-zà-ÿ])(le|la|les|des|du|une|est|et|pour|avec|dans|sur|qui|que|sont|aux|cette|ces|pas|par|leur)(?=[^a-zà-ÿ]|$)/g) || []).length;
+    var eng = (text.match(/(?:^|[^a-zà-ÿ])(the|and|of|with|for|is|are|was|this|that|from|by|to|in|on|its|their|has|have|which)(?=[^a-zà-ÿ]|$)/g) || []).length;
+    if (Math.max(fr, eng) >= 30) {
+      if (fr >= 2 * eng) return 'fr';
+      if (eng >= 2 * fr) return 'en';
+    }
+    var lg = String((ctx && ctx.lang) || h.lang || 'fr').toLowerCase();
+    return lg.indexOf('en') === 0 || lg.indexOf('ang') === 0 ? 'en' : 'fr';
+  }
   // 10/10 — l'onglet Mémo du cockpit montre CETTE page, intégrée (?embed=cockpit) : même éditeur,
   // sans barre latérale ni bouton Stan ; le contenu du dossier passe dans la barre (☰ Plan)
   var EMBED = !!editorial || /[?&]embed=cockpit(&|$)/.test(location.search);
   // Profund uses the original memo, with its reader tools and no editing session.
-  var READER = !!editorial || (EMBED && /[?&]reader=1(&|$)/.test(location.search));
+  // 03/11 — le mémo lu dans une autre langue (?lang=) se lit seulement, pour tous.
+  var READER = !!editorial || LANGVIEW || (EMBED && /[?&]reader=1(&|$)/.test(location.search));
   // 11/10 — un lecteur de la page sans compte de l'équipe : le même aperçu (GUEST lève READER)
   var GUEST = false;
   var T = en ? {
@@ -327,14 +358,114 @@
     // presentation layer refresh this new DOM after every document/version load.
     window.dispatchEvent(new Event('proplace:memo:content-ready'));
   }
+  // 03/11 — la version dans la langue demandée (LANGQ) : le serveur la traduit en fond la première
+  // fois (« pending », environ une minute) ; la page redemande toutes les 3 s, puis l'affiche.
+  var langN = 0;
+  function contentPath(n) {
+    var q = [];
+    if (n) q.push('n=' + n);
+    if (LANGQ) q.push('lang=' + LANGQ);
+    return '/content' + (q.length ? '?' + q.join('&') : '');
+  }
+  function fetchContent(n, tries) {
+    return api(contentPath(n)).then(function (c) {
+      if (c && c.pending && LANGQ && tries < 100) {
+        langNote('pending');
+        return new Promise(function (ok) { setTimeout(ok, 3000); }).then(function () { return fetchContent(n, tries + 1); });
+      }
+      if (LANGQ) langNote(c && c.ok ? (c.translated ? 'done' : 'same') : 'failed');
+      return c;
+    }, function (e) { if (LANGQ) langNote('failed'); throw e; });
+  }
+  function swapSidebar(html) {
+    var sb = document.querySelector('.sidebar');
+    if (!sb || !html) return;
+    var keep = sb.querySelector('.ppme-lang');
+    sb.innerHTML = html;
+    if (keep) sb.insertBefore(keep, sb.firstChild);
+    renderAccount();
+  }
   function loadVersion(n, asHead) {
-    return api('/content' + (asHead ? '' : '?n=' + n)).then(function (c) {
-      if (!c.ok || !c.content_area) return null;
+    return fetchContent(asHead ? 0 : n, 0).then(function (c) {
+      if (!c || !c.ok || !c.content_area) return null;
+      // rien à traduire et la page affiche déjà cette version : on ne la recharge pas
+      if (LANGQ && c.translated === false && (!pageVersion() || pageVersion() === c.n)) { langN = c.n; return c; }
       stopEditor();
+      if (c.sidebar) swapSidebar(c.sidebar);
       swapArea(c.content_area);
       if (asHead) setPageVersion(c.n);
+      if (LANGQ) langN = c.n;
       return c;
     });
+  }
+  function langNote(kind) {
+    if (!LANGVIEW || editorial) return;              // la mise en conformité d'un ancien mémo reste discrète
+    injectCss();
+    var note = document.querySelector('.ppme-langnote');
+    if (!note) {
+      note = el('div', { class: 'ppme-ui ppme-langnote', role: 'status' });
+      area.parentNode.insertBefore(note, area);
+    }
+    var from = MEMO_LANG === 'en' ? (en ? 'English' : 'l’anglais') : (en ? 'French' : 'du français');
+    note.innerHTML = '';
+    note.hidden = kind === 'same';
+    if (kind === 'pending') {
+      note.appendChild(el('span', { class: 'ppme-spin', 'aria-hidden': 'true' }));
+      note.appendChild(document.createTextNode(en ? ' Translating the memo into English… about a minute, the first time only.'
+        : ' Traduction du mémo en français… environ une minute, la première fois seulement.'));
+      return;
+    }
+    note.appendChild(document.createTextNode(kind === 'failed'
+      ? (en ? 'The translation is unavailable right now: the memo is shown in its original language. ' : 'La traduction est indisponible pour le moment : le mémo s’affiche dans sa langue d’origine. ')
+      : (en ? 'Automatic translation from ' + from + ' — the reference version is the original. ' : 'Traduction automatique ' + (MEMO_LANG === 'en' ? 'de ' : '') + from + ' — la version de référence est l’original. ')));
+    var back = el('a', { href: '#', class: 'ppme-langnote-back' }, en ? 'Read the original (' + MEMO_LANG.toUpperCase() + ')' : 'Lire l’original (' + MEMO_LANG.toUpperCase() + ')');
+    back.onclick = function (e) { e.preventDefault(); switchLang(MEMO_LANG); };
+    note.appendChild(back);
+  }
+  function switchLang(lang) {
+    if (lang === VIEW_LANG && !(LANGVIEW && lang === MEMO_LANG)) return;
+    try {
+      var u = new URL(location.href);
+      if (lang === MEMO_LANG) u.searchParams.delete('lang'); else u.searchParams.set('lang', lang);
+      location.assign(u.pathname + u.search + u.hash);
+    } catch (_) { location.search = lang === MEMO_LANG ? '' : '?lang=' + lang; }
+  }
+  // le bouton FR / EN : en haut à gauche de la page (barre latérale), dans la barre du mémo intégré au cockpit
+  function mountLangSwitch() {
+    if (editorial || !meta) return;
+    injectCss();
+    var box = document.querySelector('.ppme-lang');
+    if (!box) {
+      box = el('div', { class: 'ppme-ui ppme-lang', role: 'group', 'aria-label': en ? 'Memo language' : 'Langue du mémo' });
+      ['en', 'fr'].forEach(function (l) {
+        var b = el('button', { type: 'button', 'data-lang': l, 'aria-pressed': String(l === VIEW_LANG),
+          title: l === MEMO_LANG ? (en ? 'The memo in its original language' : 'Le mémo dans sa langue d’origine')
+            : (l === 'fr' ? 'Lire ce mémo, son PDF et son deck en français (traduction automatique)'
+              : 'Read this memo, its PDF and its deck in English (automatic translation)') }, l.toUpperCase());
+        if (l === VIEW_LANG) b.className = 'on';
+        b.onclick = function () { switchLang(l); };
+        box.appendChild(b);
+      });
+    }
+    var sb = !EMBED && document.querySelector('.sidebar');
+    var tools = doc.bar && doc.bar.querySelector('.ppme-dbar-tools');
+    if (sb && getComputedStyle(sb).display !== 'none') {
+      box.classList.remove('ppme-lang-float');
+      if (sb.firstChild !== box) sb.insertBefore(box, sb.firstChild);
+    } else if (tools) {
+      box.classList.remove('ppme-lang-float');
+      if (tools.firstChild !== box) tools.insertBefore(box, tools.firstChild);
+    } else if (!box.parentNode || box.parentNode === document.body) {
+      box.classList.add('ppme-lang-float');
+      if (!box.parentNode) document.body.appendChild(box);
+    }
+  }
+  // un ancien mémo anglais lu sans compte : ses passages restés en français arrivent traduits
+  function conformLegacy() {
+    if (!LEGACY_EN || PARAM_LANG || LANGQ || (state.role && !READER)) return;
+    LANGQ = 'en';
+    loadVersion(0, true).then(function (c) { if (!c || !c.translated) { LANGQ = ''; langN = 0; } },
+      function () { LANGQ = ''; });
   }
   /* ── 17/10 — la page du mémo en marque blanche (fonds Entreprise, en essai ou en aperçu privé) ───
    * Le dossier comité et le deck étaient déjà aux couleurs du fonds ; la page aussi désormais, pour
@@ -484,7 +615,8 @@
       if (READER && mine > h.n) return;
       var previous = state.head;
       state.head = h;
-      if (mine ? mine < h.n : h.edited) return loadVersion(h.n, true).then(function (c) {
+      // 03/11 — lu dans une autre langue : la version traduite, chargée une fois par version
+      if (LANGQ ? langN !== h.n : (mine ? mine < h.n : h.edited)) return loadVersion(h.n, true).then(function (c) {
         if (READER && !c) state.head = previous;
         return c;
       }, function () { if (READER) state.head = previous; });
@@ -1474,7 +1606,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     pdfJob = Promise.resolve(wait).then(function (ok) {
       saved = ok !== false;
       var headers = authHeaders({});
-      return fetch(API + '/pdf' + (state.preview ? '?n=' + state.preview : ''), { headers: headers, credentials: 'omit' });
+      return fetch(API + '/pdf?lang=' + VIEW_LANG + (state.preview ? '&n=' + state.preview : ''), { headers: headers, credentials: 'omit' });
     }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.blob();
@@ -1561,7 +1693,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     deck.list.innerHTML = '';
     deck.list.appendChild(el('p', { class: 'ppme-dlg-wait' }, K.loading));
     deck.go.disabled = true;
-    api('/deck' + (state.preview ? '?n=' + state.preview : '')).then(function (j) {
+    api('/deck?lang=' + VIEW_LANG + (state.preview ? '&n=' + state.preview : '')).then(function (j) {
       if (!j.ok) throw new Error(j.detail || j.error || j.status);
       deck.info = j;
       if ((j.running || []).length) {
@@ -1643,7 +1775,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     deck.go.disabled = true;
     var wait = doc.on && !doc.reading ? save(true) : Promise.resolve(true);
     Promise.resolve(wait).then(function () {
-      return api('/deck', 'POST', state.preview ? { mode: mode, n: state.preview } : { mode: mode });
+      return api('/deck', 'POST', state.preview ? { mode: mode, n: state.preview, lang: VIEW_LANG } : { mode: mode, lang: VIEW_LANG });
     }).then(function (r) {
       if (!r.ok) throw new Error(r.detail || r.error || r.status);
       if (r.ready) { downloadDeck(mode, r.n); return; }
@@ -1689,7 +1821,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
   function downloadDeck(mode, n) {
     var headers = authHeaders({});
-    fetch(API + '/deck/pdf?mode=' + encodeURIComponent(mode) + (n ? '&n=' + n : ''), { headers: headers, credentials: 'omit' })
+    fetch(API + '/deck/pdf?mode=' + encodeURIComponent(mode) + '&lang=' + VIEW_LANG + (n ? '&n=' + n : ''), { headers: headers, credentials: 'omit' })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
       .then(function (blob) {
         var url = URL.createObjectURL(blob);
@@ -2248,6 +2380,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       doc.bar = b;
       // la barre suit SA largeur (page du mémo, onglet du cockpit) : étroite, deux lignes nettes
       if (window.ResizeObserver) new ResizeObserver(fitBar).observe(b);
+      mountLangSwitch();                 // 03/11 — FR / EN (dans la barre quand la page n'a pas de barre latérale)
     }
     var first = doc.bar;
     if (editorial && READER) {
@@ -4709,6 +4842,16 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     setTimeout(recolorEditorCss, 0);         // 17/10 — la barre aux couleurs du fonds en marque blanche
     var css = el('style', { id: 'ppme-css' });
     css.textContent = [
+      // 03/11 — FR / EN : la même pastille que le cockpit /cibles ; la note d'une traduction automatique
+      '.ppme-lang{display:inline-flex;align-items:center;gap:2px;padding:2px;margin:0 6px 0 0;background:#fff;border:1px solid #D5DDE7;border-radius:8px;font:700 11px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.04em;flex:0 0 auto;vertical-align:middle}',
+      '.ppme-lang button{font:inherit;color:#5B6B82;background:none;border:0;border-radius:6px;padding:5px 8px;margin:0;cursor:pointer;min-height:0;height:auto;box-shadow:none;line-height:1}',
+      '.ppme-lang button:hover{background:#EEF2F6;color:#0F1D33}',
+      '.ppme-lang button.on{background:#0F1D33;color:#fff;cursor:default}',
+      '.sidebar>.ppme-lang{align-self:flex-start;margin:0 0 12px}',
+      '.ppme-lang.ppme-lang-float{position:fixed;top:10px;left:10px;z-index:960;box-shadow:0 4px 14px rgba(15,29,51,.12)}',
+      '.ppme-langnote{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 14px;padding:9px 13px;border:1px solid #D5DDE7;border-radius:10px;background:#F5F8FB;color:#33465F;font:500 13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}',
+      '.ppme-langnote a{color:#0E7F3F;font-weight:700;text-decoration:underline}',
+      '.ppme-langnote .ppme-spin{flex:0 0 auto}',
       // la barre d'édition, en tête du mémo (comme celle du dossier comité du cockpit)
       '.ppme-dbar{position:sticky;top:10px;z-index:905;display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin:0 0 18px;padding:7px 8px;background:#fff;border:1px solid #D5DDE7;border-radius:12px;box-shadow:0 6px 18px rgba(15,29,51,.08);font:500 13px/1 system-ui,-apple-system,"Segoe UI",sans-serif;color:#0F1D33}',
       '.ppme-dbar button{font:inherit;font-size:13px;line-height:1;color:#0F1D33;background:none;border:1px solid transparent;border-radius:7px;padding:6px 7px;cursor:pointer;white-space:nowrap;margin:0;box-shadow:none;min-height:0;height:auto}',
@@ -5266,10 +5409,17 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     });
     return;
   } else if (READER) {
-    refreshReader(true).then(checkAccess);
+    // 03/11 — lu dans une autre langue : la barre tout de suite, la traduction arrive ensuite
+    if (LANGVIEW) { startReader(); mountLangSwitch(); }
+    refreshReader(true).then(checkAccess).then(function () { mountLangSwitch(); conformLegacy(); });
     setInterval(function () { refreshReader(false); }, 30000);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshReader(false); });
-  } else syncLatest().then(checkAccess).then(function (member) { if (!member) { startGuest(); brandReader(); } openAskedDeck(); });
+  } else syncLatest().then(checkAccess).then(function (member) {
+    if (!member) { startGuest(); brandReader(); conformLegacy(); }
+    mountLangSwitch();
+    openAskedDeck();
+  });
+  if (!editorial) mountLangSwitch();
   // 27/10 — « Slidedeck (PDF) » du mail de fin de mémo (?deck=1) : la page s'ouvre sur la
   // synthèse en deck, une fois l'accès connu ; rien ne part sans le clic de la fenêtre
   function openAskedDeck() {
