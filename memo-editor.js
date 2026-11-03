@@ -66,6 +66,7 @@
     var h = document.documentElement;
     var marked = String(h.getAttribute('data-memo-lang') || '').toLowerCase();
     if (marked === 'fr' || marked === 'en') return marked;
+    if (String(h.lang || '').toLowerCase().indexOf('en') === 0) return 'en';   // le gabarit écrit toujours « fr »
     var text = String(area.textContent || '').slice(0, 60000).toLowerCase();
     var fr = (text.match(/(?:^|[^a-zà-ÿ])(le|la|les|des|du|une|est|et|pour|avec|dans|sur|qui|que|sont|aux|cette|ces|pas|par|leur)(?=[^a-zà-ÿ]|$)/g) || []).length;
     var eng = (text.match(/(?:^|[^a-zà-ÿ])(the|and|of|with|for|is|are|was|this|that|from|by|to|in|on|its|their|has|have|which)(?=[^a-zà-ÿ]|$)/g) || []).length;
@@ -401,11 +402,10 @@
   function langNote(kind) {
     if (!LANGVIEW || editorial) return;              // la mise en conformité d'un ancien mémo reste discrète
     injectCss();
-    var note = document.querySelector('.ppme-langnote');
-    if (!note) {
-      note = el('div', { class: 'ppme-ui ppme-langnote', role: 'status' });
-      area.parentNode.insertBefore(note, area);
-    }
+    var note = langNoteEl || (langNoteEl = el('div', { class: 'ppme-ui ppme-langnote', role: 'status' }));
+    // DANS le contenu, en tête : en lecture, .main-wrapper est une grille (barre latérale | contenu) ;
+    // posée entre les deux, la note prenait la colonne du mémo et le rejetait sous la barre latérale
+    placeLangNote(note);
     var from = MEMO_LANG === 'en' ? (en ? 'English' : 'l’anglais') : (en ? 'French' : 'du français');
     note.innerHTML = '';
     note.hidden = kind === 'same';
@@ -422,6 +422,13 @@
     back.onclick = function (e) { e.preventDefault(); switchLang(MEMO_LANG); };
     note.appendChild(back);
   }
+  var langNoteEl = null;               // gardée : remplacer le contenu la détache, elle y revient
+  function placeLangNote(note) {
+    note = note || langNoteEl;
+    if (note && area.firstChild !== note) area.insertBefore(note, area.firstChild);
+  }
+  // une version rechargée remplace le contenu : la note revient en tête
+  window.addEventListener('proplace:memo:content-ready', function () { if (LANGVIEW) placeLangNote(); });
   function switchLang(lang) {
     if (lang === VIEW_LANG && !(LANGVIEW && lang === MEMO_LANG)) return;
     try {
