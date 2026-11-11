@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Mémo en cours de mise en ligne</title>
+<!--
+  11/11 (Antoine) — la page 404 de analysis.proplace.co (GitHub Pages, copiée à la racine de
+  proplace-co/wargame par .github/workflows/deploy-wargame.yml).
+
+  Le mail de fin de mémo part dès la publication, avant que GitHub Pages ne serve la page : le clic
+  sur « Mémo interactif » (ou « Mémo rédigé », « Slidedeck ») ouvrait une page vide. Pour une adresse
+  de mémo (un seul segment, /<slug>), cette page dit que le mémo arrive, interroge l'adresse toutes
+  les 5 s et recharge dès qu'elle répond : la page s'ouvre avec ?pdf=1 / ?deck=1 et le droit
+  d'édition (#ppedit=…) intacts. Au bout de 10 minutes, elle le dit introuvable.
+  Neutre exprès : des fonds en marque blanche lisent leurs mémos sur ce domaine.
+-->
+<style>
+:root{--ink:#0f172a;--muted:#5b6b82;--line:#e2e8f0;--bg:#f4f6f8;--card:#ffffff;--accent:#12a150;--ring:#bfe6cf}
+@media (prefers-color-scheme:dark){:root{--ink:#e8edf4;--muted:#9fb0c6;--line:#2a3443;--bg:#0f141b;--card:#161d27;--ring:#1f4d33}}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font:400 15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+main{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px}
+.card{width:min(460px,100%);background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px 24px;text-align:center;box-shadow:0 12px 34px rgba(15,29,51,.08)}
+.spin{width:40px;height:40px;margin:0 auto 18px;border-radius:50%;border:3.5px solid var(--ring);border-top-color:var(--accent);animation:spin 1s linear infinite}
+.done .spin{display:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation-duration:3s}}
+h1{margin:0 0 8px;font-size:21px;line-height:1.3;font-weight:750;letter-spacing:-.01em}
+p{margin:0 0 6px;color:var(--muted)}
+.time{font-variant-numeric:tabular-nums;font-size:13px;margin-top:12px}
+button{margin-top:18px;font:inherit;font-weight:700;color:#fff;background:var(--ink);border:0;border-radius:10px;padding:11px 20px;cursor:pointer}
+@media (prefers-color-scheme:dark){button{color:#0f141b}}
+button[hidden],.time[hidden]{display:none}
+</style>
+</head>
+<body>
+<main>
+  <div class="card" id="card" role="status" aria-live="polite">
+    <div class="spin" aria-hidden="true"></div>
+    <h1 id="title">Votre mémo arrive</h1>
+    <p id="text">Il est en cours de mise en ligne : cette page s’ouvrira d’elle-même dans quelques instants.</p>
+    <p class="time" id="time" hidden></p>
+    <button type="button" id="retry" hidden>Réessayer</button>
+  </div>
+</main>
+<script>
+(function () {
+  var fr = /^fr/i.test(navigator.language || 'fr');
+  var T = fr ? {
+    soonTitle: 'Votre mémo arrive', soonText: 'Il est en cours de mise en ligne : cette page s’ouvrira d’elle-même dans quelques instants.',
+    wait: function (s) { return 'En attente depuis ' + s + ' s'; },
+    goneTitle: 'Page introuvable', goneText: 'Cette page n’est pas en ligne. Si vous venez de recevoir l’e-mail, réessayez dans quelques minutes.',
+    retry: 'Réessayer', doc: 'Mémo en cours de mise en ligne', docGone: 'Page introuvable'
+  } : {
+    soonTitle: 'Your memo is on its way', soonText: 'It is being published: this page will open by itself in a few moments.',
+    wait: function (s) { return 'Waiting for ' + s + ' s'; },
+    goneTitle: 'Page not found', goneText: 'This page is not online. If you have just received the email, try again in a few minutes.',
+    retry: 'Try again', doc: 'Memo being published', docGone: 'Page not found'
+  };
+  var $ = function (id) { return document.getElementById(id); };
+  document.documentElement.lang = fr ? 'fr' : 'en';
+  $('retry').textContent = T.retry;
+  $('retry').onclick = function () { location.reload(); };
+  function gone() {
+    $('card').className = 'card done';
+    $('title').textContent = T.goneTitle;
+    $('text').textContent = T.goneText;
+    $('time').hidden = true;
+    $('retry').hidden = false;
+    document.title = T.docGone;
+  }
+  // une adresse de mémo : un seul segment (/<slug> ou /<slug>.html) ; le reste est introuvable tout de suite
+  var path = location.pathname;
+  if (!/^\/[a-z0-9][a-z0-9_-]*(\.html)?\/?$/i.test(path)) { gone(); return; }
+  $('title').textContent = T.soonTitle;
+  $('text').textContent = T.soonText;
+  document.title = T.doc;
+  // déjà rechargé pour cette adresse il y a moins de 30 s et toujours ici : la 404 venait du cache
+  // du navigateur → on repart avec un paramètre neuf (les ?pdf=1 / ?deck=1 et le #ppedit=… restent)
+  var key = 'pp404:' + path, again = false;
+  try { again = Date.now() - Number(sessionStorage.getItem(key) || 0) < 30000; } catch (_) { /* stockage fermé */ }
+  function open() {
+    try { sessionStorage.setItem(key, String(Date.now())); } catch (_) { /* stockage fermé */ }
+    if (!again) { location.reload(); return; }
+    var q = location.search ? location.search + '&' : '?';
+    location.replace(path + q + '_pp=' + Date.now() + location.hash);
+  }
+  var t0 = Date.now(), LIMIT = 10 * 60 * 1000;
+  var tick = setInterval(function () {
+    var s = Math.round((Date.now() - t0) / 1000);
+    if (s >= 15) { $('time').hidden = false; $('time').textContent = T.wait(s); }
+  }, 1000);
+  function poll() {
+    if (Date.now() - t0 > LIMIT) { clearInterval(tick); gone(); return; }
+    fetch(path + '?_probe=' + Date.now(), { method: 'HEAD', cache: 'no-store', credentials: 'omit' })
+      .then(function (r) { if (r.ok) { clearInterval(tick); open(); } else setTimeout(poll, 5000); })
+      .catch(function () { setTimeout(poll, 5000); });
+  }
+  setTimeout(poll, again ? 2500 : 1500);
+})();
+</script>
+</body>
+</html>

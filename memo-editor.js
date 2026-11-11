@@ -1577,6 +1577,130 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   // dessinés) et la page le télécharge. L'impression du navigateur reste le recours : lecteur hors
   // de l'équipe, ou service indisponible.
   var pdfJob = null;
+  // le dossier comité mis en forme par le serveur → { url (adresse locale du fichier), saved }
+  function pdfFile() {
+    var saved = true;
+    var wait = doc.on && !doc.reading ? save(true) : Promise.resolve(true);
+    return Promise.resolve(wait).then(function (ok) {
+      saved = ok !== false;
+      var headers = authHeaders({});
+      return fetch(API + '/pdf?lang=' + VIEW_LANG + (state.preview ? '&n=' + state.preview : ''), { headers: headers, credentials: 'omit' });
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.blob();
+    }).then(function (blob) {
+      if (!blob || blob.size < 800) throw new Error('PDF vide');
+      var url = URL.createObjectURL(blob);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 600000);
+      return { url: url, saved: saved };
+    });
+  }
+  function downloadPdf(url) {
+    var a = el('a', { href: url, download: pdfName() + '.pdf' });
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+  /* 11/11 (Antoine) — « Mémo rédigé (PDF) » du mail de fin de mémo (?pdf=1) : la page s'ouvre sur cette
+   * fenêtre, qui présente le dossier ; il se met en forme au clic, puis se télécharge ou s'ouvre depuis la
+   * fenêtre même. Le lien du mail visait le PDF du serveur en direct : une erreur brute à l'écran. */
+  var PK = en ? {
+    title: 'Written memo (PDF)',
+    intro: 'The written investment memo, laid out for your committee: cover page, contents, every part of the memo and its sources — as an A4 PDF.',
+    note: 'Ready in a few seconds (up to a minute for a long memo).',
+    go: '⬇ Generate the PDF', making: 'Formatting the committee pack…',
+    ready: 'Your PDF is ready: the download has started.', download: '⬇ Download', open: 'Open',
+    retry: 'Retry', cancel: 'Cancel', close: 'Close'
+  } : {
+    title: 'Mémo rédigé (PDF)',
+    intro: 'Le mémo d’investissement rédigé, mis en page pour votre comité : page de garde, sommaire, chaque partie du mémo et ses sources — en PDF A4.',
+    note: 'Prêt en quelques secondes (jusqu’à une minute pour un long mémo).',
+    go: '⬇ Générer le PDF', making: 'Mise en forme du dossier comité…',
+    ready: 'Votre PDF est prêt : le téléchargement a démarré.', download: '⬇ Télécharger', open: 'Ouvrir',
+    retry: 'Réessayer', cancel: 'Annuler', close: 'Fermer'
+  };
+  var pdfAsk = null;
+  function askPdf() {
+    unselectMedia();
+    if (editorial) { exportPdf(); return; }
+    if (!pdfAsk) buildPdfDialog();
+    pdfAsk.back.hidden = false;
+    pdfStage(pdfAsk.busy ? 'making' : pdfAsk.file ? 'ready' : 'ask');
+  }
+  function closePdfDialog() { if (pdfAsk) { clearInterval(pdfAsk.timer); pdfAsk.back.hidden = true; } }
+  function buildPdfDialog() {
+    var back = el('div', { class: 'ppme-ui ppme-dlg-back' });
+    var box = el('div', { class: 'ppme-dlg', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'ppme-pdf-t' });
+    var x = el('button', { type: 'button', class: 'ppme-dlg-x', 'aria-label': PK.close }, '×');
+    x.onclick = closePdfDialog;
+    box.appendChild(x);
+    box.appendChild(el('h2', { id: 'ppme-pdf-t' }, '📄 ' + PK.title));
+    box.appendChild(el('p', { class: 'ppme-dlg-intro' }, PK.intro));
+    var note = el('p', { class: 'ppme-dlg-cost' }, PK.note);
+    var run = el('div', { class: 'ppme-dlg-run', role: 'status' });
+    var err = el('p', { class: 'ppme-dlg-err', role: 'alert' });
+    var act = el('div', { class: 'ppme-dlg-act' });
+    [note, run, err, act].forEach(function (n) { box.appendChild(n); });
+    back.appendChild(box);
+    back.addEventListener('mousedown', function (e) { if (e.target === back) closePdfDialog(); });
+    back.addEventListener('keydown', function (e) { if (e.key === 'Escape') closePdfDialog(); });
+    document.body.appendChild(back);
+    pdfAsk = { back: back, note: note, run: run, err: err, act: act, file: null, busy: false, timer: 0, t0: 0 };
+  }
+  function pdfAction(label, run, main) {
+    var b = el('button', { type: 'button', class: main ? 'ppme-dlg-go' : 'ppme-dlg-cancel' }, label);
+    b.onclick = run;
+    pdfAsk.act.appendChild(b);
+    return b;
+  }
+  function pdfStage(stage) {
+    var d = pdfAsk;
+    clearInterval(d.timer);
+    d.act.innerHTML = '';
+    d.run.innerHTML = '';
+    d.note.hidden = stage !== 'ask';
+    d.run.hidden = stage !== 'making' && stage !== 'ready';
+    d.err.hidden = stage !== 'error';
+    if (stage === 'ask') {
+      pdfAction(PK.cancel, closePdfDialog);
+      var go = pdfAction(PK.go, makeAskedPdf, true);
+      setTimeout(function () { try { go.focus(); } catch (_) { /* fenêtre fermée */ } }, 0);
+    } else if (stage === 'making') {
+      d.run.appendChild(el('span', { class: 'ppme-spin', 'aria-hidden': 'true' }));
+      d.run.appendChild(el('span', { class: 'ppme-dlg-step' }, PK.making));
+      var t = el('span', { class: 'ppme-dlg-time' }, Math.round((Date.now() - d.t0) / 1000) + ' s');
+      d.run.appendChild(t);
+      d.timer = setInterval(function () { t.textContent = Math.round((Date.now() - d.t0) / 1000) + ' s'; }, 1000);
+      pdfAction(PK.close, closePdfDialog);
+    } else if (stage === 'ready') {
+      d.run.appendChild(el('span', {}, '✓ ' + (d.file.saved ? PK.ready : D.pdfUnsaved)));
+      pdfAction(PK.open, function () { window.open(d.file.url, '_blank', 'noopener'); });
+      pdfAction(PK.download, function () { downloadPdf(d.file.url); }, true);
+    } else {
+      d.err.textContent = D.pdfFailed;
+      pdfAction(D.pdfPrint, function () { closePdfDialog(); printPack(); });
+      pdfAction(PK.retry, makeAskedPdf, true);
+    }
+  }
+  function makeAskedPdf() {
+    var d = pdfAsk;
+    if (d.busy) return;
+    d.busy = true;
+    d.t0 = Date.now();
+    pdfStage('making');
+    pdfFile().then(function (f) {
+      d.file = f;
+      d.busy = false;
+      // fermée pendant la mise en forme : rien ne part ; la rouvrir propose le fichier
+      if (d.back.hidden) return;
+      downloadPdf(f.url);
+      pdfStage('ready');
+    }).catch(function () {
+      d.busy = false;
+      if (!d.back.hidden) pdfStage('error');
+    });
+  }
   // les boutons PDF : la barre du mémo et l'en-tête du poste de travail Stan, même effet, même attente
   function pdfButtons() {
     return Array.prototype.slice.call(document.querySelectorAll('.ppme-dbar .ppme-pdf, .ppj-head-btn[data-head="pdf"]'));
@@ -1608,26 +1732,10 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       b.textContent = doc.barLevel && b.hasAttribute('data-l0') ? '⏳ PDF…' : D.pdfBusy;
     });
     var note = progress(D.pdfMaking);
-    var saved = true;
-    var wait = doc.on && !doc.reading ? save(true) : Promise.resolve(true);
-    pdfJob = Promise.resolve(wait).then(function (ok) {
-      saved = ok !== false;
-      var headers = authHeaders({});
-      return fetch(API + '/pdf?lang=' + VIEW_LANG + (state.preview ? '&n=' + state.preview : ''), { headers: headers, credentials: 'omit' });
-    }).then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.blob();
-    }).then(function (blob) {
-      if (!blob || blob.size < 800) throw new Error('PDF vide');
-      var url = URL.createObjectURL(blob);
-      var a = el('a', { href: url, download: pdfName() + '.pdf' });
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(function () { URL.revokeObjectURL(url); }, 600000);
+    pdfJob = pdfFile().then(function (f) {
+      downloadPdf(f.url);
       // le fichier part au téléchargement ; s'il n'arrive pas (téléchargements bloqués), il s'ouvre ici
-      note.done(saved ? D.pdfReady : D.pdfUnsaved, [{ label: D.pdfOpen, run: function () { window.open(url, '_blank', 'noopener'); } }]);
+      note.done(f.saved ? D.pdfReady : D.pdfUnsaved, [{ label: D.pdfOpen, run: function () { window.open(f.url, '_blank', 'noopener'); } }]);
     }).catch(function () {
       note.done(D.pdfFailed, [{ label: D.pdfPrint, run: printPack }]);
     }).then(function () {
@@ -5425,6 +5533,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     if (!member) { startGuest(); brandReader(); conformLegacy(); }
     mountLangSwitch();
     openAskedDeck();
+    openAskedPdf();
   });
   if (!editorial) mountLangSwitch();
   // 27/10 — « Slidedeck (PDF) » du mail de fin de mémo (?deck=1) : la page s'ouvre sur la
@@ -5438,6 +5547,17 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     } catch (_) { /* adresse laissée telle quelle */ }
     injectCss();
     openDeck();
+  }
+  // 11/11 — « Mémo rédigé (PDF) » du mail de fin de mémo (?pdf=1) : même principe, la fenêtre du PDF
+  function openAskedPdf() {
+    if (EMBED || editorial || !/[?&]pdf=1(&|$)/.test(location.search)) return;
+    try {
+      var u = new URL(location.href);
+      u.searchParams.delete('pdf');
+      history.replaceState(null, '', u.pathname + u.search + u.hash);
+    } catch (_) { /* adresse laissée telle quelle */ }
+    injectCss();
+    askPdf();
   }
   // 15/10 — dans l'onglet Mémo du cockpit, « Reprendre le mémo → » du bandeau d'aperçu se
   // confirme dans le cockpit même, sur la ligne de la société, au lieu d'ouvrir un second onglet.
