@@ -1,0 +1,63 @@
+name: Sync brand sources
+
+# Relit les quatre dépôts produit et ouvre une PR sur wargame quand un logo,
+# un commit ou une variable CSS a bougé. Le texte de marque (voix, offres,
+# studio) n'est pas réécrit.
+#
+# Dépôts privés : créer le secret d'actions BRAND_REPOS_TOKEN.
+# Sans ce secret, Proplace et ProFund (publics) se synchronisent quand même.
+# Maximum Insurance et SoSuites restent sur le repli du site public, et la
+# PR le dit dans brand/<marque>/brand.json → sync.notes.
+#
+# Secret
+#   Nom     : BRAND_REPOS_TOKEN
+#   Type    : fine-grained personal access token, compte qui voit l'org proplace-co
+#   Ressource : seulement ces dépôts
+#               proplace-co/proplace-co.github.io
+#               proplace-co/maximum-insurance
+#               proplace-co/profund-vc
+#               proplace-co/sosuites
+#   Droits  : Contents = Read-only, Metadata = Read-only
+#   Pas de droit d'écriture, pas d'administration, pas de secret sur ces dépôts.
+#   Le jeton GITHUB_TOKEN du workflow suffit pour ouvrir la PR ici.
+#   Ne jamais committer la valeur.
+
+on:
+  schedule:
+    - cron: "15 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: brand-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract brand sources
+        env:
+          BRAND_REPOS_TOKEN: ${{ secrets.BRAND_REPOS_TOKEN }}
+        run: python3 scripts/sync-brands.py
+
+      - name: Open pull request when something changed
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "brand: resynchronise les sources"
+          title: "brand: resynchronisation des identités"
+          body: |
+            Mise à jour automatique des logos et des variables CSS lus dans les dépôts produit.
+
+            Le texte éditorial (positionnement, voix, textes du studio) n'est pas écrasé.
+            Si `sync.access` vaut `unavailable`, le dépôt est privé ou invisible : le script a gardé le repli du site public. Voir `brand/SYNC.md` pour le secret `BRAND_REPOS_TOKEN`.
+          branch: brand-sync/auto
+          base: main
+          add-paths: brand
+          delete-branch: true
