@@ -15,7 +15,7 @@
   if (!demo && !document.getElementById('ppme-script')) {
     var memoEditor = document.createElement('script');
     memoEditor.id = 'ppme-script';
-    memoEditor.src = assetBase + 'memo-editor.js?v=28';
+    memoEditor.src = assetBase + 'memo-editor.js?v=29';
     memoEditor.defer = true;
     document.head.appendChild(memoEditor);
   }
@@ -876,6 +876,15 @@
       guest: guest === 'lp' || guest === 'gp' ? guest : '' };
   }
   var ROLE_LABEL = { ceo: 'Décideur final (CEO)', cd: 'Corporate developer', gp: 'GP du fonds', lp: 'LP' };
+  // 13/11 (Antoine) — un message venu du 2-pager (« Discuter de … avec Alexandre », route
+  // /cibles/pager-discuss) : son auteur n'a ni lien du fonds ni compte. L'étiquette le dit, le nom
+  // reste « déclaré », et le serveur ne lui ouvre aucun droit (can_edit décide seul des boutons).
+  var PAGER_EN = String(context.lang || '').indexOf('en') === 0;
+  var PAGER_VIA = PAGER_EN ? 'via the 2-pager · unverified identity' : 'via le 2-pager · identité non vérifiée';
+  function pagerTitle(who) {
+    return (who ? (PAGER_EN ? 'Gives their name as ' : 'Se présente comme ') + esc(who) : (PAGER_EN ? 'Anonymous reader' : 'Lecteur anonyme'))
+      + ' <span class="ppf-via">' + PAGER_VIA + '</span>';
+  }
   var DECISION_LABEL = { yes: 'OUI · CALL YES', no: 'NON · CALL NO', pending: 'CALL PENDING · au décideur final' };
   async function threadCall(extra) {
     var link = threadHash();
@@ -910,8 +919,9 @@
       out.push({ at: e.at, title: title, text: text });
     });
     (d.opinions || []).forEach(function (o) {
-      out.push({ at: o.ts, title: (ROLE_LABEL[o.role] || 'Avis') + (o.who ? ' · ' + esc(o.who) : ''), role: o.role,
-        decision: o.decision, text: o.text, edited: o.edited, ref: o.can_edit ? 'op:' + o.id : '' });
+      var pager = o.via === 'pager' || o.role === 'pager';
+      out.push({ at: o.ts, title: pager ? pagerTitle(o.who) : (ROLE_LABEL[o.role] || 'Avis') + (o.who ? ' · ' + esc(o.who) : ''), role: pager ? 'pager' : o.role,
+        decision: pager ? '' : o.decision, text: o.text, edited: o.edited, ref: o.can_edit ? 'op:' + o.id : '' });
     });
     (d.notes || []).forEach(function (n) {
       out.push({ at: (n.date || '') + (n.time ? 'T' + n.time : ''), title: n.role ? (ROLE_LABEL[n.role] || 'Message') + (n.who ? ' · ' + esc(n.who) : '') : 'Note du fonds',
@@ -992,6 +1002,8 @@
         + '.ppf-msg{margin:0;font-size:13px;color:#0f5132}.ppf-err{color:#b42318}.ppf-line{list-style:none;margin:0;padding:0 0 0 14px;border-left:2px solid #e2e8f0;display:grid;gap:10px}'
         + '.ppf-item{position:relative}.ppf-dot{position:absolute;left:-21px;top:14px;width:10px;height:10px;border-radius:50%;background:#94a3b8;box-shadow:0 0 0 3px #fff}'
         + '.ppf-ceo .ppf-dot{background:#7c3aed}.ppf-cd .ppf-dot{background:#d97706}.ppf-gp .ppf-dot{background:#15803d}.ppf-lp .ppf-dot{background:#2563eb}'
+        + '.ppf-pager .ppf-dot{background:#c99a2e}.ppf-pager .ppf-card{border-style:dashed;border-color:#e8c468}'
+        + '.ppf-via{display:inline-block;margin-left:6px;padding:1px 8px;border:1px dashed #c99a2e;border-radius:999px;background:#fff;color:#6a4916;font-size:11px;font-weight:700}'
         + '.ppf-card{border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;background:#fff;font-size:13.5px;line-height:1.5}.ppf-snap{background:#f8fafc}'
         + '.ppf-meta{font-size:11.5px;color:#94a3b8}.ppf-title{font-weight:700;margin:2px 0}.ppf-text{margin:4px 0 0;white-space:pre-wrap}'
         + '.ppf-chip{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;background:#ede9fe;color:#5b21b6;font-size:11px;font-weight:700}'

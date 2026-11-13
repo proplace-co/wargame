@@ -12,6 +12,9 @@
  * commande d'édition, même pour un membre connecté. Chargé par proplace-chat-memo.js.
  * 11/10 — tout autre lecteur de la page (sans compte de l'équipe) a la même barre d'aperçu :
  * ☰ Plan, le PDF mis en forme, le deck, et « Se connecter » ; connecté, l'édition s'ouvre.
+ * 13/11 — « 📑 2-pager » en tête des exports (tout le dossier en deux pages A4, l'avis humain par-dessus
+ * le verdict) ; ?pager=1 ouvre sa fenêtre, ?discuter=1 (bouton et QR code du 2-pager) la fenêtre jaune
+ * « Discuter de {société} avec Alexandre ».
  */
 (function () {
   'use strict';
@@ -185,6 +188,12 @@
       ? 'Your Corporate Developer’s perspective, alongside Stan’s verdict. The validated opinion is shared in the memo and the daily / weekly briefs.'
       : 'Le regard de votre Corporate Developer, en complément du verdict de Stan. L’avis validé est partagé dans le mémo et les briefs quotidiens / hebdomadaires.'));
     dlg.appendChild(el('div', { class: 'ppme-hr-body' }));
+    // 13/11 (Antoine) — en pied, discret : la suite naturelle de l'avis, en parler (fenêtre jaune « Discuter »)
+    var foot = el('footer', { class: 'ppme-hr-foot' });
+    var talk = el('button', { type: 'button', class: 'ppme-hr-discuss' }, discussLabels().link);
+    talk.onclick = function () { closeHumanDialog(); openDiscuss(); };
+    foot.appendChild(talk);
+    dlg.appendChild(foot);
     back.appendChild(dlg);
     back.addEventListener('mousedown', function (e) { if (e.target === back) closeHumanDialog(); });
     document.body.appendChild(back);
@@ -204,10 +213,14 @@
   function paintHumanReview() {
     if (editorial || !humanReview || !humanReview.ok) return;
     syncHumanButton();
+    paintDiscussNote();                    // 13/11 — la fenêtre « Discuter » montre l'avis validé dès qu'il arrive
     if (humanDialog) {
       var body = humanDialog.querySelector('.ppme-hr-body');
       body.textContent = '';
       fillHumanReview(body);
+      // pendant la saisie de l'avis, pas de sortie vers « Discuter » : le texte en cours serait perdu
+      var foot = humanDialog.querySelector('.ppme-hr-foot');
+      if (foot) foot.hidden = humanReviewEditing;
     }
     var old = area.querySelector('.ppme-human-review');
     if (old) old.remove();
@@ -273,6 +286,7 @@
       if (previous) previous.remove();
       if (humanDialog) { humanDialog.remove(); humanDialog = null; }
       syncHumanButton();
+      paintDiscussNote();
     }
     if (editorial || humanReviewSaving || humanReviewEditing) return;
     var sequence = ++humanReviewSequence;
@@ -285,6 +299,219 @@
       humanReview = result; paintHumanReview();
     }).catch(function () { /* Existing memo content remains readable if the opinion service is unavailable. */ });
   }
+  /* ── 13/11 (Antoine) — « Discuter de {société} avec Alexandre » (?discuter=1) ─────────────────
+   * Le bouton et le QR code du 2-pager mènent ici, comme le pied de la fenêtre « Avis humain » : une
+   * fenêtre jaune (le jaune de l'avis humain) où le lecteur — connecté ou non, souvent sur téléphone —
+   * écrit au Corporate Developer humain : contacter le dirigeant, creuser, quelles suites donner.
+   * Le message part par une route publique en écriture seule (aucun jeton dans la page ni dans le PDF,
+   * rien ne se lit en retour) : il s'inscrit au fil de décision du dossier et Alexandre est prévenu par
+   * mail ; le contact ne figure que dans ce mail. Aucun appel réseau avant l'envoi. En marque blanche,
+   * « votre Corporate Developer » remplace « Alexandre » et tout texte passe par wlText(). */
+  var DISCUSS_API = 'https://alexandre-79537--proplace-chat-proxy-fastapi-app.modal.run/cibles/pager-discuss';
+  var discuss = { back: null, fields: null, draft: null, busy: false, from: null };
+  function wl(t) { return brandOn ? wlText(t, brandOn) : String(t); }
+  function discussLabels() {
+    var white = !!brandOn, name = memoName();
+    var H = white ? (en ? 'your Corporate Developer' : 'votre Corporate Developer') : 'Alexandre';
+    var Hc = H.charAt(0).toUpperCase() + H.slice(1);
+    var L = en ? {
+      title: 'Discuss ' + (name || 'this file') + ' with ' + H, link: 'Discuss this file with ' + H,
+      intro: 'The final word is human: ' + (white ? H : 'Alexandre, your Corporate Developer,') + ' answers your questions on this file. Reach out, dig deeper, decide: let’s talk about the concrete next steps.',
+      noteK: white ? 'Your Corporate Developer’s opinion' : 'Alexandre’s opinion',
+      noNote: 'No human opinion has been validated on this file yet: ask for it below.',
+      startsK: 'A question to start with',
+      starts: ['Should we contact the CEO?', 'What should we dig into before going further?', 'What are the concrete next steps for this file?'],
+      text: 'Your message', textPh: 'Your question, or what you expect from this file…',
+      who: 'Your name', contact: 'Your email or phone (so that ' + H + ' can reply)', optional: 'Optional',
+      fine: 'Your email or phone is passed on to ' + H + ' only; it never appears in the file.',
+      send: 'Send to ' + H, sending: 'Sending…', needText: 'Write your message.', needName: 'Enter your name.',
+      // 13/11 — un lecteur anonyme ne lit pas le fil : la réponse promise passe par son contact s'il en a laissé un
+      sent: 'Message sent. ' + Hc + ' has been notified and will reply directly, using the contact details you left.',
+      sentNoContact: 'Message sent. ' + Hc + ' has been notified. The reply will appear in this file’s decision thread, visible from your cockpit: leave an email or phone number for a direct reply.',
+      sentQuiet: 'Message received: it is now in this file’s decision thread. The email alert did not go out; for a quick reply, send it again in a few minutes.',
+      failed: 'The message could not be sent. Check your connection and try again.',
+      capped: 'The message limit for this file has been reached for now. Please try again a little later.',
+      missing: 'This file has no published memo: the message could not be delivered.',
+      invalid: 'Message refused: check your text (1,500 characters at most).'
+    } : {
+      title: 'Discuter de ' + (name || 'ce dossier') + ' avec ' + H, link: 'Discuter de ce dossier avec ' + H,
+      intro: 'Le dernier mot est humain\u00a0: ' + (white ? H : 'Alexandre, votre Corporate Developer,') + ' répond à vos questions sur ce dossier. Contacter, creuser, décider\u00a0: parlons des suites concrètes à donner.',
+      noteK: white ? 'L’avis de votre Corporate Developer' : 'L’avis d’Alexandre',
+      noNote: 'L’avis humain n’est pas encore validé sur ce dossier\u00a0: demandez-le ci-dessous.',
+      startsK: 'Une question pour commencer',
+      starts: ['Faut-il contacter le dirigeant\u00a0?', 'Que faut-il creuser avant d’aller plus loin\u00a0?', 'Quelles suites concrètes donner à ce dossier\u00a0?'],
+      text: 'Votre message', textPh: 'Votre question, ou ce que vous attendez de ce dossier…',
+      who: 'Votre nom', contact: 'Votre e-mail ou téléphone (pour qu' + (white ? 'e ' : '’') + H + ' vous réponde)', optional: 'Facultatif',
+      fine: 'Votre e-mail ou téléphone n’est transmis qu’à ' + H + '\u00a0; il n’apparaît jamais dans le dossier.',
+      send: 'Envoyer à ' + H, sending: 'Envoi…', needText: 'Écrivez votre message.', needName: 'Indiquez votre nom.',
+      sent: 'Message envoyé. ' + Hc + ' est prévenu et vous répond directement, au contact que vous avez laissé.',
+      sentNoContact: 'Message envoyé. ' + Hc + ' est prévenu. Sa réponse arrivera dans le fil de décision de ce dossier, visible depuis votre cockpit : pour une réponse directe, laissez un e-mail ou un téléphone.',
+      sentQuiet: 'Message bien reçu : il est inscrit au fil de décision de ce dossier. L’alerte par mail n’est pas partie ; pour une réponse rapide, renvoyez-le dans quelques minutes.',
+      failed: 'L’envoi a échoué. Vérifiez votre connexion, puis réessayez.',
+      capped: 'Le plafond de messages de ce dossier est atteint pour le moment. Réessayez un peu plus tard.',
+      missing: 'Ce dossier n’a pas de mémo publié\u00a0: le message n’a pas pu être transmis.',
+      invalid: 'Message refusé\u00a0: vérifiez votre texte (1\u00a0500 caractères au plus).'
+    };
+    Object.keys(L).forEach(function (k) { L[k] = Array.isArray(L[k]) ? L[k].map(wl) : wl(L[k]); });
+    return L;
+  }
+  function openDiscuss() {
+    if (editorial) return;
+    unselectMedia();                       // sinon ⌫ dans le message retirerait l'image sélectionnée du mémo
+    injectCss();
+    closeDiscuss();
+    var L = discussLabels(), from = document.activeElement;
+    var back = el('div', { class: 'ppme-ui ppme-hr-back ppme-disc-back' });
+    var dlg = el('div', { class: 'ppme-hr-dialog ppme-disc', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'ppme-disc-t' });
+    var head = el('header');
+    head.appendChild(el('strong', { id: 'ppme-disc-t' }, L.title));
+    var x = el('button', { type: 'button', class: 'ppme-hr-x', 'aria-label': T.close, title: T.close }, '×');
+    x.onclick = closeDiscuss;
+    head.appendChild(x);
+    dlg.appendChild(head);
+    dlg.appendChild(el('p', { class: 'ppme-disc-intro' }, L.intro));
+    var note = el('div', { class: 'ppme-disc-note' });
+    note.hidden = true;
+    dlg.appendChild(note);
+    var form = el('form', { class: 'ppme-disc-form', novalidate: 'novalidate' });
+    var field = function (label, node) {
+      var lab = el('label', { class: 'ppme-disc-f' });
+      lab.appendChild(el('span', {}, label));
+      lab.appendChild(node);
+      form.appendChild(lab);
+      return node;
+    };
+    // les amorces juste au-dessus du message qu'elles pré-remplissent, puis qui écrit : de haut en bas sur un téléphone
+    form.appendChild(el('span', { class: 'ppme-disc-k', id: 'ppme-disc-sk' }, L.startsK));
+    var starts = el('div', { class: 'ppme-disc-starts', role: 'group', 'aria-labelledby': 'ppme-disc-sk' });
+    form.appendChild(starts);
+    var text = field(L.text, el('textarea', { name: 'text', rows: '4', maxlength: '1500', placeholder: L.textPh }));
+    var who = field(L.who, el('input', { type: 'text', name: 'who', maxlength: '40', autocomplete: 'name' }));
+    var contact = field(L.contact, el('input', { type: 'text', name: 'contact', maxlength: '120', autocomplete: 'email', placeholder: L.optional }));
+    // pot de miel : un champ que le lecteur ne voit pas et n'atteint pas au clavier ; le serveur écarte qui le remplit
+    var trap = el('div', { class: 'ppme-disc-hp', 'aria-hidden': 'true' });
+    var site = el('input', { type: 'text', name: 'website', tabindex: '-1', autocomplete: 'off' });
+    trap.appendChild(site);
+    form.appendChild(trap);
+    form.appendChild(el('p', { class: 'ppme-disc-fine' }, L.fine));
+    // le pied reste visible quand la fenêtre défile (téléphone) : le bouton d'envoi et ce qui manque, toujours sous les yeux
+    var foot = el('div', { class: 'ppme-disc-foot' });
+    var status = el('p', { class: 'ppme-disc-status', role: 'status', 'aria-live': 'polite' });
+    foot.appendChild(status);
+    var act = el('div', { class: 'ppme-disc-act' });
+    var cancel = el('button', { type: 'button', class: 'ppme-disc-cancel' }, T.close);
+    cancel.onclick = closeDiscuss;
+    var send = el('button', { type: 'submit', class: 'ppme-disc-send' }, L.send);
+    act.appendChild(cancel);
+    act.appendChild(send);
+    foot.appendChild(act);
+    form.appendChild(foot);
+    var say = function (msg, node) {
+      status.className = 'ppme-disc-status' + (msg ? ' err' : '');
+      status.textContent = msg || '';
+      if (node) node.focus();
+    };
+    L.starts.forEach(function (q) {
+      var b = el('button', { type: 'button' }, q);
+      b.onclick = function () {
+        var cur = text.value.trim();
+        // une amorce remplace une amorce ; elle s'ajoute à ce que le lecteur a déjà écrit
+        text.value = !cur || L.starts.indexOf(cur) >= 0 ? q : (cur.indexOf(q) >= 0 ? cur : cur + '\n' + q);
+        say('');
+        text.focus();
+        try { text.setSelectionRange(text.value.length, text.value.length); } catch (_) { /* curseur laissé où il est */ }
+      };
+      starts.appendChild(b);
+    });
+    if (discuss.draft) { text.value = discuss.draft.text; who.value = discuss.draft.who; contact.value = discuss.draft.contact; }
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (discuss.busy) return;
+      var body = { record: record, text: text.value.trim().slice(0, 1500), who: who.value.trim().slice(0, 40),
+        contact: contact.value.trim().slice(0, 120), lang: VIEW_LANG, website: site.value };
+      if (!body.text) { say(L.needText, text); return; }
+      if (!body.who) { say(L.needName, who); return; }
+      discuss.busy = true;
+      send.disabled = true;
+      send.textContent = L.sending;
+      say('');
+      // ni session ni jeton : la route n'en demande pas, et un 2-pager circule
+      fetch(DISCUSS_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'omit', body: JSON.stringify(body) })
+        .then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (j) {
+            return { status: r.status, ok: r.status >= 200 && r.status < 300 && j.ok !== false, notified: j.notified };
+          });
+        }).catch(function () { return { status: 0, ok: false }; })
+        .then(function (res) {
+          discuss.busy = false;
+          var msg = res.ok ? (res.notified === false ? L.sentQuiet : body.contact ? L.sent : L.sentNoContact)
+            : res.status === 429 ? L.capped : res.status === 404 ? L.missing
+            : res.status === 400 || res.status === 422 ? L.invalid : L.failed;
+          if (res.ok) discuss.draft = null;
+          if (discuss.back !== back) { toast(msg); return; }       // fermée pendant l'envoi : le résultat se dit quand même
+          if (!res.ok) { send.disabled = false; send.textContent = L.send; say(msg, send); return; }
+          var done = el('div', { class: 'ppme-disc-done' });
+          done.appendChild(el('p', { role: 'status' }, '✓ ' + msg));
+          var end = el('div', { class: 'ppme-disc-act' });
+          var close = el('button', { type: 'button', class: 'ppme-disc-send' }, T.close);
+          close.onclick = closeDiscuss;
+          end.appendChild(close);
+          done.appendChild(end);
+          dlg.replaceChild(done, form);
+          discuss.fields = null;
+          close.focus();
+        });
+    });
+    dlg.appendChild(form);
+    back.appendChild(dlg);
+    back.addEventListener('mousedown', function (e) { if (e.target === back) closeDiscuss(); });
+    document.body.appendChild(back);
+    discuss.back = back;
+    discuss.fields = { text: text, who: who, contact: contact };
+    discuss.from = from;
+    paintDiscussNote();
+    starts.firstChild.focus();             // une amorce, pas un champ : le clavier d'un téléphone ne masque pas la fenêtre
+  }
+  function closeDiscuss() {
+    var back = discuss.back;
+    if (!back) return;
+    var f = discuss.fields;
+    if (f) discuss.draft = { text: f.text.value, who: f.who.value, contact: f.contact.value };   // une fermeture par mégarde ne perd rien
+    back.remove();
+    discuss.back = null;
+    discuss.fields = null;
+    var from = discuss.from;
+    discuss.from = null;
+    try { if (from && from !== document.body && document.contains(from)) from.focus(); } catch (_) { /* l'élément a disparu */ }
+  }
+  // l'avis humain validé en tête de la fenêtre, dès qu'il est chargé (jamais le brouillon proposé par Stan)
+  function paintDiscussNote() {
+    var box = discuss.back && discuss.back.querySelector('.ppme-disc-note');
+    if (!box) return;
+    var known = !!(humanReview && humanReview.ok);
+    box.textContent = '';
+    box.hidden = !known;
+    if (!known) return;
+    var L = discussLabels();
+    box.className = 'ppme-disc-note' + (humanReview.note ? '' : ' ppme-disc-none');
+    if (humanReview.note) box.appendChild(el('strong', {}, L.noteK));
+    box.appendChild(el('p', {}, humanReview.note ? wl(humanReview.note) : L.noNote));
+  }
+  // au clavier : Échap ferme, Tab et Maj+Tab restent dans la fenêtre
+  document.addEventListener('keydown', function (e) {
+    var back = discuss.back;
+    if (!back) return;
+    if (e.key === 'Escape') { closeDiscuss(); return; }
+    if (e.key !== 'Tab') return;
+    var stops = Array.prototype.filter.call(back.querySelectorAll('button, input, textarea'), function (n) {
+      return !n.disabled && n.getAttribute('tabindex') !== '-1';
+    });
+    if (!stops.length) return;
+    var first = stops[0], last = stops[stops.length - 1], cur = document.activeElement;
+    if (!back.contains(cur)) { e.preventDefault(); first.focus(); }
+    else if (e.shiftKey && cur === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && cur === last) { e.preventDefault(); first.focus(); }
+  });
   function pageVersion() {
     var m = document.querySelector('meta[name="pp-memo-version"]');
     return m ? parseInt(m.getAttribute('content'), 10) || 0 : 0;
@@ -447,8 +674,8 @@
       ['en', 'fr'].forEach(function (l) {
         var b = el('button', { type: 'button', 'data-lang': l, 'aria-pressed': String(l === VIEW_LANG),
           title: l === MEMO_LANG ? (en ? 'The memo in its original language' : 'Le mémo dans sa langue d’origine')
-            : (l === 'fr' ? 'Lire ce mémo, son PDF et son deck en français (traduction automatique)'
-              : 'Read this memo, its PDF and its deck in English (automatic translation)') }, l.toUpperCase());
+            : (l === 'fr' ? 'Lire ce mémo, son 2-pager, son PDF et son deck en français (traduction automatique)'
+              : 'Read this memo, its 2-pager, its PDF and its deck in English (automatic translation)') }, l.toUpperCase());
         if (l === VIEW_LANG) b.className = 'on';
         b.onclick = function () { switchLang(l); };
         box.appendChild(b);
@@ -1777,12 +2004,242 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     failed: 'La synthèse a échoué : ', retry: 'Réessayer', done: 'Deck du comité téléchargé.', background: 'Le deck continue de se préparer : il se téléchargera dès qu’il sera prêt.',
     file: function (mode, name, n) { return 'Deck ' + K.modes[mode][0] + ' — ' + name + (n ? ' — v' + n : ''); }
   };
-  var deck = { dlg: null, info: null, mode: '', run: null, timer: 0 };
+  /* 13/11 (Antoine) — le 2-pager : tout le dossier en deux pages A4 pour un lecteur pressé, l'avis humain
+   * par-dessus le verdict. Même fenêtre que le deck (choix du comité, rédaction en fond, re-téléchargement
+   * gratuit), sous /pager ; son PDF se remet en page à la demande, avec l'avis humain du moment. Ni « Stan »,
+   * ni « Proplace », ni « Alexandre » dans ces libellés : la fenêtre est hors de la zone nettoyée en marque blanche. */
+  var PG = en ? {
+    btn: '📑 2-pager', hint: 'The committee 2-pager (VC, LBO or strategic acquirer), the whole file on two A4 pages: verdict, key figures, SWOT, then the human opinion — PDF',
+    title: 'Summarise the memo as a 2-pager',
+    intro: 'The whole file on two A4 pages for a reader in a hurry: sourced key figures, the thread of the memo, SWOT, reasoning and verdict, then the human opinion. Nothing is made up: only figures the memo backs with a source are put forward; the financial model’s calculations are not.',
+    modes: { vc: ['VC committee', 'Committee view: funding, growth drivers, exit routes'],
+             lbo: ['LBO committee', 'Committee view: profitability, cash conversion, debt capacity'],
+             strategic: ['Strategic acquirer committee', 'Committee view: nature of the synergies, integration, price logic'] },
+    suggested: 'suggested for this memo', ready: 'ready', loading: 'Loading…',
+    cost: function (eur) { return 'Written by Sonnet 5.5 · about €' + eur + ' · 1 to 2 minutes. Once made, a 2-pager downloads again for free.'; },
+    go: function (eur) { return 'Generate the 2-pager (~€' + eur + ')'; }, download: '⬇ Download the 2-pager', downloading: 'Preparing the PDF…', cancel: 'Cancel', close: 'Close',
+    human: { validated: '✓ The validated human opinion is in the 2-pager.', pending: 'The human opinion is not validated yet: the 2-pager says so and invites the reader to discuss the file.' },
+    steps: { queued: 'Starting…', writing: 'Sonnet 5.5 is writing the 2-pager…', layout: 'Laying out the two pages…' },
+    failed: 'The summary failed: ', retry: 'Retry', done: '2-pager downloaded.', background: 'The 2-pager keeps being prepared: it will download when ready.',
+    file: function (mode, name, n) { return PG.modes[mode][0] + ' 2-pager — ' + name + (n ? ' — v' + n : ''); }
+  } : {
+    btn: '📑 2-pager', hint: 'Le 2-pager du comité (VC, LBO ou acquéreur stratégique), tout le dossier en deux pages A4\u00a0: verdict, chiffres clés, SWOT, puis l’avis humain — PDF',
+    title: 'Synthétiser le mémo en 2-pager',
+    intro: 'Tout le dossier en deux pages A4 pour un lecteur pressé\u00a0: chiffres clés sourcés, fil du mémo, SWOT, raisonnement et verdict, puis l’avis humain. Rien n’est inventé\u00a0: seuls les chiffres que le mémo appuie sur une source sont mis en avant, pas les calculs du modèle financier.',
+    modes: { vc: ['Comité VC', 'Lecture du comité\u00a0: financement, moteurs de croissance, voies de sortie'],
+             lbo: ['Comité LBO', 'Lecture du comité\u00a0: rentabilité, conversion en cash, capacité d’endettement'],
+             strategic: ['Comité acquéreur stratégique', 'Lecture du comité\u00a0: nature des synergies, intégration, logique de prix'] },
+    suggested: 'conseillé pour ce mémo', ready: 'déjà prêt', loading: 'Chargement…',
+    cost: function (eur) { return 'Rédigé par Sonnet 5.5 · environ ' + eur + '\u00a0€ · 1 à 2 minutes. Une fois fait, le 2-pager se retélécharge gratuitement.'; },
+    go: function (eur) { return 'Générer le 2-pager (~' + eur + '\u00a0€)'; }, download: '⬇ Télécharger le 2-pager', downloading: 'Préparation du PDF…', cancel: 'Annuler', close: 'Fermer',
+    human: { validated: '✓ L’avis humain validé figure dans le 2-pager.', pending: 'L’avis humain n’est pas encore validé\u00a0: le 2-pager l’indique et invite à en discuter.' },
+    steps: { queued: 'Démarrage…', writing: 'Sonnet 5.5 rédige le 2-pager…', layout: 'Mise en page des deux pages…' },
+    failed: 'La synthèse a échoué\u00a0: ', retry: 'Réessayer', done: '2-pager téléchargé.', background: 'Le 2-pager continue de se préparer\u00a0: il se téléchargera dès qu’il sera prêt.',
+    file: function (mode, name, n) { return '2-pager ' + PG.modes[mode][0] + ' — ' + name + (n ? ' — v' + n : ''); }
+  };
   function euros(v) { var s = (Number(v) || 0.15).toFixed(2); return en ? s : s.replace('.', ','); }
   function memoName() {
     var named = document.querySelector('.sidebar-company-name');
     return String(state.company || ctx.name || ctx.company_name || (named && named.textContent) || '').trim();
   }
+  /* 13/11 — une seule fenêtre de synthèse pour le deck et le 2-pager : mêmes étapes (choix du comité,
+   * rédaction en fond, téléchargement), mêmes routes sous /<kind> (…, /runs/<rid>, /pdf), chacun ses
+   * libellés K. Le deck garde son comportement et son DOM d'origine (id ppme-dlg-t, radios ppme-deck-mode). */
+  function synthDialog(kind, K, icon) {
+    var syn = { dlg: null, info: null, mode: '', run: null, timer: 0, human: null };
+    var titleId = kind === 'deck' ? 'ppme-dlg-t' : 'ppme-' + kind + '-t';
+    function open() {
+      unselectMedia();
+      if (editorial) return;
+      // 28/10 — même règle que le PDF : le lecteur sans session synthétise la dernière version
+      // (le serveur borne les nouvelles synthèses des lecteurs non connectés et le dit lui-même).
+      if (!syn.dlg) build();
+      syn.dlg.hidden = false;
+      syn.err.hidden = true;
+      if (syn.run) { showRun(); return; }
+      syn.list.innerHTML = '';
+      syn.list.appendChild(el('p', { class: 'ppme-dlg-wait' }, K.loading));
+      syn.go.disabled = true;
+      if (syn.human) syn.human.hidden = true;
+      api('/' + kind + '?lang=' + VIEW_LANG + (state.preview ? '&n=' + state.preview : '')).then(function (j) {
+        if (!j.ok) throw new Error(j.detail || j.error || j.status);
+        syn.info = j;
+        if ((j.running || []).length) {
+          var r = j.running[0];
+          syn.run = { rid: r.run_id, mode: r.mode, n: r.n, t0: Date.now() };
+          showRun();
+          poll();
+          return;
+        }
+        if (!syn.mode || (j.modes || []).indexOf(syn.mode) < 0) syn.mode = j.suggested || 'vc';
+        renderModes();
+      }).catch(function (e) { fail(e); });
+    }
+    function build() {
+      var back = el('div', { class: 'ppme-ui ppme-dlg-back' });
+      var box = el('div', { class: 'ppme-dlg', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId });
+      var x = el('button', { type: 'button', class: 'ppme-dlg-x', 'aria-label': K.close }, '×');
+      x.onclick = close;
+      box.appendChild(x);
+      box.appendChild(el('h2', { id: titleId }, icon + ' ' + K.title));
+      box.appendChild(el('p', { class: 'ppme-dlg-intro' }, K.intro));
+      syn.list = el('div', { class: 'ppme-dlg-modes', role: 'radiogroup', 'aria-label': K.title });
+      box.appendChild(syn.list);
+      syn.cost = el('p', { class: 'ppme-dlg-cost' });
+      box.appendChild(syn.cost);
+      if (K.human) {                         // le 2-pager dit si l'avis humain validé y figure déjà
+        syn.human = el('p', { class: 'ppme-dlg-cost ppme-dlg-human' });
+        syn.human.hidden = true;
+        box.appendChild(syn.human);
+      }
+      syn.progress = el('div', { class: 'ppme-dlg-run', role: 'status' });
+      syn.progress.hidden = true;
+      box.appendChild(syn.progress);
+      syn.err = el('p', { class: 'ppme-dlg-err', role: 'alert' });
+      syn.err.hidden = true;
+      box.appendChild(syn.err);
+      var act = el('div', { class: 'ppme-dlg-act' });
+      var cancel = el('button', { type: 'button', class: 'ppme-dlg-cancel' }, K.cancel);
+      cancel.onclick = close;
+      syn.go = el('button', { type: 'button', class: 'ppme-dlg-go' });
+      syn.go.onclick = start;
+      act.appendChild(cancel);
+      act.appendChild(syn.go);
+      box.appendChild(act);
+      back.appendChild(box);
+      back.addEventListener('mousedown', function (e) { if (e.target === back) close(); });
+      back.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+      document.body.appendChild(back);
+      syn.dlg = back;
+    }
+    function renderModes() {
+      var j = syn.info || {};
+      syn.list.innerHTML = '';
+      (j.modes || ['vc', 'lbo', 'strategic']).forEach(function (m) {
+        var on = m === syn.mode;
+        var lab = el('label', { class: 'ppme-dlg-mode' + (on ? ' is-on' : '') });
+        var r = el('input', { type: 'radio', name: 'ppme-' + kind + '-mode', value: m });
+        r.checked = on;
+        r.onchange = function () { syn.mode = m; renderModes(); };
+        lab.appendChild(r);
+        var txt = el('span', { class: 'ppme-dlg-mtxt' });
+        var head = el('span', { class: 'ppme-dlg-mhead' });
+        head.appendChild(el('b', {}, K.modes[m][0]));
+        if (m === j.suggested) head.appendChild(el('span', { class: 'ppme-dlg-tag' }, K.suggested));
+        if ((j.ready || {})[m]) head.appendChild(el('span', { class: 'ppme-dlg-tag ok' }, '✓ ' + K.ready));
+        txt.appendChild(head);
+        txt.appendChild(el('small', {}, K.modes[m][1]));
+        lab.appendChild(txt);
+        syn.list.appendChild(lab);
+      });
+      var ready = (j.ready || {})[syn.mode];
+      syn.cost.textContent = K.cost(euros(j.cost_eur));
+      syn.cost.hidden = !!ready;
+      if (syn.human) {
+        syn.human.textContent = K.human[j.human] || '';
+        syn.human.hidden = !syn.human.textContent;
+      }
+      syn.progress.hidden = true;
+      syn.list.hidden = false;
+      syn.go.disabled = false;
+      syn.go.textContent = ready ? K.download : K.go(euros(j.cost_eur));
+      setTimeout(function () { var c = syn.list.querySelector('input:checked'); if (c) c.focus(); }, 0);
+    }
+    function start() {
+      var mode = syn.mode, j = syn.info || {};
+      syn.err.hidden = true;
+      if ((j.ready || {})[mode]) { download(mode, j.n); return; }
+      syn.go.disabled = true;
+      var wait = doc.on && !doc.reading ? save(true) : Promise.resolve(true);
+      Promise.resolve(wait).then(function () {
+        return api('/' + kind, 'POST', state.preview ? { mode: mode, n: state.preview, lang: VIEW_LANG } : { mode: mode, lang: VIEW_LANG });
+      }).then(function (r) {
+        if (!r.ok) throw new Error(r.detail || r.error || r.status);
+        if (r.ready) { download(mode, r.n); return; }
+        syn.run = { rid: r.run_id, mode: mode, n: r.n, t0: Date.now(), step: 'queued' };
+        showRun();
+        poll();
+      }).catch(function (e) { syn.go.disabled = false; fail(e); });
+    }
+    function showRun() {
+      var run = syn.run;
+      if (!run || !syn.dlg) return;
+      syn.list.hidden = true;
+      syn.cost.hidden = true;
+      if (syn.human) syn.human.hidden = true;
+      syn.progress.hidden = false;
+      syn.progress.innerHTML = '';
+      syn.progress.appendChild(el('span', { class: 'ppme-spin', 'aria-hidden': 'true' }));
+      var t = el('span', { class: 'ppme-dlg-step' }, (K.modes[run.mode] || [''])[0] + ' — ' + (K.steps[run.step] || K.steps.queued));
+      syn.progress.appendChild(t);
+      syn.progress.appendChild(el('span', { class: 'ppme-dlg-time' }, Math.round((Date.now() - run.t0) / 1000) + ' s'));
+      syn.go.disabled = true;
+      syn.go.textContent = K.steps[run.step] || K.steps.queued;
+    }
+    function poll() {
+      clearTimeout(syn.timer);
+      var run = syn.run;
+      if (!run) return;
+      syn.timer = setTimeout(function () {
+        api('/' + kind + '/runs/' + run.rid).then(function (s) {
+          if (syn.run !== run) return;
+          if (!s.ok) throw new Error(s.detail || s.error || s.status);
+          if (s.state === 'done') { syn.run = null; download(run.mode, run.n); return; }
+          if (s.state === 'error') { syn.run = null; throw new Error(s.error || 'erreur'); }
+          run.step = s.step || run.step;
+          showRun();
+          poll();
+        }).catch(function (e) {
+          var msg = String((e && e.message) || '');
+          if (syn.run === run && (e instanceof TypeError || /^(5\d\d|0|429)$/.test(msg))) { poll(); return; }   // un hoquet réseau : on réessaie
+          syn.run = null;
+          fail(e, true);
+        });
+      }, 2500);
+    }
+    function download(mode, n) {
+      var headers = authHeaders({});
+      // le PDF du 2-pager se remet en page à la demande (quelques secondes) : le bouton attend, sans double clic
+      if (K.downloading) { syn.go.disabled = true; syn.go.textContent = K.downloading; }
+      fetch(API + '/' + kind + '/pdf?mode=' + encodeURIComponent(mode) + '&lang=' + VIEW_LANG + (n ? '&n=' + n : ''), { headers: headers, credentials: 'omit' })
+        .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+        .then(function (blob) {
+          var url = URL.createObjectURL(blob);
+          var a = el('a', { href: url, download: K.file(mode, memoName(), n).replace(/[\\/:*?"<>|]+/g, ' ') + '.pdf' });
+          a.style.display = 'none';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(function () { URL.revokeObjectURL(url); }, 120000);
+          if (syn.info) { syn.info.ready = syn.info.ready || {}; syn.info.ready[mode] = true; }
+          close(true);
+          toast(K.done);
+        }).catch(function (e) { fail(e); });
+    }
+    function fail(e, again) {
+      if (!syn.dlg || syn.dlg.hidden) { toast(K.failed + String((e && e.message) || e), again ? [{ label: K.retry, run: open }] : null); return; }
+      syn.progress.hidden = true;
+      syn.err.hidden = false;
+      syn.err.textContent = K.failed + String((e && e.message) || e);
+      if (!state.role && /connect/i.test(String((e && e.message) || ''))) {    // une synthèse neuve : la connexion
+        var b = el('button', { type: 'button', class: 'ppme-dlg-login' }, D.login);
+        b.onclick = function () { close(true); login(); };
+        syn.err.appendChild(document.createTextNode(' '));
+        syn.err.appendChild(b);
+      }
+      if (syn.info) renderModes();
+      syn.go.disabled = false;
+      syn.go.textContent = K.retry;
+    }
+    function close(done) {
+      if (!syn.dlg) return;
+      syn.dlg.hidden = true;
+      if (syn.run && done !== true) toast(K.background);
+    }
+    return { open: open, close: close };
+  }
+  var deckSynth = synthDialog('deck', K, '🎞');
+  var pagerSynth = synthDialog('pager', PG, '📑');
   function openDeck() {
     unselectMedia();
     if (editorial) {
@@ -1799,178 +2256,10 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       }
       return;
     }
-    // 28/10 — même règle que le PDF : le lecteur sans session synthétise la dernière version
-    // (le serveur borne les nouveaux decks des lecteurs non connectés et le dit lui-même).
-    if (!deck.dlg) buildDeckDialog();
-    deck.dlg.hidden = false;
-    deck.err.hidden = true;
-    if (deck.run) { showDeckRun(); return; }
-    deck.list.innerHTML = '';
-    deck.list.appendChild(el('p', { class: 'ppme-dlg-wait' }, K.loading));
-    deck.go.disabled = true;
-    api('/deck?lang=' + VIEW_LANG + (state.preview ? '&n=' + state.preview : '')).then(function (j) {
-      if (!j.ok) throw new Error(j.detail || j.error || j.status);
-      deck.info = j;
-      if ((j.running || []).length) {
-        var r = j.running[0];
-        deck.run = { rid: r.run_id, mode: r.mode, n: r.n, t0: Date.now() };
-        showDeckRun();
-        pollDeck();
-        return;
-      }
-      if (!deck.mode || (j.modes || []).indexOf(deck.mode) < 0) deck.mode = j.suggested || 'vc';
-      renderDeckModes();
-    }).catch(function (e) { deckError(e); });
+    deckSynth.open();
   }
-  function buildDeckDialog() {
-    var back = el('div', { class: 'ppme-ui ppme-dlg-back' });
-    var box = el('div', { class: 'ppme-dlg', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'ppme-dlg-t' });
-    var x = el('button', { type: 'button', class: 'ppme-dlg-x', 'aria-label': K.close }, '×');
-    x.onclick = closeDeck;
-    box.appendChild(x);
-    box.appendChild(el('h2', { id: 'ppme-dlg-t' }, '🎞 ' + K.title));
-    box.appendChild(el('p', { class: 'ppme-dlg-intro' }, K.intro));
-    deck.list = el('div', { class: 'ppme-dlg-modes', role: 'radiogroup', 'aria-label': K.title });
-    box.appendChild(deck.list);
-    deck.cost = el('p', { class: 'ppme-dlg-cost' });
-    box.appendChild(deck.cost);
-    deck.progress = el('div', { class: 'ppme-dlg-run', role: 'status' });
-    deck.progress.hidden = true;
-    box.appendChild(deck.progress);
-    deck.err = el('p', { class: 'ppme-dlg-err', role: 'alert' });
-    deck.err.hidden = true;
-    box.appendChild(deck.err);
-    var act = el('div', { class: 'ppme-dlg-act' });
-    var cancel = el('button', { type: 'button', class: 'ppme-dlg-cancel' }, K.cancel);
-    cancel.onclick = closeDeck;
-    deck.go = el('button', { type: 'button', class: 'ppme-dlg-go' });
-    deck.go.onclick = goDeck;
-    act.appendChild(cancel);
-    act.appendChild(deck.go);
-    box.appendChild(act);
-    back.appendChild(box);
-    back.addEventListener('mousedown', function (e) { if (e.target === back) closeDeck(); });
-    back.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeDeck(); });
-    document.body.appendChild(back);
-    deck.dlg = back;
-  }
-  function renderDeckModes() {
-    var j = deck.info || {};
-    deck.list.innerHTML = '';
-    (j.modes || ['vc', 'lbo', 'strategic']).forEach(function (m) {
-      var on = m === deck.mode;
-      var lab = el('label', { class: 'ppme-dlg-mode' + (on ? ' is-on' : '') });
-      var r = el('input', { type: 'radio', name: 'ppme-deck-mode', value: m });
-      r.checked = on;
-      r.onchange = function () { deck.mode = m; renderDeckModes(); };
-      lab.appendChild(r);
-      var txt = el('span', { class: 'ppme-dlg-mtxt' });
-      var head = el('span', { class: 'ppme-dlg-mhead' });
-      head.appendChild(el('b', {}, K.modes[m][0]));
-      if (m === j.suggested) head.appendChild(el('span', { class: 'ppme-dlg-tag' }, K.suggested));
-      if ((j.ready || {})[m]) head.appendChild(el('span', { class: 'ppme-dlg-tag ok' }, '✓ ' + K.ready));
-      txt.appendChild(head);
-      txt.appendChild(el('small', {}, K.modes[m][1]));
-      lab.appendChild(txt);
-      deck.list.appendChild(lab);
-    });
-    var ready = (j.ready || {})[deck.mode];
-    deck.cost.textContent = K.cost(euros(j.cost_eur));
-    deck.cost.hidden = !!ready;
-    deck.progress.hidden = true;
-    deck.list.hidden = false;
-    deck.go.disabled = false;
-    deck.go.textContent = ready ? K.download : K.go(euros(j.cost_eur));
-    setTimeout(function () { var c = deck.list.querySelector('input:checked'); if (c) c.focus(); }, 0);
-  }
-  function goDeck() {
-    var mode = deck.mode, j = deck.info || {};
-    deck.err.hidden = true;
-    if ((j.ready || {})[mode]) { downloadDeck(mode, j.n); return; }
-    deck.go.disabled = true;
-    var wait = doc.on && !doc.reading ? save(true) : Promise.resolve(true);
-    Promise.resolve(wait).then(function () {
-      return api('/deck', 'POST', state.preview ? { mode: mode, n: state.preview, lang: VIEW_LANG } : { mode: mode, lang: VIEW_LANG });
-    }).then(function (r) {
-      if (!r.ok) throw new Error(r.detail || r.error || r.status);
-      if (r.ready) { downloadDeck(mode, r.n); return; }
-      deck.run = { rid: r.run_id, mode: mode, n: r.n, t0: Date.now(), step: 'queued' };
-      showDeckRun();
-      pollDeck();
-    }).catch(function (e) { deck.go.disabled = false; deckError(e); });
-  }
-  function showDeckRun() {
-    var run = deck.run;
-    if (!run || !deck.dlg) return;
-    deck.list.hidden = true;
-    deck.cost.hidden = true;
-    deck.progress.hidden = false;
-    deck.progress.innerHTML = '';
-    deck.progress.appendChild(el('span', { class: 'ppme-spin', 'aria-hidden': 'true' }));
-    var t = el('span', { class: 'ppme-dlg-step' }, (K.modes[run.mode] || [''])[0] + ' — ' + (K.steps[run.step] || K.steps.queued));
-    deck.progress.appendChild(t);
-    deck.progress.appendChild(el('span', { class: 'ppme-dlg-time' }, Math.round((Date.now() - run.t0) / 1000) + ' s'));
-    deck.go.disabled = true;
-    deck.go.textContent = K.steps[run.step] || K.steps.queued;
-  }
-  function pollDeck() {
-    clearTimeout(deck.timer);
-    var run = deck.run;
-    if (!run) return;
-    deck.timer = setTimeout(function () {
-      api('/deck/runs/' + run.rid).then(function (s) {
-        if (deck.run !== run) return;
-        if (!s.ok) throw new Error(s.detail || s.error || s.status);
-        if (s.state === 'done') { deck.run = null; downloadDeck(run.mode, run.n); return; }
-        if (s.state === 'error') { deck.run = null; throw new Error(s.error || 'erreur'); }
-        run.step = s.step || run.step;
-        showDeckRun();
-        pollDeck();
-      }).catch(function (e) {
-        var msg = String((e && e.message) || '');
-        if (deck.run === run && (e instanceof TypeError || /^(5\d\d|0|429)$/.test(msg))) { pollDeck(); return; }   // un hoquet réseau : on réessaie
-        deck.run = null;
-        deckError(e, true);
-      });
-    }, 2500);
-  }
-  function downloadDeck(mode, n) {
-    var headers = authHeaders({});
-    fetch(API + '/deck/pdf?mode=' + encodeURIComponent(mode) + '&lang=' + VIEW_LANG + (n ? '&n=' + n : ''), { headers: headers, credentials: 'omit' })
-      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
-      .then(function (blob) {
-        var url = URL.createObjectURL(blob);
-        var a = el('a', { href: url, download: K.file(mode, memoName(), n).replace(/[\\/:*?"<>|]+/g, ' ') + '.pdf' });
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(function () { URL.revokeObjectURL(url); }, 120000);
-        if (deck.info) { deck.info.ready = deck.info.ready || {}; deck.info.ready[mode] = true; }
-        closeDeck(true);
-        toast(K.done);
-      }).catch(function (e) { deckError(e); });
-  }
-  function deckError(e, again) {
-    if (!deck.dlg || deck.dlg.hidden) { toast(K.failed + String((e && e.message) || e), again ? [{ label: K.retry, run: openDeck }] : null); return; }
-    deck.progress.hidden = true;
-    deck.err.hidden = false;
-    deck.err.textContent = K.failed + String((e && e.message) || e);
-    if (!state.role && /connect/i.test(String((e && e.message) || ''))) {    // une synthèse neuve : la connexion
-      var b = el('button', { type: 'button', class: 'ppme-dlg-login' }, D.login);
-      b.onclick = function () { closeDeck(true); login(); };
-      deck.err.appendChild(document.createTextNode(' '));
-      deck.err.appendChild(b);
-    }
-    if (deck.info) renderDeckModes();
-    deck.go.disabled = false;
-    deck.go.textContent = K.retry;
-  }
-  function closeDeck(done) {
-    if (!deck.dlg) return;
-    deck.dlg.hidden = true;
-    if (deck.run && done !== true) toast(K.background);
-  }
+  // le 2-pager n'existe pas pour un édito (aucune API) : ni bouton, ni fenêtre
+  function openPager() { pagerSynth.open(); }
   /* ── 16/10 — les modèles de mémo du fonds (option de l'offre Entreprise) ─────────────────────
    * « Enregistrer en tant que template » (Antoine) : le plan de ce mémo — sections, ordre, titres,
    * cases du PDF — devient un modèle du fonds. Pour chaque nouvelle société, Stan produit le mémo
@@ -2483,6 +2772,8 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
         if (!editorial) humanButton();
       }
       if (GUEST) add('login', D.login, D.loginHint, 'ppme-login').hidden = !!(session() || state.role);
+      // 13/11 (Antoine) — le 2-pager en tête des trois exports, le plus mis en avant ; pas pour un édito (aucune API)
+      if (!editorial) add('pager', PG.btn, PG.hint, 'ppme-pager');
       add('pdf', D.pdf, D.pdfHint, 'ppme-pdf');
       if (!editorial || (editorial.decks || []).some(function (item) { return /^https:\/\//.test(String(item.url || '')); })) {
         add('deck', editorial ? (en ? '🎞 Market carousels' : '🎞 Carrousels du marché') : K.btn, editorial ? (en ? 'Download the prepared market carousels (PDF)' : 'Télécharger les carrousels du marché préparés (PDF)') : K.hint, 'ppme-deck');
@@ -2532,7 +2823,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   // ✓ v3 · 14:04) ; puis la mise en forme en icônes (•, T, 🖼, ▶ — 📄 PDF, ✓ v3) ; puis tout en icônes.
   // L'infobulle garde l'intitulé complet. Deux lignes seulement si même les icônes ne tiennent pas.
   var SHORT = {
-    pdf: [en ? '📄 Export PDF' : '📄 Exporter en PDF', '📄 PDF'], deck: editorial ? [en ? '🎞 Market carousels' : '🎞 Carrousels du marché', en ? '🎞 Carousels' : '🎞 Carrousels'] : ['🎞 Deck'], offsec: ['✕ Section'],
+    pager: ['📑 2-pager'], pdf: [en ? '📄 Export PDF' : '📄 Exporter en PDF', '📄 PDF'], deck: editorial ? [en ? '🎞 Market carousels' : '🎞 Carrousels du marché', en ? '🎞 Carousels' : '🎞 Carrousels'] : ['🎞 Deck'], offsec: ['✕ Section'],
     list: [null, '•'], heading: [null, en ? 'H' : 'T'], image: [null, '🖼'], video: [null, '▶'],
     preview: [null, null, '👁'], save: [null, null, '💾'], login: [null, null, '🔑'], plan: [null, null, '☰'],
     human: [null, en ? 'Opinion' : 'Avis', '🟡']
@@ -2629,10 +2920,11 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     var b = e.target.closest('button[data-cmd]');
     if (!b) return;
     var cmd = b.getAttribute('data-cmd');
-    if (READER && ['plan', 'pdf', 'deck', 'login', 'human'].indexOf(cmd) < 0) return;
+    if (READER && ['plan', 'pager', 'pdf', 'deck', 'login', 'human'].indexOf(cmd) < 0) return;
     if (cmd === 'human') { openHumanDialog(); return; }
     if (cmd === 'login') { login(); return; }
     if (cmd === 'save') { save(); return; }
+    if (cmd === 'pager') { openPager(); return; }
     if (cmd === 'pdf') { exportPdf(); return; }
     if (cmd === 'deck') { openDeck(); return; }
     if (cmd === 'preview') { setReading(!doc.reading); return; }
@@ -3943,7 +4235,8 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       ? T.published(h.n, when(h.at)) : T.current(h.n, kindLabel(h), when(h.at))));
     box.appendChild(el('p', { class: 'ppme-hint' }, T.directHint));
     box.appendChild(bar([
-      btn(T.pdf, exportPdf, 'ppme-go'),
+      btn(PG.btn, openPager, 'ppme-go'),               // 13/11 — le 2-pager d'abord, seul bouton plein
+      btn(T.pdf, exportPdf),
       btn(K.btn, openDeck),
       btn((ver.open ? '▴ ' : '▾ ') + T.allVersions, function () { ver.open = !ver.open; if (ver.open) loadVersions(); else renderMemoBox(); })
     ]));
@@ -4668,7 +4961,10 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     ver.box = el('section', { class: 'ppme-memo', 'aria-label': T.memoK });
     SJ.addSlot('memo', ver.box);
     renderMemoBox();
-    if (SJ.addHeaderButton) SJ.addHeaderButton('pdf', P.btn, P.title, exportPdf);
+    if (SJ.addHeaderButton) {
+      SJ.addHeaderButton('pdf', P.btn, P.title, exportPdf);
+      SJ.addHeaderButton('pager', PG.btn, PG.hint, openPager);     // 13/11 — posé après, donc affiché avant le PDF
+    }
   }
   function showChat() {
     if (!chat.loaded) {
@@ -4984,7 +5280,10 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-dbar .ppme-st.error,.ppme-dbar .ppme-st.conflict{color:#B45309}',
       '.ppme-dbar .ppme-savebtn{border-color:#BFE6CF;color:#0E7F3F;font-weight:700;background:#fff}',
       '.ppme-dbar .ppme-savebtn:hover{background:#E7F6EE;border-color:#12A150}',
-      '.ppme-dbar .ppme-pdf{background:#12A150;color:#fff;border-color:#12A150;font-weight:700;padding:7px 12px}',
+      // 13/11 (Antoine) — trois exports : le 2-pager en plein vert (le plus mis en avant), le PDF et le deck en contour
+      '.ppme-dbar .ppme-pager{background:#12A150;color:#fff;border-color:#12A150;font-weight:800;padding:7px 13px;box-shadow:0 2px 8px rgba(18,161,80,.35)}',
+      '.ppme-dbar .ppme-pager:hover{background:#0E8A44;border-color:#0E8A44}',
+      '.ppme-dbar .ppme-pdf{background:#fff;color:#0E7F3F;border-color:#12A150;font-weight:700;padding:7px 11px;margin-left:4px}',
       '.ppme-dbar .ppme-human{background:#FFF4CC;color:#6A4916;border-color:#E8C468;font-weight:700}',
       '.ppme-dbar .ppme-human:hover{background:#FDE9A8;border-color:#C99A2E}',
       '.ppme-dbar .ppme-human.ppme-human-done{background:#FFFAEB}',
@@ -5001,7 +5300,52 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-hr-body button.ppme-hr-go,.ppme-human-review button.ppme-hr-go{background:#12A150;border-color:#12A150;color:#fff}',
       '.ppme-hr-body button.ppme-hr-go:hover,.ppme-human-review button.ppme-hr-go:hover{background:#0E8A44;border-color:#0E8A44}',
       '.ppme-hr-body button:disabled,.ppme-human-review button:disabled{opacity:.6;cursor:default}',
-      '.ppme-dbar .ppme-pdf:hover{background:#0E8A44;border-color:#0E8A44}',
+      // 13/11 (Antoine) — « Discuter avec Alexandre » : le lien discret au pied de l'avis humain, puis la fenêtre
+      // jaune (QR code du 2-pager), pensée d'abord pour un téléphone : champs en 16 px (pas de zoom iOS), 360 px de large
+      '.ppme-hr-foot{display:flex;justify-content:flex-end;margin:12px 0 0;padding:10px 0 0;border-top:1px solid #F1E3B8}',
+      '.ppme-hr-foot[hidden]{display:none}',
+      '.ppme-hr-foot .ppme-hr-discuss{margin:0;padding:4px 2px;border:0;background:none;color:#6A4916;font:600 13px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;text-align:right;text-decoration:underline;text-underline-offset:2px;cursor:pointer}',
+      '.ppme-hr-foot .ppme-hr-discuss:hover{color:#4F350E}',
+      '.ppme-hr-dialog.ppme-disc{width:min(540px,100%);max-height:90vh;max-height:calc(100dvh - 24px);padding:18px 18px 4px;border:1.5px solid #E8C468;border-radius:16px;background:#FFF4CC;color:#6A4916;font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}',
+      // la page du mémo style ses p et ses strong (taille, couleur, césure) : la fenêtre garde les siens
+      '.ppme-disc p{color:#6A4916;font-size:14px;line-height:1.5;hyphens:manual;word-break:normal}',
+      '.ppme-hr-dialog.ppme-disc header{align-items:flex-start;font-size:18px;line-height:1.25}',
+      '.ppme-hr-dialog.ppme-disc header strong{min-width:0;overflow-wrap:anywhere;color:#6A4916;font-weight:800;letter-spacing:-.01em}',
+      '.ppme-hr-dialog.ppme-disc .ppme-hr-x{flex:0 0 auto;min-width:32px;min-height:32px;margin:-4px -6px 0 0;border-radius:8px;color:#6A4916}',
+      '.ppme-hr-dialog.ppme-disc .ppme-hr-x:hover{background:#FDE9A8}',
+      '.ppme-disc .ppme-disc-intro{margin:8px 0 12px;font-size:13.5px}',
+      '.ppme-disc-note{max-height:30vh;overflow:auto;margin:0 0 12px;padding:10px 12px;border:1px solid #E8C468;border-left:4px solid #C99A2E;border-radius:10px;background:#FFFDF4}',
+      '.ppme-disc-note[hidden]{display:none}',
+      '.ppme-disc .ppme-disc-note strong,.ppme-disc-k{display:block;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8A6417}',
+      '.ppme-disc .ppme-disc-note p{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;color:#3F2C0C}',
+      '.ppme-disc-note.ppme-disc-none{border-style:dashed;border-left-width:1px;background:none}',
+      '.ppme-disc .ppme-disc-none p{margin:0;color:#6A4916}',
+      '.ppme-disc-k{margin:0 0 6px}',
+      '.ppme-disc-starts{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}',
+      '.ppme-disc-starts button{flex:0 1 auto;max-width:100%;margin:0;padding:8px 12px;border:1px solid #E8C468;border-radius:999px;background:#fff;color:#6A4916;font:600 13px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;text-align:left;cursor:pointer}',
+      '.ppme-disc-starts button:hover{background:#FDE9A8;border-color:#C99A2E}',
+      '.ppme-disc-f{display:block;margin:0 0 10px;color:#6A4916;font-size:12.5px;font-weight:700}',
+      '.ppme-disc-f span{display:block;margin:0 0 4px}',
+      '.ppme-disc-f input,.ppme-disc-f textarea{display:block;box-sizing:border-box;width:100%;margin:0;padding:10px 11px;border:1px solid #E8C468;border-radius:9px;background:#fff;color:#243449;font:400 16px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}',
+      '.ppme-disc-f textarea{min-height:96px;resize:vertical}',
+      '.ppme-disc-f input:focus,.ppme-disc-f textarea:focus{outline:2px solid #C99A2E;outline-offset:1px;border-color:#C99A2E}',
+      '.ppme-disc button:focus-visible{outline:2px solid #6A4916;outline-offset:2px}',
+      '.ppme-disc-hp{position:absolute!important;left:-9999px;width:1px;height:1px;overflow:hidden}',
+      '.ppme-disc .ppme-disc-fine{margin:0 0 12px;font-size:12px;color:#8A6417}',
+      '.ppme-disc-foot{position:sticky;bottom:0;margin:0 -4px;padding:10px 4px 12px;border-top:1px solid #F1E3B8;background:#FFF4CC}',
+      '.ppme-disc .ppme-disc-status{margin:0 0 8px;font-size:13px;font-weight:600}',
+      '.ppme-disc .ppme-disc-status:empty{display:none}',
+      '.ppme-disc .ppme-disc-status.err{padding:9px 11px;border-radius:9px;background:#FDECEC;color:#B42318}',
+      '.ppme-disc-act{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}',
+      '.ppme-disc-act button{margin:0;padding:10px 16px;border:1px solid #E8C468;border-radius:10px;background:#fff;color:#6A4916;font:700 14px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}',
+      '.ppme-disc-act button:hover{background:#FDE9A8;border-color:#C99A2E}',
+      '.ppme-disc-act .ppme-disc-send{background:#6A4916;border-color:#6A4916;color:#fff}',
+      '.ppme-disc-act .ppme-disc-send:hover{background:#4F350E;border-color:#4F350E}',
+      '.ppme-disc-act button:disabled{opacity:.6;cursor:default}',
+      '.ppme-disc-done{margin:0 0 14px}',
+      '.ppme-disc .ppme-disc-done p{margin:10px 0 14px;padding:12px 14px;border:1px solid #E8C468;border-radius:10px;background:#fff;color:#3F2C0C;font-size:14.5px;font-weight:600}',
+      '@media (max-width:480px){.ppme-hr-back.ppme-disc-back{align-items:flex-start;padding:8px}.ppme-hr-dialog.ppme-disc{max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px);padding:16px 14px 2px}.ppme-disc-starts button{flex:1 1 100%;border-radius:12px}.ppme-disc-f textarea{min-height:84px}.ppme-disc-act button{flex:1 1 auto}}',
+      '.ppme-dbar .ppme-pdf:hover{background:#E7F6EE;border-color:#0E8A44}',
       '.ppme-dbar .ppme-pdf[aria-busy="true"]{opacity:.8;cursor:progress}',
       '.ppme-dbar .ppme-deck{background:#fff;color:#0E7F3F;border-color:#12A150;font-weight:700;padding:7px 11px;margin-left:4px}',
       '.ppme-dbar .ppme-deck:hover{background:#E7F6EE;border-color:#0E8A44}',
@@ -5155,6 +5499,7 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-dlg-tag.ok{color:#0B6B35;background:#E7F6EE}',
       '.ppme-dlg-cost{margin:12px 0 0;font-size:12.5px;color:#5B6B82}',
       '.ppme-dlg-cost[hidden],.ppme-dlg-modes[hidden],.ppme-dlg-run[hidden],.ppme-dlg-err[hidden]{display:none}',
+      '.ppme-dlg-cost.ppme-dlg-human{margin-top:6px;color:#6A4916;font-weight:600}',      // 13/11 — l'avis humain, à sa couleur
       '.ppme-dlg-wait{margin:6px 0;color:#5B6B82}',
       '.ppme-dlg-run{display:flex;align-items:center;gap:12px;margin:8px 0 2px;padding:16px;border-radius:12px;background:#F7F9FC;font-weight:600}',
       '.ppme-dlg-time{margin-left:auto;color:#5B6B82;font-weight:500;font-variant-numeric:tabular-nums}',
@@ -5174,8 +5519,9 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-reading .ppme-dbar .ppme-edonly{display:none}',
       '.ppme-reading .ppme-readnote{display:inline}',
       '.ppme-reader .section-container{scroll-margin-top:var(--ppme-reader-bar-h,84px)}',
-      '@media (max-width:640px){.ppme-dbar{overflow-x:auto;top:0;margin:0 0 14px;border-radius:0 0 12px 12px;scrollbar-width:none}.ppme-dbar::-webkit-scrollbar{display:none}.ppme-dbar-tools{flex-wrap:nowrap;flex:0 0 auto}.ppme-dbar-side{order:-1;margin:0 8px 0 0}.ppme-dbar .ppme-pdf{order:-2}.ppme-dbar .ppme-savebtn{order:-1}.ppme-dbar .ppme-st.generic{display:none}}',
-      '@media (max-width:640px){.ppme-reader .ppme-dbar{overflow:visible;flex-wrap:wrap}.ppme-reader .ppme-dbar-tools{flex:1 1 100%;max-width:100%;flex-wrap:wrap}.ppme-reader .ppme-dbar-side{order:0;flex:1 1 auto;min-width:0;max-width:100%;flex-wrap:wrap;margin:0}.ppme-reader .ppme-dbar-side button{max-width:100%;white-space:normal}.ppme-reader .ppme-readnote{flex:1 1 180px;line-height:1.4}}',
+      '@media (max-width:640px){.ppme-dbar{overflow-x:auto;top:0;margin:0 0 14px;border-radius:0 0 12px 12px;scrollbar-width:none}.ppme-dbar::-webkit-scrollbar{display:none}.ppme-dbar-tools{flex-wrap:nowrap;flex:0 0 auto}.ppme-dbar-side{order:-1;margin:0 8px 0 0}.ppme-dbar .ppme-pager{order:-3}.ppme-dbar .ppme-pdf{order:-2}.ppme-dbar .ppme-savebtn{order:-1}.ppme-dbar .ppme-st.generic{display:none}}',
+      // 13/11 — lecteur sur téléphone : le 2-pager puis « Se connecter » sur la première rangée, la barre garde sa hauteur
+      '@media (max-width:640px){.ppme-reader .ppme-dbar{overflow:visible;flex-wrap:wrap}.ppme-reader .ppme-dbar-tools{flex:1 1 100%;max-width:100%;flex-wrap:wrap}.ppme-reader .ppme-dbar-side{order:0;flex:1 1 auto;min-width:0;max-width:100%;flex-wrap:wrap;margin:0}.ppme-reader .ppme-dbar-side button{max-width:100%;white-space:normal}.ppme-reader .ppme-dbar .ppme-pager{order:-4}.ppme-reader .ppme-dbar .ppme-login{order:-3}.ppme-reader .ppme-readnote{flex:1 1 180px;line-height:1.4}}',
       // le document : tout le texte se modifie, les îlots d'origine sont signalés
       '.ppme-editing .section-container[contenteditable="true"]{outline:none;cursor:text;scroll-margin-top:84px;caret-color:#0E7F3F}',
       '.ppme-editing .section-container[contenteditable="true"]:focus-within{box-shadow:0 0 0 2px #12A15040,0 1px 4px rgba(15,29,51,.06)}',
@@ -5349,6 +5695,9 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppme-bar button:hover{background:#edf6f0}',
       '.ppme-bar .ppme-go{background:#12A150;color:#fff;border-color:#12A150}',
       '.ppme-bar .ppme-go:hover{background:#0E8A44}',
+      // 13/11 — le 2-pager dans l'en-tête du poste de travail Stan : plein vert, avant le PDF
+      '.ppj-shell .ppj-head-btn[data-head="pager"]{background:#12A150;border-color:#12A150;color:#fff;font-weight:800}',
+      '.ppj-shell .ppj-head-btn[data-head="pager"]:hover{background:#0E8A44;border-color:#0E8A44}',
       '.ppme-bar button:disabled{opacity:.55;cursor:wait}',
       '.ppme-confirm{margin-top:10px;padding:10px;border-radius:10px;background:#FFF1D6;color:#5C4400}',
       '.ppj-shell .ppme-confirm p{margin:0}',
@@ -5526,38 +5875,38 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   } else if (READER) {
     // 03/11 — lu dans une autre langue : la barre tout de suite, la traduction arrive ensuite
     if (LANGVIEW) { startReader(); mountLangSwitch(); }
-    refreshReader(true).then(checkAccess).then(function () { mountLangSwitch(); conformLegacy(); });
+    // 13/11 — lu dans une autre langue (?lang=), le 2-pager et « Discuter » s'ouvrent aussi depuis l'adresse
+    refreshReader(true).then(checkAccess).then(function () { mountLangSwitch(); conformLegacy(); openAskedPager(); });
     setInterval(function () { refreshReader(false); }, 30000);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshReader(false); });
   } else syncLatest().then(checkAccess).then(function (member) {
     if (!member) { startGuest(); brandReader(); conformLegacy(); }
     mountLangSwitch();
-    openAskedDeck();
-    openAskedPdf();
+    openAsked('deck', openDeck);
+    openAsked('pdf', askPdf);
+    openAskedPager();
   });
   if (!editorial) mountLangSwitch();
-  // 27/10 — « Slidedeck (PDF) » du mail de fin de mémo (?deck=1) : la page s'ouvre sur la
-  // synthèse en deck, une fois l'accès connu ; rien ne part sans le clic de la fenêtre
-  function openAskedDeck() {
-    if (EMBED || editorial || !/[?&]deck=1(&|$)/.test(location.search)) return;
+  /* Une fenêtre demandée par l'adresse, une fois l'accès connu (et la marque du fonds) ; le paramètre
+   * quitte l'adresse, rien ne part sans le clic de la fenêtre. Jamais dans le cockpit ni pour un édito.
+   * 27/10 — ?deck=1 : « Slidedeck (PDF) » du mail de fin de mémo, la synthèse en deck.
+   * 11/11 — ?pdf=1 : « Mémo rédigé (PDF) » du même mail, la fenêtre du PDF.
+   * 13/11 — ?pager=1 : « 📑 2-pager (PDF) » des mails (fin de mémo, daily, weekly), la fenêtre du 2-pager ;
+   *         ?discuter=1 : le bouton et le QR code du 2-pager, la fenêtre jaune « Discuter avec Alexandre ». */
+  function openAsked(param, run) {
+    if (EMBED || editorial || !new RegExp('[?&]' + param + '=1(&|$)').test(location.search)) return;
     try {
       var u = new URL(location.href);
-      u.searchParams.delete('deck');
+      u.searchParams.delete(param);
       history.replaceState(null, '', u.pathname + u.search + u.hash);
     } catch (_) { /* adresse laissée telle quelle */ }
     injectCss();
-    openDeck();
+    run();
   }
-  // 11/11 — « Mémo rédigé (PDF) » du mail de fin de mémo (?pdf=1) : même principe, la fenêtre du PDF
-  function openAskedPdf() {
-    if (EMBED || editorial || !/[?&]pdf=1(&|$)/.test(location.search)) return;
-    try {
-      var u = new URL(location.href);
-      u.searchParams.delete('pdf');
-      history.replaceState(null, '', u.pathname + u.search + u.hash);
-    } catch (_) { /* adresse laissée telle quelle */ }
-    injectCss();
-    askPdf();
+  // les deux entrées du 2-pager ; « Discuter » en dernier : demandées ensemble, la fenêtre humaine reste au-dessus
+  function openAskedPager() {
+    openAsked('pager', openPager);
+    openAsked('discuter', openDiscuss);
   }
   // 15/10 — dans l'onglet Mémo du cockpit, « Reprendre le mémo → » du bandeau d'aperçu se
   // confirme dans le cockpit même, sur la ligne de la société, au lieu d'ouvrir un second onglet.
