@@ -5918,13 +5918,13 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   var SYN = null, SYN_UI = null;
   var SYN_BASE = API.slice(0, API.indexOf('/memos/'));
   var SYN_T = en
-    ? { close: 'Close / See the full memo', closeShort: 'Full memo', dl: 'Download PDF', reopen: '2-pager',
-        preparing: 'Opening the 2-pager', failed: 'The 2-pager could not be displayed: ', open: 'open the PDF',
-        label: '2-pager', notReady: 'The 2-pager of this memo is being prepared: it will be ready in a few minutes.',
+    ? { close: 'Close / See the full memo', closeShort: 'Full memo', dl: 'Download PDF', reopen: 'Memo summary',
+        preparing: 'Opening the memo summary', failed: 'The memo summary could not be displayed: ', open: 'open the PDF',
+        label: 'Memo summary', notReady: 'The summary of this memo is being prepared: it will be ready in a few minutes.',
         seeMemo: 'See the full memo' }
-    : { close: 'Fermer / Voir le mémo complet', closeShort: 'Mémo complet', dl: 'Télécharger PDF', reopen: '2-pager',
-        preparing: 'Ouverture du 2-pager', failed: 'Le 2-pager ne s’affiche pas : ', open: 'ouvrir le PDF',
-        label: '2-pager', notReady: 'Le 2-pager de ce mémo est en préparation : il sera prêt dans quelques minutes.',
+    : { close: 'Fermer / Voir le mémo complet', closeShort: 'Mémo complet', dl: 'Télécharger PDF', reopen: 'Résumé du mémo',
+        preparing: 'Ouverture du résumé du mémo', failed: 'Le résumé du mémo ne s’affiche pas : ', open: 'ouvrir le PDF',
+        label: 'Résumé du mémo', notReady: 'Le résumé de ce mémo est en préparation : il sera prêt dans quelques minutes.',
         seeMemo: 'Voir le mémo complet' };
   function synDropParam() {
     try {
