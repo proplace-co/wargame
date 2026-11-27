@@ -5915,15 +5915,17 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
    * le mémo complet ✕ ». ✕, Échap ou un clic hors des pages ferment ; l'adresse perd ?view=synthese sans
    * rechargement et le mémo complet est déjà là, dessous. Un bouton discret la rouvre ensuite. Rien si le
    * 2-pager n'est pas prêt (le mémo reste tel quel) ; jamais dans le cockpit ni pour un édito. */
-  var SYN = null;
+  var SYN = null, SYN_UI = null;
   var SYN_BASE = API.slice(0, API.indexOf('/memos/'));
   var SYN_T = en
     ? { close: 'Close / See the full memo', closeShort: 'Full memo', dl: 'Download PDF', reopen: 'Summary PDF',
-        loading: 'Loading the summary…', failed: 'The summary could not be displayed: ', open: 'open the PDF',
-        label: 'Summary' }
+        preparing: 'Opening the summary', failed: 'The summary could not be displayed: ', open: 'open the PDF',
+        label: 'Summary', notReady: 'The summary of this memo is being prepared: it will be ready in a few minutes.',
+        seeMemo: 'See the full memo' }
     : { close: 'Fermer / Voir le mémo complet', closeShort: 'Mémo complet', dl: 'Télécharger PDF', reopen: 'Synthèse PDF',
-        loading: 'Chargement de la synthèse…', failed: 'La synthèse ne s’affiche pas : ', open: 'ouvrir le PDF',
-        label: 'Synthèse' };
+        preparing: 'Ouverture de la synthèse', failed: 'La synthèse ne s’affiche pas : ', open: 'ouvrir le PDF',
+        label: 'Synthèse', notReady: 'La synthèse de ce mémo est en préparation : elle sera prête dans quelques minutes.',
+        seeMemo: 'Voir le mémo complet' };
   function synDropParam() {
     try {
       var u = new URL(location.href);
@@ -5936,17 +5938,34 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     if (document.getElementById('ppsyn-css')) return;
     var css = el('style', { id: 'ppsyn-css' });
     css.textContent = [
-      '.ppsyn{position:fixed;inset:0;z-index:2147483000;background:rgba(17,24,39,.78);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}',
-      '.ppsyn-bar{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:10px;padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top,0px));background:rgba(17,24,39,.94);color:#fff;box-shadow:0 1px 0 rgba(255,255,255,.08)}',
+      '.ppsyn{position:fixed;inset:0;z-index:2147483000;background:rgba(15,20,30,.82);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;animation:ppsynIn .18s ease-out}',
+      '@keyframes ppsynIn{from{opacity:0}to{opacity:1}}',
+      '.ppsyn-bar{position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:10px;padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top,0px));background:rgba(17,24,39,.96);color:#fff;box-shadow:0 1px 0 rgba(255,255,255,.06),0 8px 24px rgba(0,0,0,.25)}',
       '.ppsyn-name{flex:1 1 auto;min-width:0;font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-      '.ppsyn-name small{font-weight:600;color:#9CA3AF;font-size:12px;margin-left:8px;letter-spacing:.04em;text-transform:uppercase}',
-      '.ppsyn-btn{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 13px;border-radius:8px;border:1px solid rgba(255,255,255,.28);background:transparent;color:#fff;font:600 13px/1 system-ui,-apple-system,"Segoe UI",sans-serif;text-decoration:none;cursor:pointer;white-space:nowrap}',
-      '.ppsyn-btn:hover{background:rgba(255,255,255,.1)}',
-      '.ppsyn-x{background:#fff;color:#111827;border-color:#fff}.ppsyn-x:hover{background:#F3F4F6}',
-      '.ppsyn-pages{display:flex;flex-direction:column;align-items:center;gap:18px;padding:22px 16px 56px;padding-bottom:calc(56px + env(safe-area-inset-bottom,0px))}',
-      '.ppsyn-page{display:block;width:100%;max-width:860px;height:auto;background:#fff;border-radius:3px;box-shadow:0 10px 34px rgba(0,0,0,.35)}',
-      '.ppsyn-msg{color:#E5E7EB;font-size:13px;text-align:center;padding:24px 0}.ppsyn-msg a{color:#fff;text-decoration:underline}',
-      '.ppsyn-open{position:fixed;left:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:950;display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border-radius:999px;border:0;background:#111827;color:#fff;font:600 12.5px/1 system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 6px 18px rgba(17,24,39,.28);cursor:pointer;opacity:.92}',
+      '.ppsyn-name small{font-weight:600;color:#9CA3AF;font-size:11.5px;margin-left:8px;letter-spacing:.06em;text-transform:uppercase}',
+      '.ppsyn-btn{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:9px;border:1px solid rgba(255,255,255,.24);background:transparent;color:#fff;font:600 13px/1 system-ui,-apple-system,"Segoe UI",sans-serif;text-decoration:none;cursor:pointer;white-space:nowrap;transition:background .15s}',
+      '.ppsyn-btn:hover{background:rgba(255,255,255,.1)}.ppsyn-btn[aria-disabled="true"]{opacity:.4;pointer-events:none}',
+      '.ppsyn-x{background:linear-gradient(180deg,#fff,#E9EBEF);color:#111827;border-color:#fff}.ppsyn-x:hover{background:#F3F4F6}',
+      // la barre de chargement : dégradé, pourcentage réel des pages reçues
+      '.ppsyn-prog{position:absolute;left:0;right:0;bottom:-3px;height:3px;background:rgba(255,255,255,.08);overflow:hidden;transition:opacity .4s}',
+      '.ppsyn-fill{height:100%;width:6%;background:linear-gradient(90deg,#60A5FA,#A78BFA,#F0ABFC);border-radius:0 3px 3px 0;box-shadow:0 0 12px rgba(167,139,250,.8);transition:width .25s ease-out}',
+      '.ppsyn-prog.ind .ppsyn-fill{width:35%;animation:ppsynInd 1.1s ease-in-out infinite}',
+      '@keyframes ppsynInd{0%{transform:translateX(-110%)}100%{transform:translateX(320%)}}',
+      '.ppsyn-prog.done{opacity:0}',
+      '.ppsyn-pages{display:flex;flex-direction:column;align-items:center;gap:18px;padding:24px 16px 56px;padding-bottom:calc(56px + env(safe-area-inset-bottom,0px))}',
+      '.ppsyn-sheet{position:relative;width:100%;max-width:860px;aspect-ratio:1/1.4142;border-radius:4px;background:#fff;box-shadow:0 14px 40px rgba(0,0,0,.38);overflow:hidden}',
+      '.ppsyn-sheet img{display:block;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity .35s}',
+      '.ppsyn-sheet.on img{opacity:1}',
+      // la page fantôme : des lignes qui scintillent tant que l'image n'est pas là
+      '.ppsyn-ghost{position:absolute;inset:0;padding:7% 7%;display:flex;flex-direction:column;gap:2.2%}',
+      '.ppsyn-ghost i{display:block;height:2.2%;border-radius:4px;background:linear-gradient(90deg,#EEF0F3 0%,#F8F9FB 40%,#EEF0F3 80%);background-size:300% 100%;animation:ppsynShim 1.3s linear infinite}',
+      '.ppsyn-ghost i.h{height:5%;width:55%}.ppsyn-ghost i.s{width:70%}.ppsyn-ghost i.b{height:16%}',
+      '@keyframes ppsynShim{0%{background-position:100% 0}100%{background-position:-50% 0}}',
+      '.ppsyn-sheet.on .ppsyn-ghost{display:none}',
+      '.ppsyn-pct{position:absolute;left:0;right:0;bottom:7%;text-align:center;color:#6B7280;font:600 13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.02em}',
+      '.ppsyn-msg{max-width:520px;margin:12vh auto 0;padding:22px 24px;border-radius:14px;background:#fff;color:#374151;font-size:14.5px;line-height:1.5;text-align:center;box-shadow:0 14px 40px rgba(0,0,0,.35)}',
+      '.ppsyn-msg a,.ppsyn-msg button{display:inline-block;margin-top:14px;padding:10px 18px;border-radius:10px;border:0;background:linear-gradient(135deg,#3B4558,#111827);color:#fff;font:700 13px/1 system-ui,-apple-system,"Segoe UI",sans-serif;text-decoration:none;cursor:pointer}',
+      '.ppsyn-open{position:fixed;left:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:950;display:inline-flex;align-items:center;gap:7px;padding:10px 16px;border-radius:999px;border:0;background:linear-gradient(135deg,#3B4558,#111827);color:#fff;font:700 12.5px/1 system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 8px 22px rgba(17,24,39,.3);cursor:pointer;opacity:.94}',
       '.ppsyn-open:hover{opacity:1}',
       '@media (max-width:560px){.ppsyn-bar{gap:6px;padding-left:10px;padding-right:10px}.ppsyn-btn{padding:0 10px;font-size:12px}.ppsyn-name small{display:none}.ppsyn-pages{padding:12px 8px 40px;gap:10px}.ppsyn-xl{display:none}}',
       '@media (min-width:561px){.ppsyn-xs{display:none}}',
@@ -5956,49 +5975,52 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   }
   function synClose() {
     var o = document.getElementById('ppsyn');
-    if (o && o.parentNode) o.parentNode.removeChild(o);
-    document.documentElement.style.overflow = o ? (o.getAttribute('data-ov') || '') : document.documentElement.style.overflow;
+    if (o) {
+      document.documentElement.style.overflow = o.getAttribute('data-ov') || '';
+      if (o.parentNode) o.parentNode.removeChild(o);
+    }
+    SYN_UI = null;
     document.removeEventListener('keydown', synKey, true);
     synDropParam();
   }
   function synKey(e) { if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); synClose(); } }
-  function synOpen() {
-    if (!SYN || document.getElementById('ppsyn')) return;
+  function synWidth() {
+    var target = Math.min(window.innerWidth || 860, 860) * (window.devicePixelRatio || 1);
+    return target <= 1200 ? 1000 : 1600;
+  }
+  function synSheet() {
+    var sheet = el('div', { 'class': 'ppsyn-sheet' });
+    var ghost = el('div', { 'class': 'ppsyn-ghost', 'aria-hidden': 'true' });
+    ['h', 's', '', '', 'b', '', 's', '', 'b', '', 's'].forEach(function (c) { ghost.appendChild(el('i', c ? { 'class': c } : {})); });
+    sheet.appendChild(ghost);
+    return sheet;
+  }
+  // la surimpression s'ouvre tout de suite, avant même que l'état du 2-pager soit connu : page fantôme + barre
+  function synShell() {
+    if (SYN_UI) return SYN_UI;
     synCss();
     var o = el('div', { id: 'ppsyn', 'class': 'ppsyn', role: 'dialog', 'aria-modal': 'true', 'aria-label': SYN_T.label });
     o.setAttribute('data-ov', document.documentElement.style.overflow || '');
     var bar = el('div', { 'class': 'ppsyn-bar' });
     var name = el('div', { 'class': 'ppsyn-name' });
-    name.appendChild(document.createTextNode(String(SYN.company || ctx.name || '')));
+    var nameText = document.createTextNode(String((SYN && SYN.company) || ctx.name || ''));
+    name.appendChild(nameText);
     var tag = el('small'); tag.textContent = SYN_T.label; name.appendChild(tag);
-    var dl = el('a', { 'class': 'ppsyn-btn', href: SYN_BASE + SYN.pdf + '&dl=1', rel: 'noopener' });
+    var dl = el('a', { 'class': 'ppsyn-btn', href: '#', rel: 'noopener', 'aria-disabled': 'true' });
     dl.textContent = SYN_T.dl;
     var x = el('button', { 'class': 'ppsyn-btn ppsyn-x', type: 'button', 'aria-label': SYN_T.close });
     var xl = el('span', { 'class': 'ppsyn-xl' }); xl.textContent = SYN_T.close + ' ✕';
     var xs = el('span', { 'class': 'ppsyn-xs' }); xs.textContent = SYN_T.closeShort + ' ✕';
     x.appendChild(xl); x.appendChild(xs);
     x.addEventListener('click', synClose);
-    bar.appendChild(name); bar.appendChild(dl); bar.appendChild(x);
+    var prog = el('div', { 'class': 'ppsyn-prog ind', role: 'progressbar', 'aria-label': SYN_T.preparing });
+    var fill = el('div', { 'class': 'ppsyn-fill' }); prog.appendChild(fill);
+    bar.appendChild(name); bar.appendChild(dl); bar.appendChild(x); bar.appendChild(prog);
     var pages = el('div', { 'class': 'ppsyn-pages' });
-    var wait = el('p', { 'class': 'ppsyn-msg' }); wait.textContent = SYN_T.loading;
-    pages.appendChild(wait);
-    var w = Math.max(800, Math.min(2000, Math.round(Math.min(window.innerWidth || 860, 860) * (window.devicePixelRatio || 1))));
-    (SYN.images || []).forEach(function (src, i) {
-      var img = el('img', { 'class': 'ppsyn-page', alt: SYN_T.label + ' · ' + (i + 1), src: SYN_BASE + src + '&w=' + w });
-      if (i > 0) img.setAttribute('loading', 'lazy');
-      img.addEventListener('load', function () { if (wait.parentNode) wait.parentNode.removeChild(wait); });
-      img.addEventListener('error', function () {
-        if (img.parentNode) img.parentNode.removeChild(img);
-        if (pages.querySelector('.ppsyn-fail')) return;
-        var m = el('p', { 'class': 'ppsyn-msg ppsyn-fail' });
-        m.appendChild(document.createTextNode(SYN_T.failed));
-        var a = el('a', { href: SYN_BASE + SYN.pdf, target: '_blank', rel: 'noopener' }); a.textContent = SYN_T.open;
-        m.appendChild(a);
-        if (wait.parentNode) wait.parentNode.removeChild(wait);
-        pages.appendChild(m);
-      });
-      pages.appendChild(img);
-    });
+    var first = synSheet();
+    var pct = el('div', { 'class': 'ppsyn-pct' }); pct.textContent = SYN_T.preparing + '…';
+    first.appendChild(pct);
+    pages.appendChild(first);
     o.appendChild(bar); o.appendChild(pages);
     // un clic hors des pages (le fond sombre, les marges) ferme ; jamais un clic sur une page ou la barre
     o.addEventListener('click', function (e) { if (e.target === o || e.target === pages) synClose(); });
@@ -6006,7 +6028,86 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
     document.documentElement.style.overflow = 'hidden';
     document.body.appendChild(o);
     try { x.focus({ preventScroll: true }); } catch (_) { /* vieux navigateur */ }
+    SYN_UI = { o: o, nameText: nameText, dl: dl, prog: prog, fill: fill, pages: pages, sheets: [first], pct: pct };
+    return SYN_UI;
   }
+  function synProgress(ui, ratio) {
+    ui.prog.classList.remove('ind');
+    var r = Math.max(0.06, Math.min(1, ratio || 0));
+    ui.fill.style.width = Math.round(r * 100) + '%';
+    ui.pct.textContent = SYN_T.preparing + ' · ' + Math.round(r * 100) + ' %';
+    if (r >= 1) setTimeout(function () { ui.prog.classList.add('done'); }, 350);
+  }
+  // une page téléchargée octet par octet : la barre avance pour de vrai (Content-Length), image puis fondu
+  function synFetch(url, onBytes) {
+    return fetch(url, { credentials: 'omit' }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      var total = +(r.headers.get('Content-Length') || 0);
+      if (!r.body || !r.body.getReader) return r.blob().then(function (b) { onBytes(b.size, b.size || 1); return b; });
+      var reader = r.body.getReader(), got = 0, chunks = [];
+      function pump() {
+        return reader.read().then(function (step) {
+          if (step.done) return new Blob(chunks, { type: 'image/jpeg' });
+          chunks.push(step.value); got += step.value.length; onBytes(got, total);
+          return pump();
+        });
+      }
+      return pump();
+    });
+  }
+  function synLoad(ui) {
+    if (!SYN || ui.loading) return;
+    ui.loading = true;
+    ui.nameText.textContent = String(SYN.company || ctx.name || '');
+    ui.dl.setAttribute('href', SYN_BASE + SYN.pdf + '&dl=1');
+    ui.dl.removeAttribute('aria-disabled');
+    var w = synWidth(), images = SYN.images || [], got = [], total = [];
+    images.forEach(function (_, i) {
+      if (!ui.sheets[i]) { var s = synSheet(); ui.pages.appendChild(s); ui.sheets.push(s); }
+      got[i] = 0; total[i] = 240000;           // ~240 Ko par page tant que le serveur n'a pas dit sa taille
+    });
+    function update() {
+      var g = 0, t = 0;
+      for (var k = 0; k < images.length; k++) { g += got[k]; t += total[k]; }
+      synProgress(ui, t ? g / t : 0);
+    }
+    images.forEach(function (src, i) {
+      var url = SYN_BASE + src + '&w=' + w, sheet = ui.sheets[i];
+      var img = el('img', { alt: SYN_T.label + ' · ' + (i + 1) });
+      sheet.insertBefore(img, sheet.firstChild);
+      img.addEventListener('load', function () { sheet.classList.add('on'); if (i === 0 && ui.pct.parentNode) ui.pct.parentNode.removeChild(ui.pct); });
+      synFetch(url, function (g, t) { got[i] = g; if (t) total[i] = t; update(); })
+        .then(function (blob) {
+          got[i] = total[i]; update();
+          // une page de navigateur qui refuse les blob: (politique de sécurité) : l'adresse directe, en cache
+          img.addEventListener('error', function retry() { img.removeEventListener('error', retry); img.src = url; });
+          img.src = URL.createObjectURL(blob);
+        })
+        .catch(function () {                   // sans progression, mais l'image quand même
+          img.src = url;
+          img.addEventListener('error', function () {
+            if (ui.pages.querySelector('.ppsyn-msg')) return;
+            var m = el('div', { 'class': 'ppsyn-msg' });
+            m.appendChild(document.createTextNode(SYN_T.failed));
+            var a = el('a', { href: SYN_BASE + SYN.pdf, target: '_blank', rel: 'noopener' }); a.textContent = SYN_T.open;
+            m.appendChild(a);
+            ui.pages.innerHTML = ''; ui.pages.appendChild(m); ui.prog.classList.add('done');
+          });
+          got[i] = total[i]; update();
+        });
+    });
+  }
+  function synNotReady(ui) {
+    ui.prog.classList.add('done');
+    ui.pages.innerHTML = '';
+    var m = el('div', { 'class': 'ppsyn-msg' });
+    m.appendChild(document.createTextNode(SYN_T.notReady));
+    m.appendChild(el('br'));
+    var b = el('button', { type: 'button' }); b.textContent = SYN_T.seeMemo; b.addEventListener('click', synClose);
+    m.appendChild(b);
+    ui.pages.appendChild(m);
+  }
+  function synOpen() { synLoad(synShell()); }
   function synReopenButton() {
     if (document.querySelector('.ppsyn-open')) return;
     synCss();
@@ -6018,17 +6119,19 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   function mountSynthese() {
     if (EMBED || editorial || !record) return;
     var asked = /[?&]view=synthese(?:&|$)/.test(location.search);
+    if (asked) synShell();                       // tout de suite : la barre de chargement, pas une page muette
+    function fail() { if (asked && SYN_UI) synNotReady(SYN_UI); }
     try {
       fetch(API + '/pager/latest', { credentials: 'omit' })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (j) {
-          if (!j || !j.ready || !j.pdf || !(j.images || []).length) { if (asked) synDropParam(); return; }
+          if (!j || !j.ready || !j.pdf || !(j.images || []).length) { fail(); return; }
           SYN = j;
           synReopenButton();
-          if (asked) synOpen();
+          if (SYN_UI) synLoad(SYN_UI);
         })
-        .catch(function () { if (asked) synDropParam(); });
-    } catch (_) { if (asked) synDropParam(); }
+        .catch(fail);
+    } catch (_) { fail(); }
   }
   mountSynthese();
   // 15/10 — dans l'onglet Mémo du cockpit, « Reprendre le mémo → » du bandeau d'aperçu se
