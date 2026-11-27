@@ -5918,13 +5918,13 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   var SYN = null, SYN_UI = null;
   var SYN_BASE = API.slice(0, API.indexOf('/memos/'));
   var SYN_T = en
-    ? { close: 'Close / See the full memo', closeShort: 'Full memo', dl: 'Download PDF', reopen: 'Summary PDF',
-        preparing: 'Opening the summary', failed: 'The summary could not be displayed: ', open: 'open the PDF',
-        label: 'Summary', notReady: 'The summary of this memo is being prepared: it will be ready in a few minutes.',
+    ? { close: 'Close / See the full memo', closeShort: 'Full memo', dl: 'Download PDF', reopen: '2-pager',
+        preparing: 'Opening the 2-pager', failed: 'The 2-pager could not be displayed: ', open: 'open the PDF',
+        label: '2-pager', notReady: 'The 2-pager of this memo is being prepared: it will be ready in a few minutes.',
         seeMemo: 'See the full memo' }
-    : { close: 'Fermer / Voir le mémo complet', closeShort: 'Mémo complet', dl: 'Télécharger PDF', reopen: 'Synthèse PDF',
-        preparing: 'Ouverture de la synthèse', failed: 'La synthèse ne s’affiche pas : ', open: 'ouvrir le PDF',
-        label: 'Synthèse', notReady: 'La synthèse de ce mémo est en préparation : elle sera prête dans quelques minutes.',
+    : { close: 'Fermer / Voir le mémo complet', closeShort: 'Mémo complet', dl: 'Télécharger PDF', reopen: '2-pager',
+        preparing: 'Ouverture du 2-pager', failed: 'Le 2-pager ne s’affiche pas : ', open: 'ouvrir le PDF',
+        label: '2-pager', notReady: 'Le 2-pager de ce mémo est en préparation : il sera prêt dans quelques minutes.',
         seeMemo: 'Voir le mémo complet' };
   function synDropParam() {
     try {
@@ -5948,7 +5948,8 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppsyn-x{background:linear-gradient(180deg,#fff,#E9EBEF);color:#111827;border-color:#fff}.ppsyn-x:hover{background:#F3F4F6}',
       // la barre de chargement : dégradé, pourcentage réel des pages reçues
       '.ppsyn-prog{position:absolute;left:0;right:0;bottom:-3px;height:3px;background:rgba(255,255,255,.08);overflow:hidden;transition:opacity .4s}',
-      '.ppsyn-fill{height:100%;width:6%;background:linear-gradient(90deg,#60A5FA,#A78BFA,#F0ABFC);border-radius:0 3px 3px 0;box-shadow:0 0 12px rgba(167,139,250,.8);transition:width .25s ease-out}',
+      // 27/11 soir (Antoine) — la barre au vert Proplace, comme le bouton 2-pager du mémo et le mail
+      '.ppsyn-fill{height:100%;width:6%;background:linear-gradient(90deg,#6EE7A8,#1DB862,#12A150,#0E7F3F);border-radius:0 3px 3px 0;box-shadow:0 0 12px rgba(18,161,80,.75);transition:width .25s ease-out}',
       '.ppsyn-prog.ind .ppsyn-fill{width:35%;animation:ppsynInd 1.1s ease-in-out infinite}',
       '@keyframes ppsynInd{0%{transform:translateX(-110%)}100%{transform:translateX(320%)}}',
       '.ppsyn-prog.done{opacity:0}',
@@ -5964,8 +5965,8 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
       '.ppsyn-sheet.on .ppsyn-ghost{display:none}',
       '.ppsyn-pct{position:absolute;left:0;right:0;bottom:7%;text-align:center;color:#6B7280;font:600 13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.02em}',
       '.ppsyn-msg{max-width:520px;margin:12vh auto 0;padding:22px 24px;border-radius:14px;background:#fff;color:#374151;font-size:14.5px;line-height:1.5;text-align:center;box-shadow:0 14px 40px rgba(0,0,0,.35)}',
-      '.ppsyn-msg a,.ppsyn-msg button{display:inline-block;margin-top:14px;padding:10px 18px;border-radius:10px;border:0;background:linear-gradient(135deg,#3B4558,#111827);color:#fff;font:700 13px/1 system-ui,-apple-system,"Segoe UI",sans-serif;text-decoration:none;cursor:pointer}',
-      '.ppsyn-open{position:fixed;left:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:950;display:inline-flex;align-items:center;gap:7px;padding:10px 16px;border-radius:999px;border:0;background:linear-gradient(135deg,#3B4558,#111827);color:#fff;font:700 12.5px/1 system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 8px 22px rgba(17,24,39,.3);cursor:pointer;opacity:.94}',
+      '.ppsyn-msg a,.ppsyn-msg button{display:inline-block;margin-top:14px;padding:10px 18px;border-radius:10px;border:0;background:linear-gradient(135deg,#1DB862,#12A150 55%,#0E7F3F);color:#fff;font:700 13px/1 system-ui,-apple-system,"Segoe UI",sans-serif;text-decoration:none;cursor:pointer}',
+      '.ppsyn-open{position:fixed;left:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:950;display:inline-flex;align-items:center;gap:7px;padding:10px 16px;border-radius:999px;border:0;background:linear-gradient(135deg,#1DB862,#12A150 55%,#0E7F3F);color:#fff;font:700 12.5px/1 system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 8px 22px rgba(18,161,80,.35);cursor:pointer;opacity:.95}',
       '.ppsyn-open:hover{opacity:1}',
       '@media (max-width:560px){.ppsyn-bar{gap:6px;padding-left:10px;padding-right:10px}.ppsyn-btn{padding:0 10px;font-size:12px}.ppsyn-name small{display:none}.ppsyn-pages{padding:12px 8px 40px;gap:10px}.ppsyn-xl{display:none}}',
       '@media (min-width:561px){.ppsyn-xs{display:none}}',
@@ -6119,7 +6120,11 @@ versionsHint: 'Toutes les versions : panneau Stan, onglet Historique', leave: 'D
   function mountSynthese() {
     if (EMBED || editorial || !record) return;
     var asked = /[?&]view=synthese(?:&|$)/.test(location.search);
-    if (asked) synShell();                       // tout de suite : la barre de chargement, pas une page muette
+    // rien ne part au chargement d'un mémo (règle du 13/11) : l'état du 2-pager n'est demandé que si l'adresse
+    // l'ouvre (« 2-pager → » des mails) ; le bouton pour le rouvrir apparaît alors, et la barre du mémo garde
+    // son « 📑 2-pager » pour tous les autres lecteurs
+    if (!asked) return;
+    synShell();                                  // tout de suite : la barre de chargement, pas une page muette
     function fail() { if (asked && SYN_UI) synNotReady(SYN_UI); }
     try {
       fetch(API + '/pager/latest', { credentials: 'omit' })
